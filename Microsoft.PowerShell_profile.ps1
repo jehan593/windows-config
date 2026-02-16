@@ -37,10 +37,10 @@ function confc {
     # Replace the path below with your specific folder
     $myFolder = "$HOME\windows-config"
 
-    if (Get-Command code -ErrorAction SilentlyContinue) {
-        code $myFolder
+    if (Get-Command codium -ErrorAction SilentlyContinue) {
+        codium $myFolder
     } else {
-        Write-Host "VS Code (code) not found in PATH." -ForegroundColor Red
+        Write-Host "VCodium (codium) not found in PATH." -ForegroundColor Red
     }
 }
 
