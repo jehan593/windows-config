@@ -152,15 +152,15 @@ function upf {
     if (-not (Test-Path $profilesPath)) { Write-Host "Firefox profiles not found." -ForegroundColor Red; return }
 
     $profiles = Get-ChildItem -Path $profilesPath -Directory
-    foreach ($profile in $profiles) {
-        $userFilePath = Join-Path $profile.FullName "user.js"
-        Write-Host "Updating profile: $($profile.Name)..." -ForegroundColor Cyan
+    foreach ($prof in $profiles) {
+        $userFilePath = Join-Path $prof.FullName "user.js"
+        Write-Host "Updating profile: $($prof.Name)..." -ForegroundColor Cyan
         try {
             Invoke-WebRequest -Uri $url -OutFile $userFilePath -ErrorAction Stop
             Add-Content -Path $userFilePath -Value $prefs
             Write-Host "Successfully updated: $userFilePath" -ForegroundColor Green
         } catch {
-            Write-Host "Failed to update $($profile.Name): $($_.Exception.Message)" -ForegroundColor Red
+            Write-Host "Failed to update $($prof.Name): $($_.Exception.Message)" -ForegroundColor Red
         }
     }
 }
