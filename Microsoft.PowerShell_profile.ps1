@@ -116,10 +116,11 @@ function termux {
 function upall {
     if (-not (Test-Admin)) { Invoke-Elevated -Command "upall"; return }
     Write-Host "--- Starting Full System Upgrade ---" -ForegroundColor Cyan
-    Write-Host "`n[1/4] Winget Apps" -ForegroundColor Magenta; upa
-    Write-Host "`n[2/4] Firefox (Betterfox)" -ForegroundColor Magenta; upf
-    Write-Host "`n[3/4] Microsoft Store" -ForegroundColor Magenta; ups
-    Write-Host "`n[4/4] Windows Update" -ForegroundColor Magenta; upw
+    Write-Host "`n[1/5] Winget Apps" -ForegroundColor Magenta; upa
+    Write-Host "`n[2/5] Firefox (Betterfox)" -ForegroundColor Magenta; upf
+    Write-Host "`n[3/5] Microsoft Store" -ForegroundColor Magenta; ups
+    Write-Host "`n[4/5] Windows Update" -ForegroundColor Magenta; upw
+    Write-Host "`n[5/5] Config Update" -ForegroundColor Magenta; upc
 }
 
 function cup {
@@ -165,7 +166,7 @@ function upf {
     }
 }
 
-function confup {
+function upc {
     Write-Host "Checking for config updates..." -ForegroundColor Cyan
     git -C "$HOME\windows-config" pull --rebase --autostash
     
@@ -374,6 +375,7 @@ function info {
     Write-Host " ups      - Store: Update all"
     Write-Host " upw      - Windows: Install all updates"
     Write-Host " upf      - Firefox: Apply Betterfox user.js"
+    Write-Host " upc      - Pull config updates from github"
   
     Write-Host "`n [Interactive (FZF)]" -ForegroundColor Yellow
     Write-Host " ff       - Fast file/folder search (fd + fzf)"

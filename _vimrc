@@ -1,35 +1,35 @@
-" ==============================================================================
-" 1. THE BASICS & LOOKS
-" ==============================================================================
-syntax on
-set termguicolors
+" --- General Settings ---
+set number              " Show line numbers
+set mouse=a             " Enable mouse support (helpful while learning)
+set clipboard=unnamed " Use system clipboard (copy/paste from other apps)
+
+" --- Search Settings ---
+set ignorecase          " Ignore case when searching
+set smartcase           " ...unless search contains a capital letter
+set hlsearch            " Highlight all search results
+set incsearch           " Show search results as you type
+
+" --- Indentation ---
+set expandtab           " Use spaces instead of tabs
+set shiftwidth=4        " 1 tab = 4 spaces
+set autoindent          " Copy indent from previous line
+
+" --- UI ---
+syntax on               " Enable syntax highlighting
+set termguicolors       " Enable 24-bit RGB colors
 colorscheme nord
-set background=dark
 
-set number          " Show line numbers
-set relativenumber  " HELPFUL: Makes jumping to lines (e.g., 5j) much faster
-set mouse=a         " Mouse support
-set clipboard=unnamed " System clipboard sync
-set cursorline      " Highlight the line the cursor is on
-set noshowmode      " Hide the default '-- INSERT --' (cleaner if you use a status line)
+set noswapfile            " Stop creating swap files
+set nobackup             " Stop creating backup files
+set undofile              " Maintain undo history between sessions
+set undodir=$HOME/vimfiles/undodir " Store that history in one central place
 
-" ==============================================================================
-" 2. BETTER TABS & INDENTATION
-" ==============================================================================
-set tabstop=4
-set shiftwidth=4
-set expandtab
-set smartindent     " Better auto-indenting for C-like languages
-set autoindent      " Match indent of previous line
+set cursorline          " Highlight the line the cursor is on
+set scrolloff=8         " Keep 8 lines above/below cursor (stops it hitting the edge)
+set signcolumn=yes      " Always show the gutter (prevents text jumping when errors appear)
+set splitright          " Vertical splits open to the right
+set splitbelow          " Horizontal splits open at the bottom
 
-" ==============================================================================
-" 3. SEARCH & NAVIGATION
-" ==============================================================================
-set hlsearch
-set incsearch
-set ignorecase
-set smartcase
-set scrolloff=8     " Keep 8 lines above/below cursor (stops it hitting the edge)
-
-" THE 'SPACE' FIX: Clear highlights with space
-nnoremap <space> :nohlsearch<CR>
+set relativenumber      " Show relative line numbers
+set wildmenu            " Visual autocomplete for command menu
+set showmatch           " Highlight matching brackets
