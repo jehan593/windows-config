@@ -165,6 +165,18 @@ function upf {
     }
 }
 
+function confup {
+    Write-Host "Checking for config updates..." -ForegroundColor Cyan
+    git -C "$HOME\windows-config" pull --rebase --autostash
+    
+    if ($LASTEXITCODE -eq 0) {
+        Write-Host "🚀 configs are up to date!" -ForegroundColor Green
+        reload
+    } else {
+        Write-Host "❌ Update failed. Check for merge conflicts." -ForegroundColor Red
+    }
+}
+
 # ==============================================================================
 # 6. INTERACTIVE TOOLS (FZF) & KEYBINDINGS
 # ==============================================================================
