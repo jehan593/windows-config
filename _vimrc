@@ -1,35 +1,56 @@
+" --- Basic Setup ---
+let mapleader = " "         " Set Space as the leader key
+syntax on                   " Enable syntax highlighting
+set termguicolors           " Enable 24-bit RGB colors
+colorscheme nord            " Using the Nord theme (ensure it's installed)
+
 " --- General Settings ---
-set number              " Show line numbers
-set mouse=a             " Enable mouse support (helpful while learning)
-set clipboard=unnamed " Use system clipboard (copy/paste from other apps)
+set number                  " Show line numbers
+set relativenumber          " Show relative line numbers for easier jumping
+set mouse=a                 " Enable mouse support
+set clipboard=unnamedplus   " Sync with system clipboard
+set cursorline              " Highlight the current line
+set scrolloff=8             " Keep 8 lines above/below cursor
+set signcolumn=yes          " Prevent text jumping when errors appear
 
-" --- Search Settings ---
-set ignorecase          " Ignore case when searching
-set smartcase           " ...unless search contains a capital letter
-set hlsearch            " Highlight all search results
-set incsearch           " Show search results as you type
+" --- Undo & Backup (The Safety Net) ---
+set noswapfile              " No more .swp files
+set nobackup                " No more backup files
+set undofile                " Maintain undo history between sessions
+set undodir=$HOME/vimfiles/undodir  " Store history in one place
 
-" --- Indentation ---
-set expandtab           " Use spaces instead of tabs
-set shiftwidth=4        " 1 tab = 4 spaces
-set autoindent          " Copy indent from previous line
+" --- Search & Tabs ---
+set ignorecase smartcase    " Intelligent case searching
+set hlsearch                " Highlight search results
+set incsearch               " Search as you type
+set expandtab               " Use spaces instead of tabs
+set shiftwidth=4            " 1 tab = 4 spaces
+set autoindent              " Maintain indentation on new lines
 
-" --- UI ---
-syntax on               " Enable syntax highlighting
-set termguicolors       " Enable 24-bit RGB colors
-colorscheme nord
+" --- Windows & Splits ---
+set splitright              " Vertical splits open to the right
+set splitbelow              " Horizontal splits open at the bottom
 
-set noswapfile            " Stop creating swap files
-set nobackup             " Stop creating backup files
-set undofile              " Maintain undo history between sessions
-set undodir=$HOME/vimfiles/undodir " Store that history in one central place
+" Fast split navigation (Ctrl + h/j/k/l)
+inoremap jk <Esc>
+nnoremap <C-h> <C-w>h
+nnoremap <C-j> <C-w>j
+nnoremap <C-k> <C-w>k
+nnoremap <C-l> <C-w>l
 
-set cursorline          " Highlight the line the cursor is on
-set scrolloff=8         " Keep 8 lines above/below cursor (stops it hitting the edge)
-set signcolumn=yes      " Always show the gutter (prevents text jumping when errors appear)
-set splitright          " Vertical splits open to the right
-set splitbelow          " Horizontal splits open at the bottom
+" --- Custom Logic & Keybindings ---
 
-set relativenumber      " Show relative line numbers
-set wildmenu            " Visual autocomplete for command menu
-set showmatch           " Highlight matching brackets
+" 1. Saving and Quitting (Your requested shortcuts)
+nnoremap <leader>w :w<CR>          " Space + w: Save only
+nnoremap <leader>wq :wq<CR>        " Space + w + q: Save and Quit
+nnoremap <leader>q :q!<CR>         " Space + q: Quit WITHOUT saving (forced)
+
+" 2. UI and Selection
+nnoremap <leader><CR> :noh<CR>     " Space + Enter: Clear search highlights
+vnoremap < <gv                     " Stay in visual mode after indenting left
+vnoremap > >gv                     " Stay in visual mode after indenting right
+
+" 3. Smart Deleting
+nnoremap <leader>d "_d             " Space + d: 'True' delete (Black Hole)
+vnoremap <leader>d "_d             " Space + d (Visual): 'True' delete
+nnoremap x "_x                     " 'x' key: Delete char without overwriting clipboard
