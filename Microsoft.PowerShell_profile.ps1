@@ -325,13 +325,18 @@ Set-PSReadLineKeyHandler -Key "Ctrl+h" -ScriptBlock {
 }
 
 function ff {
-    $root = "C:\"
-    
-    $selection = fd . $root --hidden --color never `
+    param(
+        [Parameter(Position=0)]
+        [string]$Path = "C:\"
+    )
+
+    $SearchPath = Resolve-Path $Path
+
+    $selection = fd . $SearchPath --hidden --color never `
         --exclude "Windows" | 
         fzf --exact --layout=reverse `
             --height=40% `
-            --header "Searching ALL of $root"
+            --header "Searching: $SearchPath"
 
     if ($selection) {
         Start-Process $selection
