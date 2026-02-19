@@ -325,22 +325,16 @@ Set-PSReadLineKeyHandler -Key "Ctrl+h" -ScriptBlock {
 }
 
 function ff {
-    param(
-        [Parameter(Mandatory=$false)]
-        [string]$Path = "C:\"
-    )
-
-    $selection = fd --hidden . $Path `
-        | fzf --exact --layout=reverse `
-              --height=40% `
-              --header "Search: $Path (Enter to Open)"
+    $root = "C:\"
+    
+    $selection = fd . $root --hidden --color never `
+        --exclude "Windows" | 
+        fzf --exact --layout=reverse `
+            --height=40% `
+            --header "Searching ALL of $root"
 
     if ($selection) {
-        if (Test-Path $selection -PathType Container) {
-            explorer.exe $selection
-        } else {
-            Invoke-Item $selection
-        }
+        Start-Process $selection
     }
 }
 
