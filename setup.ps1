@@ -16,7 +16,7 @@ Clear-Host
 Write-Host "--- Starting Full Environment Setup (ADMIN) ---" -ForegroundColor Cyan
 
 # A. Install Dependencies via Winget
-$apps = @("Starship.Starship", "junegunn.fzf", "Git.Git", "ajeetdsouza.zoxide", "vim.vim", "Microsoft.PowerShell")
+$apps = @("Starship.Starship", "junegunn.fzf", "Git.Git", "ajeetdsouza.zoxide", "vim.vim", "Microsoft.PowerShell", "sharkdp.fd")
 
 foreach ($app in $apps) {
     winget list --id $app --exact --source winget > $null 2>&1
