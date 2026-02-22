@@ -109,6 +109,36 @@ foreach ($Path in $Profiles) {
     Write-Host "Linked: $Path" -ForegroundColor Green
 }
 
+# E. Windows Terminal Nord Theme
+Write-Host "`nInstalling Windows Terminal Nord Theme..." -ForegroundColor Cyan
+$wtFragmentPath = "$Env:LocalAppData\Microsoft\Windows Terminal\Fragments\nord"
+$nordJson = Join-Path $PSScriptRoot "files\nord.json"
+
+if (-not (Test-Path $nordJson)) {
+    Write-Host "nord.json not found in repo folder." -ForegroundColor Red
+} else {
+    if (!(Test-Path $wtFragmentPath)) {
+        New-Item -ItemType Directory -Path $wtFragmentPath -Force | Out-Null
+    }
+    Copy-Item -Path $nordJson -Destination $wtFragmentPath -Force
+    Write-Host "Nord theme installed. Restart Windows Terminal and select it in your profile." -ForegroundColor Green
+}
+
+# F. Wallpapers
+Write-Host "`nCopying Wallpapers..." -ForegroundColor Cyan
+$wallpaperSrc = Join-Path $PSScriptRoot "files\wallpaper.jpg"
+$wallpaperDst = Join-Path ([Environment]::GetFolderPath("MyPictures")) "Wallpapers"
+
+if (-not (Test-Path $wallpaperSrc)) {
+    Write-Host "Wallpaper not found in repo." -ForegroundColor Red
+} else {
+    if (!(Test-Path $wallpaperDst)) {
+        New-Item -ItemType Directory -Path $wallpaperDst -Force | Out-Null
+    }
+    Copy-Item -Path $wallpaperSrc -Destination $wallpaperDst -Force
+    Write-Host "Wallpaper copied to: $wallpaperDst" -ForegroundColor Green
+}
+
 # ==============================================================================
 # 3. FINALIZATION
 # ==============================================================================
