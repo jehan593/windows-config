@@ -26,7 +26,7 @@ if (Get-Command zoxide -ErrorAction SilentlyContinue) {
 # 2. PROFILE MANAGEMENT
 # ==============================================================================
 function reload {
-    Write-Host "Restarting PowerShell session..." -ForegroundColor Cyan
+    Write-Host " Restarting PowerShell session..." -ForegroundColor Cyan
     $exe = if ($PSEdition -eq "Core") { "pwsh" } else { "powershell" }
     & $exe
     exit
@@ -35,13 +35,14 @@ function reload {
 function conf {
     $myFolder = "$HOME\windows-config"
     if (-not (Test-Path $myFolder)) {
-        Write-Host "Config folder not found: $myFolder" -ForegroundColor Red
+        Write-Host " Config folder not found: $myFolder" -ForegroundColor Red
         return
     }
     if (Get-Command codium -ErrorAction SilentlyContinue) {
+        Write-Host "󰨞 Opening Configs..." -ForegroundColor Cyan
         codium $myFolder
     } else {
-        Write-Host "VSCodium (codium) not found in PATH." -ForegroundColor Red
+        Write-Host " VSCodium (codium) not found in PATH." -ForegroundColor Red
     }
 }
 
@@ -57,7 +58,7 @@ function Invoke-Elevated {
     param([string]$Command)
     $exe = if ($PSEdition -eq "Core") { "pwsh" } else { "powershell" }
     $encoded = [Convert]::ToBase64String([Text.Encoding]::Unicode.GetBytes($Command))
-    Write-Host "Elevating to Administrator for: $Command..." -ForegroundColor Cyan
+    Write-Host "󰮯 Elevating to Administrator for: $Command..." -ForegroundColor Cyan
     Start-Process wt -Verb RunAs -ArgumentList "-p `"PowerShell`" $exe -NoExit -EncodedCommand $encoded"
 }
 
@@ -68,24 +69,24 @@ function rr {
     $lastCommand = Get-History -Count 1
     if ($lastCommand) {
         $cmdString = $lastCommand.CommandLine
-        Write-Host "Elevating: $cmdString" -ForegroundColor Cyan
+        Write-Host "󰁯 Elevating: $cmdString" -ForegroundColor Cyan
         Invoke-Elevated -Command $cmdString
     } else {
-        Write-Host "No history found." -ForegroundColor Red
+        Write-Host " No history found." -ForegroundColor Red
     }
 }
 
 function cleanup {
     if (-not (Test-Admin)) { Invoke-Elevated -Command "cleanup"; return }
-    Write-Host "--- Starting System Cleanup ---" -ForegroundColor Cyan
+    Write-Host "󰃢 --- Starting System Cleanup ---" -ForegroundColor Cyan
 
-    Write-Host "[1/3] Cleaning Windows Update Store (Dism)..." -ForegroundColor Yellow
+    Write-Host "󰪚 [1/3] Cleaning Windows Update Store (Dism)..." -ForegroundColor Yellow
     dism.exe /online /Cleanup-Image /StartComponentCleanup
 
-    Write-Host "[2/3] Running Disk Cleanup (C:)..." -ForegroundColor Yellow
+    Write-Host "󱊟 [2/3] Running Disk Cleanup (C:)..." -ForegroundColor Yellow
     cleanmgr.exe /d C: /VERYLOWDISK
 
-    Write-Host "[3/3] Emptying Temp Folders..." -ForegroundColor Yellow
+    Write-Host "󰩹 [3/3] Emptying Temp Folders..." -ForegroundColor Yellow
     $tempPaths = @($env:TEMP, "$env:SystemRoot\Temp")
     foreach ($path in $tempPaths) {
         $before = (Get-ChildItem -Path $path -Recurse -ErrorAction SilentlyContinue | Measure-Object -Property Length -Sum).Sum
@@ -93,10 +94,10 @@ function cleanup {
             Remove-Item -Recurse -Force -ErrorAction SilentlyContinue
         $after = (Get-ChildItem -Path $path -Recurse -ErrorAction SilentlyContinue | Measure-Object -Property Length -Sum).Sum
         $freed = [math]::Round(($before - $after) / 1MB, 2)
-        Write-Host "  Freed ~${freed}MB from $path" -ForegroundColor DarkGray
+        Write-Host "  󱞂 Freed ~${freed}MB from $path" -ForegroundColor DarkGray
     }
 
-    Write-Host "Cleanup Complete!" -ForegroundColor Green
+    Write-Host " Cleanup Complete!" -ForegroundColor Green
 }
 
 function termux {
@@ -107,11 +108,11 @@ function termux {
         [string]$BaseIP = "192.168.8."
     )
     if (-not (Get-Command ssh -ErrorAction SilentlyContinue)) {
-        Write-Host "ssh not found in PATH." -ForegroundColor Red
+        Write-Host "󰒍 ssh not found in PATH." -ForegroundColor Red
         return
     }
     $targetIP = if ($EndIP -match "\.") { $EndIP } else { $BaseIP + $EndIP }
-    Write-Host "Connecting to Termux at $targetIP..." -ForegroundColor Cyan
+    Write-Host " Connecting to Termux at $targetIP..." -ForegroundColor Cyan
     ssh -p $Port "$User@$targetIP"
 }
 
@@ -120,46 +121,46 @@ function termux {
 # ==============================================================================
 function upall {
     if (-not (Test-Admin)) { Invoke-Elevated -Command "upall"; return }
-    Write-Host "--- Starting Full System Upgrade ---" -ForegroundColor Cyan
-    Write-Host "`n[1/5] Winget Apps" -ForegroundColor Magenta; upa
-    Write-Host "`n[2/5] Chocolatey Apps" -ForegroundColor Magenta
+    Write-Host "󱑢 --- Starting Full System Upgrade ---" -ForegroundColor Cyan
+    Write-Host "`n󰏓 [1/5] Winget Apps" -ForegroundColor Magenta; upa
+    Write-Host "`n󰏔 [2/5] Chocolatey Apps" -ForegroundColor Magenta
     if (Get-Command choco -ErrorAction SilentlyContinue) { choco upgrade all -y }
-    else { Write-Host "Chocolatey not found." -ForegroundColor Gray }
-    Write-Host "`n[3/5] Firefox (Betterfox)" -ForegroundColor Magenta; upf
-    Write-Host "`n[4/5] Microsoft Store" -ForegroundColor Magenta; ups
-    Write-Host "`n[5/5] Windows Update" -ForegroundColor Magenta; upw
-    Write-Host "`n--- Full System Upgrade Complete ---" -ForegroundColor Cyan
+    else { Write-Host " Chocolatey not found." -ForegroundColor Gray }
+    Write-Host "`n󰈹 [3/5] Firefox (Betterfox)" -ForegroundColor Magenta; upf
+    Write-Host "`n󰮯 [4/5] Microsoft Store" -ForegroundColor Magenta; ups
+    Write-Host "`n [5/5] Windows Update" -ForegroundColor Magenta; upw
+    Write-Host "`n --- Full System Upgrade Complete ---" -ForegroundColor Cyan
 }
 
 function cup {
     if (-not (Test-Admin)) { Invoke-Elevated -Command "cup"; return }
-    Write-Host "--- Checking for Updates ---" -ForegroundColor Cyan
-    Write-Host "`n[1/3] Winget" -ForegroundColor Magenta; winget upgrade
-    Write-Host "`n[2/3] Store Apps" -ForegroundColor Magenta
+    Write-Host " --- Checking for Updates ---" -ForegroundColor Cyan
+    Write-Host "`n󰏓 [1/3] Winget" -ForegroundColor Magenta; winget upgrade
+    Write-Host "`n󰮯 [2/3] Store Apps" -ForegroundColor Magenta
     if (Get-Command store -ErrorAction SilentlyContinue) { "n" | store updates }
-    else { Write-Host "Command 'store' not found." -ForegroundColor Gray }
-    Write-Host "`n[3/3] Windows" -ForegroundColor Magenta
+    else { Write-Host " Command 'store' not found." -ForegroundColor Gray }
+    Write-Host "`n [3/3] Windows" -ForegroundColor Magenta
     try {
         $session = New-Object -ComObject Microsoft.Update.Session
         $updates = $session.CreateUpdateSearcher().Search("IsInstalled=0").Updates
         if ($updates.Count -eq 0) {
-            Write-Host "No Windows updates available." -ForegroundColor Green
+            Write-Host " No Windows updates available." -ForegroundColor Green
         } else {
-            Write-Host "$($updates.Count) update(s) available:" -ForegroundColor Yellow
-            $updates | ForEach-Object { Write-Host "  -> $($_.Title)" }
+            Write-Host "󰚰 $($updates.Count) update(s) available:" -ForegroundColor Yellow
+            $updates | ForEach-Object { Write-Host "  󱞩 $($_.Title)" }
         }
     } catch {
-        Write-Host "Failed to query Windows Update: $_" -ForegroundColor Red
+        Write-Host " Failed to query Windows Update: $_" -ForegroundColor Red
     }
 }
 
 function upa {
     if (-not (Test-Admin)) { Invoke-Elevated -Command "upa"; return }
     if (-not (Get-Command winget -ErrorAction SilentlyContinue)) {
-        Write-Host "winget not found in PATH." -ForegroundColor Red
+        Write-Host " winget not found in PATH." -ForegroundColor Red
         return
     }
-    Write-Host "Upgrading all packages..." -ForegroundColor Cyan
+    Write-Host "󰏓 Upgrading all packages..." -ForegroundColor Cyan
     winget upgrade --all
 }
 
@@ -168,7 +169,7 @@ function upw {
 
     $pausePath = "HKLM:\SOFTWARE\Microsoft\WindowsUpdate\UX\Settings"
     if (Get-ItemProperty -Path $pausePath -Name "PauseUpdatesExpiryTime" -ErrorAction SilentlyContinue) {
-        Write-Host "Updates paused. Resuming temporarily..." -ForegroundColor Yellow
+        Write-Host " Updates paused. Resuming temporarily..." -ForegroundColor Yellow
         Remove-ItemProperty -Path $pausePath -Name "PauseUpdatesExpiryTime" -ErrorAction SilentlyContinue
         Remove-ItemProperty -Path $pausePath -Name "PauseFeatureUpdatesStartTime" -ErrorAction SilentlyContinue
         Remove-ItemProperty -Path $pausePath -Name "PauseQualityUpdatesStartTime" -ErrorAction SilentlyContinue
@@ -178,31 +179,31 @@ function upw {
         $session  = New-Object -ComObject Microsoft.Update.Session
         $searcher = $session.CreateUpdateSearcher()
 
-        Write-Host "Searching for updates..." -ForegroundColor Cyan
+        Write-Host " Searching for updates..." -ForegroundColor Cyan
         $updates = $searcher.Search("IsInstalled=0").Updates
 
         if ($updates.Count -eq 0) {
-            Write-Host "No updates available." -ForegroundColor Green
+            Write-Host " No updates available." -ForegroundColor Green
             return
         }
 
-        Write-Host "$($updates.Count) update(s) found. Downloading..." -ForegroundColor Yellow
+        Write-Host "󰚰 $($updates.Count) update(s) found. Downloading..." -ForegroundColor Yellow
         $downloader = $session.CreateUpdateDownloader()
         for ($i = 0; $i -lt $updates.Count; $i++) {
             $single = New-Object -ComObject Microsoft.Update.UpdateColl
             $single.Add($updates.Item($i)) | Out-Null
             $downloader.Updates = $single
-            Write-Host "  Downloading ($($i+1)/$($updates.Count)): $($updates.Item($i).Title)" -ForegroundColor Gray
+            Write-Host "  󱑢 Downloading ($($i+1)/$($updates.Count)): $($updates.Item($i).Title)" -ForegroundColor Gray
             $downloader.Download()
-            Write-Host "  Done" -ForegroundColor Green
+            Write-Host "   Done" -ForegroundColor Green
         }
 
-        Write-Host "Installing..." -ForegroundColor Cyan
+        Write-Host "󰏔 Installing..." -ForegroundColor Cyan
         $installer = $session.CreateUpdateInstaller()
         $installer.Updates = $updates
         $result = $installer.Install()
 
-        Write-Host "`n=== Results ===" -ForegroundColor Cyan
+        Write-Host "`n󰄬 === Results ===" -ForegroundColor Cyan
         for ($i = 0; $i -lt $updates.Count; $i++) {
             $code = $result.GetUpdateResult($i).ResultCode
             $status = switch($code) {
@@ -223,19 +224,19 @@ function upw {
         }
 
         if ($result.RebootRequired) {
-            Write-Host "`nReboot required to complete installation." -ForegroundColor Red
+            Write-Host "`n Reboot required to complete installation." -ForegroundColor Red
         }
     } catch {
-        Write-Host "Failed to access Windows Update: $_" -ForegroundColor Red
+        Write-Host " Failed to access Windows Update: $_" -ForegroundColor Red
     }
 }
 
 function ups {
     if (Get-Command store -ErrorAction SilentlyContinue) {
-        Write-Host "Updating Store apps..." -ForegroundColor Cyan
+        Write-Host "󰮯 Updating Store apps..." -ForegroundColor Cyan
         store updates --apply
     } else {
-        Write-Host "Command 'store' not found." -ForegroundColor Gray
+        Write-Host " Command 'store' not found." -ForegroundColor Gray
     }
 }
 
@@ -252,25 +253,25 @@ function upf {
     )
 
     if (-not (Test-Path $profilesPath)) {
-        Write-Host "Firefox profiles not found." -ForegroundColor Red
+        Write-Host " Firefox profiles not found." -ForegroundColor Red
         return
     }
 
     $profiles = Get-ChildItem -Path $profilesPath -Directory
     if ($profiles.Count -eq 0) {
-        Write-Host "No Firefox profiles found." -ForegroundColor Red
+        Write-Host " No Firefox profiles found." -ForegroundColor Red
         return
     }
 
     foreach ($prof in $profiles) {
         $userFilePath = Join-Path $prof.FullName "user.js"
-        Write-Host "Updating profile: $($prof.Name)..." -ForegroundColor Cyan
+        Write-Host "󰈹 Updating profile: $($prof.Name)..." -ForegroundColor Cyan
         try {
             Invoke-WebRequest -Uri $url -OutFile $userFilePath -UseBasicParsing -ErrorAction Stop
             Add-Content -Path $userFilePath -Value ($prefs -join "`n")
-            Write-Host "Successfully updated: $userFilePath" -ForegroundColor Green
+            Write-Host " Successfully updated: $userFilePath" -ForegroundColor Green
         } catch {
-            Write-Host "Failed to update $($prof.Name): $($_.Exception.Message)" -ForegroundColor Red
+            Write-Host " Failed to update $($prof.Name): $($_.Exception.Message)" -ForegroundColor Red
         }
     }
 }
@@ -278,20 +279,20 @@ function upf {
 function upc {
     $configPath = "$HOME\windows-config"
     if (-not (Get-Command git -ErrorAction SilentlyContinue)) {
-        Write-Host "git not found in PATH." -ForegroundColor Red
+        Write-Host " git not found in PATH." -ForegroundColor Red
         return
     }
     if (-not (Test-Path $configPath)) {
-        Write-Host "Config folder not found: $configPath" -ForegroundColor Red
+        Write-Host " Config folder not found: $configPath" -ForegroundColor Red
         return
     }
-    Write-Host "Checking for config updates..." -ForegroundColor Cyan
+    Write-Host " Checking for config updates..." -ForegroundColor Cyan
     git -C $configPath pull --rebase --autostash
     if ($LASTEXITCODE -eq 0) {
-        Write-Host "Configs are up to date!" -ForegroundColor Green
+        Write-Host " Configs are up to date!" -ForegroundColor Green
         reload
     } else {
-        Write-Host "Update failed. Check for merge conflicts." -ForegroundColor Red
+        Write-Host " Update failed. Check for merge conflicts." -ForegroundColor Red
     }
 }
 
@@ -300,22 +301,22 @@ function upc {
 # ==============================================================================
 function inst {
     if (-not (Get-Command winget -ErrorAction SilentlyContinue)) {
-        Write-Host "winget not found in PATH." -ForegroundColor Red; return
+        Write-Host " winget not found in PATH." -ForegroundColor Red; return
     }
     if (-not (Get-Command fzf -ErrorAction SilentlyContinue)) {
-        Write-Host "fzf not found in PATH." -ForegroundColor Red; return
+        Write-Host " fzf not found in PATH." -ForegroundColor Red; return
     }
 
     $selected = winget search -q "." | Out-String -Stream |
         Where-Object { $_ -match '^\S+' -and $_ -notmatch 'Name|---' } |
-        fzf --exact --multi --reverse --header "Select apps to INSTALL"
+        fzf --exact --multi --reverse --header "󰏓 Select apps to INSTALL (Tab to multi-select)"
 
-    if (-not $selected) { Write-Host "No apps selected." -ForegroundColor Gray; return }
+    if (-not $selected) { Write-Host "󰜺 No apps selected." -ForegroundColor Gray; return }
 
     foreach ($item in $selected) {
         $id = ($item -split '\s{2,}')[1]
         if ($id) {
-            Write-Host "Installing: $id" -ForegroundColor Green
+            Write-Host " Installing: $id" -ForegroundColor Green
             winget install --id $id.Trim() --exact
         }
     }
@@ -323,22 +324,22 @@ function inst {
 
 function uninst {
     if (-not (Get-Command winget -ErrorAction SilentlyContinue)) {
-        Write-Host "winget not found in PATH." -ForegroundColor Red; return
+        Write-Host " winget not found in PATH." -ForegroundColor Red; return
     }
     if (-not (Get-Command fzf -ErrorAction SilentlyContinue)) {
-        Write-Host "fzf not found in PATH." -ForegroundColor Red; return
+        Write-Host " fzf not found in PATH." -ForegroundColor Red; return
     }
 
     $selected = winget list | Out-String -Stream |
         Where-Object { $_ -match '^\S+' -and $_ -notmatch 'Name|---' } |
-        fzf --exact --multi --reverse --header "Select apps to UNINSTALL"
+        fzf --exact --multi --reverse --header "󰏔 Select apps to UNINSTALL (Tab to multi-select)"
 
-    if (-not $selected) { Write-Host "No apps selected." -ForegroundColor Gray; return }
+    if (-not $selected) { Write-Host "󰜺 No apps selected." -ForegroundColor Gray; return }
 
     foreach ($item in $selected) {
         $name = ($item -split '\s{2,}', 2)[0]
         if ($name) {
-            Write-Host "Removing: $name" -ForegroundColor Cyan
+            Write-Host "󰗨 Removing: $name" -ForegroundColor Cyan
             winget uninstall --name "$($name.Trim())" --exact
         }
     }
@@ -346,18 +347,18 @@ function uninst {
 
 function up {
     if (-not (Get-Command winget -ErrorAction SilentlyContinue)) {
-        Write-Host "winget not found in PATH." -ForegroundColor Red; return
+        Write-Host " winget not found in PATH." -ForegroundColor Red; return
     }
     if (-not (Get-Command fzf -ErrorAction SilentlyContinue)) {
-        Write-Host "fzf not found in PATH." -ForegroundColor Red; return
+        Write-Host " fzf not found in PATH." -ForegroundColor Red; return
     }
 
     $raw = winget upgrade --accept-source-agreements | Out-String -Stream
     $headerLine = $raw | Where-Object { $_ -like "*Name*Id*Version*" } | Select-Object -First 1
 
     if (-not $headerLine) {
-        if ($raw -match "No installed package") { Write-Host "Everything is up to date!" -ForegroundColor Green }
-        else { Write-Host "Error: Could not parse winget output." -ForegroundColor Red }
+        if ($raw -match "No installed package") { Write-Host " Everything is up to date!" -ForegroundColor Green }
+        else { Write-Host " Error: Could not parse winget output." -ForegroundColor Red }
         return
     }
 
@@ -368,16 +369,16 @@ function up {
         $line -ne "" -and $line -notmatch '^-+$' -and $line -notmatch 'Name\s+Id' -and $line.Length -gt $idStart
     }
 
-    if (-not $list) { Write-Host "No updates found in the list." -ForegroundColor Green; return }
+    if (-not $list) { Write-Host " No updates found in the list." -ForegroundColor Green; return }
 
-    $selected = $list | fzf --exact --multi --reverse --header "Select apps to UPDATE"
-    if (-not $selected) { Write-Host "No apps selected." -ForegroundColor Gray; return }
+    $selected = $list | fzf --exact --multi --reverse --header "󰚰 Select apps to UPDATE"
+    if (-not $selected) { Write-Host "󰜺 No apps selected." -ForegroundColor Gray; return }
 
     foreach ($line in $selected) {
         if ($line.Length -ge $versionStart) {
             $id = $line.Substring($idStart, ($versionStart - $idStart)).Trim()
             if ($id) {
-                Write-Host "`nUpdating: $id" -ForegroundColor Yellow
+                Write-Host "`n󰑢 Updating: $id" -ForegroundColor Yellow
                 winget upgrade --id "$id" --exact
             }
         }
@@ -386,33 +387,33 @@ function up {
 
 function la {
     if (-not (Get-Command winget -ErrorAction SilentlyContinue)) {
-        Write-Host "winget not found in PATH." -ForegroundColor Red; return
+        Write-Host " winget not found in PATH." -ForegroundColor Red; return
     }
     if (-not (Get-Command fzf -ErrorAction SilentlyContinue)) {
-        Write-Host "fzf not found in PATH." -ForegroundColor Red; return
+        Write-Host " fzf not found in PATH." -ForegroundColor Red; return
     }
 
     $selected = winget list | Out-String -Stream |
         Where-Object { $_ -match '^\S+' -and $_ -notmatch 'Name|---' } |
-        fzf --exact --reverse --header "Search installed apps"
+        fzf --exact --reverse --header " Search installed apps"
 
-    if (-not $selected) { Write-Host "No app selected." -ForegroundColor Gray; return }
+    if (-not $selected) { Write-Host "󰜺 No app selected." -ForegroundColor Gray; return }
 
     $id = ($selected -split '\s{2,}')[1]
     if ($id) {
-        Write-Host "`nFetching info for: $id" -ForegroundColor Yellow
+        Write-Host "`n󰘥 Fetching info for: $id" -ForegroundColor Yellow
         winget show --id $id.Trim() --exact
     }
 }
 
 Set-PSReadLineKeyHandler -Key "Ctrl+h" -ScriptBlock {
     if (-not (Get-Command fzf -ErrorAction SilentlyContinue)) {
-        Write-Host "fzf not found in PATH." -ForegroundColor Red; return
+        Write-Host " fzf not found in PATH." -ForegroundColor Red; return
     }
 
     $historyFile = (Get-PSReadLineOption).HistorySavePath
     if (-not (Test-Path $historyFile)) {
-        Write-Host "No history file found." -ForegroundColor Red; return
+        Write-Host " No history file found." -ForegroundColor Red; return
     }
 
     $content = Get-Content $historyFile
@@ -420,7 +421,7 @@ Set-PSReadLineKeyHandler -Key "Ctrl+h" -ScriptBlock {
 
     $selected = $content |
         Select-Object -Unique |
-        fzf --exact --reverse --height 40% --header "History Search"
+        fzf --exact --reverse --height 40% --header " History Search"
 
     if ($selected) {
         [Microsoft.PowerShell.PSConsoleReadLine]::DeleteLine()
@@ -435,22 +436,22 @@ function ff {
     )
 
     if (-not (Get-Command fd -ErrorAction SilentlyContinue)) {
-        Write-Host "fd not found in PATH." -ForegroundColor Red; return
+        Write-Host " fd not found in PATH." -ForegroundColor Red; return
     }
     if (-not (Get-Command fzf -ErrorAction SilentlyContinue)) {
-        Write-Host "fzf not found in PATH." -ForegroundColor Red; return
+        Write-Host " fzf not found in PATH." -ForegroundColor Red; return
     }
 
     $SearchPath = Resolve-Path $Path -ErrorAction SilentlyContinue
     if (-not $SearchPath) {
-        Write-Host "Path not found: $Path" -ForegroundColor Red; return
+        Write-Host " Path not found: $Path" -ForegroundColor Red; return
     }
 
     $selection = fd . $SearchPath --hidden --color never `
         --exclude "Windows" |
         fzf --exact --layout=reverse `
             --height=40% `
-            --header "Searching: $SearchPath"
+            --header " Searching: $SearchPath"
 
     if (-not $selection) { return }
 
@@ -467,13 +468,13 @@ function ff {
 
 function ctt {
     if (-not (Test-Admin)) { Invoke-Elevated -Command "ctt"; return }
-    Write-Host "Launching Chris Titus Tech Toolbox..." -ForegroundColor Cyan
+    Write-Host "󱓞 Launching Chris Titus Tech Toolbox..." -ForegroundColor Cyan
     irm https://christitus.com/win | iex
 }
 
 function massgrave {
     if (-not (Test-Admin)) { Invoke-Elevated -Command "massgrave"; return }
-    Write-Host "Launching Massgrave Activation Tool..." -ForegroundColor Cyan
+    Write-Host "󰄲 Launching Massgrave Activation Tool..." -ForegroundColor Cyan
     irm https://get.activated.win | iex
 }
 
@@ -484,15 +485,15 @@ function massgrave {
 function pirith {
     $dir = "$HOME\Music\pirith"
     if (-not (Get-Command mpv -ErrorAction SilentlyContinue)) {
-        Write-Host "mpv not found in PATH." -ForegroundColor Red; return
+        Write-Host " mpv not found in PATH." -ForegroundColor Red; return
     }
     if (-not (Test-Path $dir)) {
-        Write-Host "Pirith folder not found: $dir" -ForegroundColor Red; return
+        Write-Host " Pirith folder not found: $dir" -ForegroundColor Red; return
     }
 
-    Write-Host "󰎆 Select to Play" -ForegroundColor Cyan
-    Write-Host "1) pirith_udasana.mp3"
-    Write-Host "2) pirith_sawasa.mp3"
+    Write-Host "󰎈 >> Select to Play" -ForegroundColor Cyan
+    Write-Host "  1)  pirith_udasana.mp3"
+    Write-Host "  2)  pirith_sawasa.mp3"
     $choice = Read-Host "Selection"
 
     switch ($choice) {
@@ -511,43 +512,42 @@ function wg-socks { & "C:\Program Files\wireproxy\wg-socks.ps1" @args }
 # 10. INFO & DOCUMENTATION
 # ==============================================================================
 function info {
-    Write-Host "`n--- Profile Commands ---" -ForegroundColor Cyan
+    Write-Host "`n   --- Profile Commands ---" -ForegroundColor Cyan
 
-    Write-Host "`n [Profile Management]" -ForegroundColor Yellow
-    Write-Host "  conf    - Edit dotfiles folder (VSCodium)"
-    Write-Host "  reload  - Reload profile changes"
+    Write-Host "`n  [ Profile Management]" -ForegroundColor Yellow
+    Write-Host "   conf     - 󰨞 Edit dotfiles folder (VSCodium)"
+    Write-Host "   reload   -  Reload profile changes"
 
-    Write-Host "`n [System & Elevation]" -ForegroundColor Yellow
-    Write-Host "  rr      - Re-run last command as Admin"
-    Write-Host "  cleanup - Run Windows Disk Cleanup"
-    Write-Host "  termux  - Connect to Termux (requires IP/ID)"
+    Write-Host "`n  [ System & Elevation]" -ForegroundColor Yellow
+    Write-Host "   rr       - 󰮯 Re-run last command as Admin"
+    Write-Host "   cleanup  - 󰃢 Run Windows Disk Cleanup"
+    Write-Host "   termux   -  Connect to Termux (requires IP/ID)"
 
-    Write-Host "`n [Updates & Apps]" -ForegroundColor Yellow
-    Write-Host "  upall   - Full upgrade (Winget, Store, Windows, Firefox)"
-    Write-Host "  cup     - Check for updates (Winget, Store, Windows)"
-    Write-Host "  upa     - Winget: Upgrade all"
-    Write-Host "  ups     - Store: Update all"
-    Write-Host "  upw     - Windows: Install all updates"
-    Write-Host "  upf     - Firefox: Apply Betterfox user.js"
-    Write-Host "  upc     - Pull config updates from GitHub"
+    Write-Host "`n  [󰚰 Updates & Apps]" -ForegroundColor Yellow
+    Write-Host "   upall    - 󱑢 Full upgrade (Winget, Store, Windows, Firefox)"
+    Write-Host "   cup      -  Check for updates (Winget, Store, Windows)"
+    Write-Host "   upa      - 󰏓 Winget: Upgrade all"
+    Write-Host "   ups      - 󰮯 Store: Update all"
+    Write-Host "   upw      -  Windows: Install all updates"
+    Write-Host "   upf      - 󰈹 Firefox: Apply Betterfox user.js"
+    Write-Host "   upc      -  Pull config updates from GitHub"
 
-    Write-Host "`n [Interactive (FZF)]" -ForegroundColor Yellow
-    Write-Host "  ff      - Fast file/folder search (fd + fzf)"
-    Write-Host "  inst    - Interactive search & install"
-    Write-Host "  uninst  - Interactive search & uninstall"
-    Write-Host "  up      - Interactive search & upgrade"
-    Write-Host "  la      - Search installed apps & show details"
-    Write-Host "  Ctrl+h  - Filtered command history search"
+    Write-Host "`n  [ Interactive (FZF)]" -ForegroundColor Yellow
+    Write-Host "   ff       - 󰈞 Fast file/folder search (fd + fzf)"
+    Write-Host "   inst     -  Interactive search & install"
+    Write-Host "   uninst   - 󰗨 Interactive search & uninstall"
+    Write-Host "   up       - 󰑢 Interactive search & upgrade"
+    Write-Host "   la       - 󰘥 Search installed apps & show details"
+    Write-Host "   Ctrl+h   -  Filtered command history search"
 
-    Write-Host "`n [Media]" -ForegroundColor Yellow
-    Write-Host "  pirith  - Play pirith audio"
+    Write-Host "`n  [󰎈 Media]" -ForegroundColor Yellow
+    Write-Host "   pirith   - 󰎈 Play pirith audio"
 
-    Write-Host "`n [Third Party Tools]" -ForegroundColor Yellow
-    Write-Host "  ctt       - Launch Chris Titus Tech Toolbox"
-    Write-Host "  massgrave - Launch Massgrave Activation Tool"
+    Write-Host "`n  [󱓞 Third Party Tools]" -ForegroundColor Yellow
+    Write-Host "   ctt      - 󱓞 Launch Chris Titus Tech Toolbox"
+    Write-Host "   massgrave- 󰄲 Launch Massgrave Activation Tool"
 
-    Write-Host "`n [Network]" -ForegroundColor Yellow
-    Write-Host "  wg-socks - Manage WireGuard SOCKS5 tunnels"
-    Write-Host "------------------------`n"
+    Write-Host "`n  [󰒍 Network]" -ForegroundColor Yellow
+    Write-Host "   wg-socks - 󰒄 Manage WireGuard SOCKS5 tunnels"
+    Write-Host "---------------------------`n"
 }
-
