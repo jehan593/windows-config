@@ -1,11 +1,17 @@
 # ==============================================================================
-# 1. SELF-ELEVATION BLOCK (Request Admin Privileges)
+# 1. SELF-ELEVATION BLOCK
 # ==============================================================================
+if (-not $PSScriptRoot) {
+    Write-Host "Run this as a script file, not dot-sourced." -ForegroundColor Red
+    exit
+}
+
 $currentPrincipal = New-Object Security.Principal.WindowsPrincipal([Security.Principal.WindowsIdentity]::GetCurrent())
 if (-not $currentPrincipal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) {
     Write-Host "Requesting Administrative privileges..." -ForegroundColor Yellow
+    $exe = if ($PSEdition -eq "Core") { "pwsh" } else { "powershell.exe" }
     $arguments = "-NoProfile -ExecutionPolicy Bypass -File `"$PSCommandPath`""
-    Start-Process powershell.exe -ArgumentList $arguments -Verb RunAs
+    Start-Process $exe -ArgumentList $arguments -Verb RunAs
     exit
 }
 
@@ -19,8 +25,8 @@ Write-Host "--- Starting Full Environment Setup (ADMIN) ---" -ForegroundColor Cy
 $apps = @("Starship.Starship", "junegunn.fzf", "Git.Git", "ajeetdsouza.zoxide", "vim.vim", "Microsoft.PowerShell", "sharkdp.fd")
 
 foreach ($app in $apps) {
-    winget list --id $app --exact --source winget > $null 2>&1
-    if (!$?) {
+    $installed = winget list --id $app --exact --source winget 2>&1 | Out-String
+    if ($installed -notmatch $app) {
         Write-Host "Installing $app..." -ForegroundColor Yellow
         winget install --id $app --silent --accept-package-agreements --accept-source-agreements
     } else {
@@ -42,18 +48,18 @@ if (Test-Path $RepoVimrc) {
 # B.2 Vim Color Scheme (Nord)
 Write-Host "`nInstalling Vim Color Scheme..." -ForegroundColor Cyan
 $VimColorsDir = Join-Path $HOME "vimfiles\colors"
-if (!(Test-Path $VimColorsDir)) { 
-    New-Item -ItemType Directory -Path $VimColorsDir -Force | Out-Null 
+if (!(Test-Path $VimColorsDir)) {
+    New-Item -ItemType Directory -Path $VimColorsDir -Force | Out-Null
 }
 
 $NordUrl = "https://raw.githubusercontent.com/nordtheme/vim/main/colors/nord.vim"
 $NordPath = Join-Path $VimColorsDir "nord.vim"
 
 try {
-    Invoke-WebRequest -Uri $NordUrl -OutFile $NordPath
+    Invoke-WebRequest -Uri $NordUrl -OutFile $NordPath -UseBasicParsing -ErrorAction Stop
     Write-Host "Downloaded Nord theme to: $NordPath" -ForegroundColor Green
 } catch {
-    Write-Host "Failed to download Nord theme. Check your internet connection." -ForegroundColor Red
+    Write-Host "Failed to download Nord theme: $_" -ForegroundColor Red
 }
 
 # C. Install Martian Mono Nerd Font
@@ -64,22 +70,27 @@ $tempFolder = "$env:TEMP\MartianMonoFont"
 
 if (!(Get-ChildItem "C:\Windows\Fonts" | Where-Object { $_.Name -like "*Martian*Nerd*" })) {
     Write-Host "Downloading and Installing Martian Mono Nerd Font..." -ForegroundColor Yellow
-    Invoke-WebRequest -Uri $fontUrl -OutFile $tempZip
-    if (!(Test-Path $tempFolder)) { New-Item -ItemType Directory -Path $tempFolder }
-    Expand-Archive -Path $tempZip -DestinationPath $tempFolder -Force
+    try {
+        Invoke-WebRequest -Uri $fontUrl -OutFile $tempZip -UseBasicParsing -ErrorAction Stop
+        if (!(Test-Path $tempFolder)) { New-Item -ItemType Directory -Path $tempFolder }
+        Expand-Archive -Path $tempZip -DestinationPath $tempFolder -Force
 
-    $fontFiles = Get-ChildItem -Path $tempFolder -Include "*.ttf", "*.otf" -Recurse
-    foreach ($file in $fontFiles) {
-        $targetPath = Join-Path "C:\Windows\Fonts" $file.Name
-        try {
-            if (!(Test-Path $targetPath)) {
-                Copy-Item $file.FullName $targetPath -Force
-                $registryPath = "HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Fonts"
-                New-ItemProperty -Path $registryPath -Name $file.Name -Value $file.Name -PropertyType String -Force | Out-Null
-            }
-        } catch { Write-Host "Could not install $($file.Name)" -ForegroundColor Gray }
+        $fontFiles = Get-ChildItem -Path $tempFolder -Include "*.ttf", "*.otf" -Recurse
+        foreach ($file in $fontFiles) {
+            $targetPath = Join-Path "C:\Windows\Fonts" $file.Name
+            try {
+                if (!(Test-Path $targetPath)) {
+                    Copy-Item $file.FullName $targetPath -Force
+                    $registryPath = "HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Fonts"
+                    New-ItemProperty -Path $registryPath -Name $file.Name -Value $file.Name -PropertyType String -Force | Out-Null
+                }
+            } catch { Write-Host "Could not install $($file.Name)" -ForegroundColor Gray }
+        }
+    } catch {
+        Write-Host "Failed to download/install font: $_" -ForegroundColor Red
+    } finally {
+        Remove-Item $tempZip, $tempFolder -Recurse -ErrorAction SilentlyContinue
     }
-    Remove-Item $tempZip, $tempFolder -Recurse -ErrorAction SilentlyContinue
 }
 
 # D. PowerShell Profile Linking
@@ -102,5 +113,5 @@ foreach ($Path in $Profiles) {
 # 3. FINALIZATION
 # ==============================================================================
 Write-Host "`n--- SETUP COMPLETE ---" -ForegroundColor Magenta
-Write-Host "Restart your Terminal for all changes (Environment Variables) to take effect." -ForegroundColor Yellow
+Write-Host "Restart your Terminal for all changes to take effect." -ForegroundColor Yellow
 Pause

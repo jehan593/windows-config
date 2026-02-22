@@ -458,7 +458,23 @@ function ff {
 }
 
 # ==============================================================================
-# 7. INFO & DOCUMENTATION
+# 7. THIRD PARTY TOOLS
+# ==============================================================================
+
+function ctt {
+    if (-not (Test-Admin)) { Invoke-Elevated -Command "ctt"; return }
+    Write-Host "Launching Chris Titus Tech Toolbox..." -ForegroundColor Cyan
+    irm https://christitus.com/win | iex
+}
+
+function massgrave {
+    if (-not (Test-Admin)) { Invoke-Elevated -Command "massgrave"; return }
+    Write-Host "Launching Massgrave Activation Tool..." -ForegroundColor Cyan
+    irm https://get.activated.win | iex
+}
+
+# ==============================================================================
+# 8. INFO & DOCUMENTATION
 # ==============================================================================
 function info {
     Write-Host "`n--- Profile Commands ---" -ForegroundColor Cyan
@@ -471,6 +487,8 @@ function info {
     Write-Host "  rr      - Re-run last command as Admin"
     Write-Host "  cleanup - Run Windows Disk Cleanup"
     Write-Host "  termux  - Connect to Termux (requires IP/ID)"
+    Write-Host "  ctt      - Launch Chris Titus Tech Toolbox"
+    Write-Host "  massgrave - Launch Massgrave Activation Tool"
 
     Write-Host "`n [Updates & Apps]" -ForegroundColor Yellow
     Write-Host "  upall   - Full upgrade (Winget, Store, Windows, Firefox)"
