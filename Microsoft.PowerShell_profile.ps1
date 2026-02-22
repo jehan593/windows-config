@@ -20,7 +20,8 @@ function Import-CachedCommand {
     
     if (!(Get-Command $Command -ErrorAction SilentlyContinue)) { return }
 
-    if (-not (Test-Path $CacheFile) -or (Get-Item $ENV:STARSHIP_CONFIG).LastWriteTime -gt (Get-Item $CacheFile).LastWriteTime) {
+    $commandPath = (Get-Command $Command).Source
+    if (-not (Test-Path $CacheFile) -or (Get-Item $commandPath).LastWriteTime -gt (Get-Item $CacheFile).LastWriteTime) {
         & $Command init powershell | Set-Content $CacheFile -Encoding utf8
     }
     . $CacheFile
@@ -41,14 +42,13 @@ function reload {
 }
 
 function conf {
-    $myFolder = "$HOME\windows-config"
-    if (-not (Test-Path $myFolder)) {
-        Write-Host " Config folder not found: $myFolder" -ForegroundColor Red
+    if (-not (Test-Path $RepoPath)) {
+        Write-Host " Config folder not found: $RepoPath" -ForegroundColor Red
         return
     }
     if (Get-Command codium -ErrorAction SilentlyContinue) {
         Write-Host "󰨞 Opening Configs..." -ForegroundColor Cyan
-        codium $myFolder
+        codium $RepoPath
     } else {
         Write-Host " VSCodium (codium) not found in PATH." -ForegroundColor Red
     }
@@ -132,9 +132,12 @@ function termux {
 
 function open {
     param([string]$Path = ".")
-    $resolvedPath = Resolve-Path $Path 
-    Write-Host " Opening: $resolvedPath" -ForegroundColor Cyan
-    explorer.exe $Path
+    $resolvedPath = Resolve-Path $Path -ErrorAction SilentlyContinue
+    if (-not $resolvedPath) {
+        Write-Host " Path not found: $Path" -ForegroundColor Red; return
+    }
+    Write-Host " Opening: $resolvedPath" -ForegroundColor Cyan
+    explorer.exe $resolvedPath
 }
 
 # ==============================================================================
@@ -298,7 +301,7 @@ function upf {
 }
 
 function upc {
-    $configPath = "$HOME\windows-config"
+    $configPath = $RepoPath
     if (-not (Get-Command git -ErrorAction SilentlyContinue)) {
         Write-Host " git not found in PATH." -ForegroundColor Red
         return
@@ -544,7 +547,6 @@ function info {
     Write-Host "   open     -  Open Current Directory in File Explorer "
     Write-Host "   cleanup  - 󰃢 Run Windows Disk Cleanup"
     Write-Host "   termux   -  Connect to Termux (requires IP/ID)"
-
 
     Write-Host "`n  [󰚰 Updates & Apps]" -ForegroundColor Yellow
     Write-Host "   upall    - 󱑢 Full upgrade (Winget, Store, Windows, Firefox)"

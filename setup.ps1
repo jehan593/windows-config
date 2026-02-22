@@ -22,11 +22,13 @@ Clear-Host
 Write-Host "--- Starting Full Environment Setup (ADMIN) ---" -ForegroundColor Cyan
 
 # A. Install Chocolatey
-Write-Host "Installing Chocolatey..." -ForegroundColor Cyan
+Write-Host "`nInstalling Chocolatey..." -ForegroundColor Cyan
 if (-not (Get-Command choco -ErrorAction SilentlyContinue)) {
     Set-ExecutionPolicy Bypass -Scope Process -Force
     [System.Net.ServicePointManager]::SecurityProtocol = [System.Net.ServicePointManager]::SecurityProtocol -bor 3072
     Invoke-RestMethod https://community.chocolatey.org/install.ps1 | Invoke-Expression
+    # Refresh PATH so choco is available immediately
+    $env:Path = [System.Environment]::GetEnvironmentVariable("Path", "Machine") + ";" + [System.Environment]::GetEnvironmentVariable("Path", "User")
     Write-Host "Chocolatey installed." -ForegroundColor Green
 } else {
     Write-Host "Chocolatey already installed." -ForegroundColor Green
@@ -42,6 +44,7 @@ if (-not (Get-Command mpv -ErrorAction SilentlyContinue)) {
 }
 
 # C. Install Dependencies via Winget
+Write-Host "`nInstalling Dependencies via Winget..." -ForegroundColor Cyan
 $apps = @("Starship.Starship", "junegunn.fzf", "Git.Git", "ajeetdsouza.zoxide", "vim.vim", "Microsoft.PowerShell", "sharkdp.fd", "NSSM.NSSM")
 
 foreach ($app in $apps) {
@@ -63,6 +66,8 @@ if (Test-Path $RepoVimrc) {
     if (Test-Path $HomeVimrc) { Remove-Item $HomeVimrc -Force }
     New-Item -ItemType SymbolicLink -Path $HomeVimrc -Value $RepoVimrc -Force
     Write-Host "Linked: $HomeVimrc" -ForegroundColor Green
+} else {
+    Write-Host "_vimrc not found in repo." -ForegroundColor Red
 }
 
 # D.2 Vim Color Scheme (Nord)
@@ -83,13 +88,12 @@ try {
 }
 
 # E. Install Martian Mono Nerd Font
-$fontName = "MartianMono"
-$fontUrl = "https://github.com/ryanoasis/nerd-fonts/releases/latest/download/$fontName.zip"
-$tempZip = "$env:TEMP\fonts.zip"
-$tempFolder = "$env:TEMP\MartianMonoFont"
-
+Write-Host "`nInstalling Martian Mono Nerd Font..." -ForegroundColor Cyan
 if (!(Get-ChildItem "C:\Windows\Fonts" | Where-Object { $_.Name -like "*Martian*Nerd*" })) {
-    Write-Host "Downloading and Installing Martian Mono Nerd Font..." -ForegroundColor Yellow
+    $fontName = "MartianMono"
+    $fontUrl = "https://github.com/ryanoasis/nerd-fonts/releases/latest/download/$fontName.zip"
+    $tempZip = "$env:TEMP\fonts.zip"
+    $tempFolder = "$env:TEMP\MartianMonoFont"
     try {
         Invoke-WebRequest -Uri $fontUrl -OutFile $tempZip -UseBasicParsing -ErrorAction Stop
         if (!(Test-Path $tempFolder)) { New-Item -ItemType Directory -Path $tempFolder }
@@ -106,11 +110,14 @@ if (!(Get-ChildItem "C:\Windows\Fonts" | Where-Object { $_.Name -like "*Martian*
                 }
             } catch { Write-Host "Could not install $($file.Name)" -ForegroundColor Gray }
         }
+        Write-Host "Martian Mono Nerd Font installed." -ForegroundColor Green
     } catch {
         Write-Host "Failed to download/install font: $_" -ForegroundColor Red
     } finally {
         Remove-Item $tempZip, $tempFolder -Recurse -ErrorAction SilentlyContinue
     }
+} else {
+    Write-Host "Martian Mono Nerd Font already installed." -ForegroundColor Green
 }
 
 # F. PowerShell Profile Linking
@@ -124,7 +131,14 @@ $Profiles = @(
 foreach ($Path in $Profiles) {
     $Dir = Split-Path $Path
     if (!(Test-Path $Dir)) { New-Item -ItemType Directory -Path $Dir -Force }
-    if (Test-Path $Path) { Remove-Item $Path -Force }
+    if (Test-Path $Path) {
+        $existing = Get-Item $Path -Force
+        if ($existing.LinkType -eq "SymbolicLink" -and $existing.Target -eq $RepoProfile) {
+            Write-Host "Already linked: $Path" -ForegroundColor Gray
+            continue
+        }
+        Remove-Item $Path -Force
+    }
     New-Item -ItemType SymbolicLink -Path $Path -Value $RepoProfile -Force
     Write-Host "Linked: $Path" -ForegroundColor Green
 }
@@ -171,12 +185,9 @@ if (-not (Test-Path $wireproxyExe)) {
     try {
         Invoke-WebRequest -Uri $wireproxyUrl -OutFile $tempFile -UseBasicParsing -ErrorAction Stop
         if (!(Test-Path $tempFolder)) { New-Item -ItemType Directory -Path $tempFolder -Force | Out-Null }
-        # First extraction
         tar -xzf $tempFile -C $tempFolder
-        # Second extraction - find the inner archive
         $innerArchive = Get-ChildItem -Path $tempFolder -Recurse | Where-Object { $_.Extension -match "\.gz|\.tar" } | Select-Object -First 1
         if ($innerArchive) { tar -xzf $innerArchive.FullName -C $tempFolder }
-        # Find and copy wireproxy.exe
         $wireproxyBin = Get-ChildItem -Path $tempFolder -Recurse -Filter "wireproxy.exe" | Select-Object -First 1
         if ($wireproxyBin) {
             if (!(Test-Path $wireproxyDir)) { New-Item -ItemType Directory -Path $wireproxyDir -Force | Out-Null }
@@ -199,6 +210,7 @@ if (-not (Test-Path $wireproxyExe)) {
 }
 
 # Link wg-socks script
+Write-Host "`nLinking wg-socks script..." -ForegroundColor Cyan
 $wgSocksScript = Join-Path $PSScriptRoot "scripts\wg-socks.ps1"
 $wgSocksDest = "C:\Program Files\wireproxy\wg-socks.ps1"
 
@@ -209,8 +221,6 @@ if (Test-Path $wgSocksScript) {
 } else {
     Write-Host "wg-socks.ps1 not found in repo." -ForegroundColor Red
 }
-
-
 
 # ==============================================================================
 # 3. FINALIZATION
