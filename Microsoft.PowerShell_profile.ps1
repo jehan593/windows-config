@@ -474,7 +474,32 @@ function massgrave {
 }
 
 # ==============================================================================
-# 8. INFO & DOCUMENTATION
+# 6. MEDIA
+# ==============================================================================
+
+function pirith {
+    $dir = "$HOME\Music\pirith"
+    if (-not (Get-Command mpv -ErrorAction SilentlyContinue)) {
+        Write-Host "mpv not found in PATH." -ForegroundColor Red; return
+    }
+    if (-not (Test-Path $dir)) {
+        Write-Host "Pirith folder not found: $dir" -ForegroundColor Red; return
+    }
+
+    Write-Host "󰎆 Select to Play" -ForegroundColor Cyan
+    Write-Host "1) pirith_udasana.mp3"
+    Write-Host "2) pirith_sawasa.mp3"
+    $choice = Read-Host "Selection"
+
+    switch ($choice) {
+        "1" { mpv "$dir\pirith_udasana.mp3" }
+        "2" { mpv "$dir\pirith_sawasa.mp3" }
+        default { Write-Host "Invalid Choice!" -ForegroundColor Red }
+    }
+}
+
+# ==============================================================================
+# 9. INFO & DOCUMENTATION
 # ==============================================================================
 function info {
     Write-Host "`n--- Profile Commands ---" -ForegroundColor Cyan
@@ -506,5 +531,17 @@ function info {
     Write-Host "  up      - Interactive search & upgrade"
     Write-Host "  la      - Search installed apps & show details"
     Write-Host "  Ctrl+h  - Filtered command history search"
+
+    Write-Host "`n [Media]" -ForegroundColor Yellow
+    Write-Host "  pirith  - Play pirith audio"
     Write-Host "------------------------`n"
+}
+# Import the Chocolatey Profile that contains the necessary code to enable
+# tab-completions to function for `choco`.
+# Be aware that if you are missing these lines from your profile, tab completion
+# for `choco` will not function.
+# See https://ch0.co/tab-completion for details.
+$ChocolateyProfile = "$env:ChocolateyInstall\helpers\chocolateyProfile.psm1"
+if (Test-Path($ChocolateyProfile)) {
+  Import-Module "$ChocolateyProfile"
 }

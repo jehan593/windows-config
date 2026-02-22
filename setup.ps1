@@ -21,7 +21,27 @@ if (-not $currentPrincipal.IsInRole([Security.Principal.WindowsBuiltInRole]::Adm
 Clear-Host
 Write-Host "--- Starting Full Environment Setup (ADMIN) ---" -ForegroundColor Cyan
 
-# A. Install Dependencies via Winget
+# A. Install Chocolatey
+Write-Host "Installing Chocolatey..." -ForegroundColor Cyan
+if (-not (Get-Command choco -ErrorAction SilentlyContinue)) {
+    Set-ExecutionPolicy Bypass -Scope Process -Force
+    [System.Net.ServicePointManager]::SecurityProtocol = [System.Net.ServicePointManager]::SecurityProtocol -bor 3072
+    Invoke-RestMethod https://community.chocolatey.org/install.ps1 | Invoke-Expression
+    Write-Host "Chocolatey installed." -ForegroundColor Green
+} else {
+    Write-Host "Chocolatey already installed." -ForegroundColor Green
+}
+
+# B. Install mpv via Chocolatey
+Write-Host "`nInstalling mpv..." -ForegroundColor Cyan
+if (-not (Get-Command mpv -ErrorAction SilentlyContinue)) {
+    choco install mpv -y
+    Write-Host "mpv installed." -ForegroundColor Green
+} else {
+    Write-Host "mpv already installed." -ForegroundColor Green
+}
+
+# C. Install Dependencies via Winget
 $apps = @("Starship.Starship", "junegunn.fzf", "Git.Git", "ajeetdsouza.zoxide", "vim.vim", "Microsoft.PowerShell", "sharkdp.fd")
 
 foreach ($app in $apps) {
@@ -34,7 +54,7 @@ foreach ($app in $apps) {
     }
 }
 
-# B. Vim Configuration (Link _vimrc)
+# D. Vim Configuration (Link _vimrc)
 Write-Host "`nLinking Vim Configuration..." -ForegroundColor Cyan
 $RepoVimrc = Join-Path $PSScriptRoot "_vimrc"
 $HomeVimrc = Join-Path $HOME "_vimrc"
@@ -45,7 +65,7 @@ if (Test-Path $RepoVimrc) {
     Write-Host "Linked: $HomeVimrc" -ForegroundColor Green
 }
 
-# B.2 Vim Color Scheme (Nord)
+# D.2 Vim Color Scheme (Nord)
 Write-Host "`nInstalling Vim Color Scheme..." -ForegroundColor Cyan
 $VimColorsDir = Join-Path $HOME "vimfiles\colors"
 if (!(Test-Path $VimColorsDir)) {
@@ -62,7 +82,7 @@ try {
     Write-Host "Failed to download Nord theme: $_" -ForegroundColor Red
 }
 
-# C. Install Martian Mono Nerd Font
+# E. Install Martian Mono Nerd Font
 $fontName = "MartianMono"
 $fontUrl = "https://github.com/ryanoasis/nerd-fonts/releases/latest/download/$fontName.zip"
 $tempZip = "$env:TEMP\fonts.zip"
@@ -93,7 +113,7 @@ if (!(Get-ChildItem "C:\Windows\Fonts" | Where-Object { $_.Name -like "*Martian*
     }
 }
 
-# D. PowerShell Profile Linking
+# F. PowerShell Profile Linking
 Write-Host "`nLinking Profile Scripts..." -ForegroundColor Cyan
 $RepoProfile = Join-Path $PSScriptRoot "Microsoft.PowerShell_profile.ps1"
 $Profiles = @(
@@ -109,7 +129,7 @@ foreach ($Path in $Profiles) {
     Write-Host "Linked: $Path" -ForegroundColor Green
 }
 
-# E. Windows Terminal Nord Theme
+# G. Windows Terminal Nord Theme
 Write-Host "`nInstalling Windows Terminal Nord Theme..." -ForegroundColor Cyan
 $wtFragmentPath = "$Env:LocalAppData\Microsoft\Windows Terminal\Fragments\nord"
 $nordJson = Join-Path $PSScriptRoot "files\nord.json"
@@ -124,7 +144,7 @@ if (-not (Test-Path $nordJson)) {
     Write-Host "Nord theme installed. Restart Windows Terminal and select it in your profile." -ForegroundColor Green
 }
 
-# F. Wallpapers
+# H. Wallpapers
 Write-Host "`nCopying Wallpapers..." -ForegroundColor Cyan
 $wallpaperSrc = Join-Path $PSScriptRoot "files\wallpaper.jpg"
 $wallpaperDst = Join-Path ([Environment]::GetFolderPath("MyPictures")) "Wallpapers"
@@ -138,6 +158,8 @@ if (-not (Test-Path $wallpaperSrc)) {
     Copy-Item -Path $wallpaperSrc -Destination $wallpaperDst -Force
     Write-Host "Wallpaper copied to: $wallpaperDst" -ForegroundColor Green
 }
+
+
 
 # ==============================================================================
 # 3. FINALIZATION
