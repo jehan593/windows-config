@@ -96,6 +96,18 @@ if (Test-Path $wallpaperDst) {
     Write-Host "Not found, skipping." -ForegroundColor Gray
 }
 
+# G.0 Backup WireGuard Configs
+$wireproxyConf = "C:\ProgramData\wireproxy"
+if (Test-Path $wireproxyConf) {
+    $backupDir = Join-Path ([Environment]::GetFolderPath("MyDocuments")) "wireproxy-backup"
+    Write-Host "`nBacking up WireGuard configs to: $backupDir" -ForegroundColor Cyan
+    if (!(Test-Path $backupDir)) { New-Item -ItemType Directory -Path $backupDir -Force | Out-Null }
+    Copy-Item -Path "$wireproxyConf\*.conf" -Destination $backupDir -Force
+    Write-Host "Configs backed up." -ForegroundColor Green
+} else {
+    Write-Host "`nNo WireGuard configs found to backup." -ForegroundColor Gray
+}
+
 # G. Remove wireproxy and wg-socks
 Write-Host "`nRemoving wireproxy and wg-socks..." -ForegroundColor Yellow
 

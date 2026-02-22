@@ -576,3 +576,31 @@ function info {
     Write-Host "   wg-socks - 󰒄 Manage WireGuard SOCKS5 tunnels"
     Write-Host "---------------------------`n"
 }
+
+# ==============================================================================
+# 11. OVERRIDES
+# ==============================================================================
+Remove-Item Alias:cd -Force -ErrorAction SilentlyContinue
+Remove-Item Alias:z -Force -ErrorAction SilentlyContinue
+
+function cd {
+    if ($args.Count -eq 0) { return }
+    if (-not (Test-Path $args[0])) {
+        Write-Host " Path not found: $($args[0])" -ForegroundColor Red; return
+    }
+    if (-not (Test-Path $args[0] -PathType Container)) {
+        Write-Host " Not a directory: $($args[0])" -ForegroundColor Red; return
+    }
+    Set-Location $args[0]
+    Get-ChildItem
+}
+
+function z {
+    if ($args.Count -eq 0) { return }
+    $before = $PWD.Path
+    __zoxide_z $args
+    if ($PWD.Path -eq $before) {
+        Write-Host " No match found for: $args" -ForegroundColor Red; return
+    }
+    Get-ChildItem
+}
