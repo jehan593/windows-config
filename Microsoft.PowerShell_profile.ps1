@@ -12,7 +12,8 @@ $env:FZF_DEFAULT_OPTS = @(
 
 # Initialize Starship Prompt
 $starshipCache = "$env:TEMP\starship_init.ps1"
-if (-not (Test-Path $starshipCache)) {
+$starshipConfig = "$HOME\windows-config\starship.toml"
+if (-not (Test-Path $starshipCache) -or ($starshipConfig -and (Get-Item $starshipConfig).LastWriteTime -gt (Get-Item $starshipCache).LastWriteTime)) {
     &starship init powershell | Set-Content $starshipCache
 }
 . $starshipCache
@@ -120,10 +121,13 @@ function termux {
 function upall {
     if (-not (Test-Admin)) { Invoke-Elevated -Command "upall"; return }
     Write-Host "--- Starting Full System Upgrade ---" -ForegroundColor Cyan
-    Write-Host "`n[1/4] Winget Apps" -ForegroundColor Magenta; upa
-    Write-Host "`n[2/4] Firefox (Betterfox)" -ForegroundColor Magenta; upf
-    Write-Host "`n[3/4] Microsoft Store" -ForegroundColor Magenta; ups
-    Write-Host "`n[4/4] Windows Update" -ForegroundColor Magenta; upw
+    Write-Host "`n[1/5] Winget Apps" -ForegroundColor Magenta; upa
+    Write-Host "`n[2/5] Chocolatey Apps" -ForegroundColor Magenta
+    if (Get-Command choco -ErrorAction SilentlyContinue) { choco upgrade all -y }
+    else { Write-Host "Chocolatey not found." -ForegroundColor Gray }
+    Write-Host "`n[3/5] Firefox (Betterfox)" -ForegroundColor Magenta; upf
+    Write-Host "`n[4/5] Microsoft Store" -ForegroundColor Magenta; ups
+    Write-Host "`n[5/5] Windows Update" -ForegroundColor Magenta; upw
     Write-Host "`n--- Full System Upgrade Complete ---" -ForegroundColor Cyan
 }
 
@@ -474,7 +478,7 @@ function massgrave {
 }
 
 # ==============================================================================
-# 6. MEDIA
+# 8. MEDIA
 # ==============================================================================
 
 function pirith {
@@ -499,7 +503,12 @@ function pirith {
 }
 
 # ==============================================================================
-# 9. INFO & DOCUMENTATION
+# 9. NETWORK
+# ==============================================================================
+function wg-socks { & "C:\Program Files\wireproxy\wg-socks.ps1" @args }
+
+# ==============================================================================
+# 10. INFO & DOCUMENTATION
 # ==============================================================================
 function info {
     Write-Host "`n--- Profile Commands ---" -ForegroundColor Cyan
@@ -512,8 +521,6 @@ function info {
     Write-Host "  rr      - Re-run last command as Admin"
     Write-Host "  cleanup - Run Windows Disk Cleanup"
     Write-Host "  termux  - Connect to Termux (requires IP/ID)"
-    Write-Host "  ctt      - Launch Chris Titus Tech Toolbox"
-    Write-Host "  massgrave - Launch Massgrave Activation Tool"
 
     Write-Host "`n [Updates & Apps]" -ForegroundColor Yellow
     Write-Host "  upall   - Full upgrade (Winget, Store, Windows, Firefox)"
@@ -534,6 +541,13 @@ function info {
 
     Write-Host "`n [Media]" -ForegroundColor Yellow
     Write-Host "  pirith  - Play pirith audio"
+
+    Write-Host "`n [Third Party Tools]" -ForegroundColor Yellow
+    Write-Host "  ctt       - Launch Chris Titus Tech Toolbox"
+    Write-Host "  massgrave - Launch Massgrave Activation Tool"
+
+    Write-Host "`n [Network]" -ForegroundColor Yellow
+    Write-Host "  wg-socks - Manage WireGuard SOCKS5 tunnels"
     Write-Host "------------------------`n"
 }
 

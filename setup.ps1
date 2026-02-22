@@ -42,7 +42,7 @@ if (-not (Get-Command mpv -ErrorAction SilentlyContinue)) {
 }
 
 # C. Install Dependencies via Winget
-$apps = @("Starship.Starship", "junegunn.fzf", "Git.Git", "ajeetdsouza.zoxide", "vim.vim", "Microsoft.PowerShell", "sharkdp.fd")
+$apps = @("Starship.Starship", "junegunn.fzf", "Git.Git", "ajeetdsouza.zoxide", "vim.vim", "Microsoft.PowerShell", "sharkdp.fd", "NSSM.NSSM")
 
 foreach ($app in $apps) {
     $installed = winget list --id $app --exact --source winget 2>&1 | Out-String
@@ -157,6 +157,57 @@ if (-not (Test-Path $wallpaperSrc)) {
     }
     Copy-Item -Path $wallpaperSrc -Destination $wallpaperDst -Force
     Write-Host "Wallpaper copied to: $wallpaperDst" -ForegroundColor Green
+}
+
+# I. Install wireproxy
+Write-Host "`nInstalling wireproxy..." -ForegroundColor Cyan
+$wireproxyDir = "C:\Program Files\wireproxy"
+$wireproxyExe = "$wireproxyDir\wireproxy.exe"
+
+if (-not (Test-Path $wireproxyExe)) {
+    $wireproxyUrl = "https://github.com/whyvl/wireproxy/releases/download/v1.0.9/wireproxy_windows_amd64.tar.gz"
+    $tempFile = "$env:TEMP\wireproxy.tar.gz"
+    $tempFolder = "$env:TEMP\wireproxy"
+    try {
+        Invoke-WebRequest -Uri $wireproxyUrl -OutFile $tempFile -UseBasicParsing -ErrorAction Stop
+        if (!(Test-Path $tempFolder)) { New-Item -ItemType Directory -Path $tempFolder -Force | Out-Null }
+        # First extraction
+        tar -xzf $tempFile -C $tempFolder
+        # Second extraction - find the inner archive
+        $innerArchive = Get-ChildItem -Path $tempFolder -Recurse | Where-Object { $_.Extension -match "\.gz|\.tar" } | Select-Object -First 1
+        if ($innerArchive) { tar -xzf $innerArchive.FullName -C $tempFolder }
+        # Find and copy wireproxy.exe
+        $wireproxyBin = Get-ChildItem -Path $tempFolder -Recurse -Filter "wireproxy.exe" | Select-Object -First 1
+        if ($wireproxyBin) {
+            if (!(Test-Path $wireproxyDir)) { New-Item -ItemType Directory -Path $wireproxyDir -Force | Out-Null }
+            Copy-Item $wireproxyBin.FullName $wireproxyExe -Force
+            $currentPath = [Environment]::GetEnvironmentVariable("PATH", "Machine")
+            if ($currentPath -notlike "*$wireproxyDir*") {
+                [Environment]::SetEnvironmentVariable("PATH", "$currentPath;$wireproxyDir", "Machine")
+            }
+            Write-Host "wireproxy installed." -ForegroundColor Green
+        } else {
+            Write-Host "Could not find wireproxy.exe after extraction." -ForegroundColor Red
+        }
+    } catch {
+        Write-Host "Failed to install wireproxy: $_" -ForegroundColor Red
+    } finally {
+        Remove-Item $tempFile, $tempFolder -Recurse -ErrorAction SilentlyContinue
+    }
+} else {
+    Write-Host "wireproxy already installed." -ForegroundColor Green
+}
+
+# Link wg-socks script
+$wgSocksScript = Join-Path $PSScriptRoot "scripts\wg-socks.ps1"
+$wgSocksDest = "C:\Program Files\wireproxy\wg-socks.ps1"
+
+if (Test-Path $wgSocksScript) {
+    if (Test-Path $wgSocksDest) { Remove-Item $wgSocksDest -Force }
+    New-Item -ItemType SymbolicLink -Path $wgSocksDest -Value $wgSocksScript -Force
+    Write-Host "wg-socks script linked." -ForegroundColor Green
+} else {
+    Write-Host "wg-socks.ps1 not found in repo." -ForegroundColor Red
 }
 
 
