@@ -1,7 +1,10 @@
-# ==============================================================================
+﻿# ==============================================================================
 # 1. ENVIRONMENT & INITIALIZATION
 # ==============================================================================
-$ENV:STARSHIP_CONFIG = "$HOME\windows-config\starship.toml"
+$RepoPath = "$HOME\windows-config"
+$ENV:STARSHIP_CONFIG = "$RepoPath\starship.toml"
+
+# Nord Theme for FZF
 $env:FZF_DEFAULT_OPTS = @(
     '--exact'
     '--color=bg+:#3b4252,bg:#2e3440,spinner:#81a1c1'
@@ -10,17 +13,22 @@ $env:FZF_DEFAULT_OPTS = @(
     '--color=fg+:#e5e9f0,prompt:#81a1c1,hl+:#ebcb8b'
 ) -join ' '
 
-# Initialize Starship Prompt
-$starshipCache = "$env:TEMP\starship_init.ps1"
-$starshipConfig = "$HOME\windows-config\starship.toml"
-if (-not (Test-Path $starshipCache) -or ($starshipConfig -and (Get-Item $starshipConfig).LastWriteTime -gt (Get-Item $starshipCache).LastWriteTime)) {
-    &starship init powershell | Set-Content $starshipCache
-}
-. $starshipCache
+# Generic Cache Function to speed up Shell Start
+function Import-CachedCommand {
+    param([string]$Command, [string]$CacheName)
+    $CacheFile = "$env:TEMP\$CacheName.ps1"
+    
+    if (!(Get-Command $Command -ErrorAction SilentlyContinue)) { return }
 
-if (Get-Command zoxide -ErrorAction SilentlyContinue) {
-    (&zoxide init powershell | Out-String) | Invoke-Expression
+    if (-not (Test-Path $CacheFile) -or (Get-Item $ENV:STARSHIP_CONFIG).LastWriteTime -gt (Get-Item $CacheFile).LastWriteTime) {
+        & $Command init powershell | Set-Content $CacheFile -Encoding utf8
+    }
+    . $CacheFile
 }
+
+# Initialize Starship & Zoxide via Cache
+Import-CachedCommand -Command "starship" -CacheName "starship_init"
+Import-CachedCommand -Command "zoxide"  -CacheName "zoxide_init"
 
 # ==============================================================================
 # 2. PROFILE MANAGEMENT
@@ -28,7 +36,7 @@ if (Get-Command zoxide -ErrorAction SilentlyContinue) {
 function reload {
     Write-Host " Restarting PowerShell session..." -ForegroundColor Cyan
     $exe = if ($PSEdition -eq "Core") { "pwsh" } else { "powershell" }
-    & $exe
+    Start-Process $exe -ArgumentList "-NoExit", "-Command", "Set-Location '$PWD'"
     exit
 }
 
@@ -58,8 +66,14 @@ function Invoke-Elevated {
     param([string]$Command)
     $exe = if ($PSEdition -eq "Core") { "pwsh" } else { "powershell" }
     $encoded = [Convert]::ToBase64String([Text.Encoding]::Unicode.GetBytes($Command))
-    Write-Host "󰮯 Elevating to Administrator for: $Command..." -ForegroundColor Cyan
-    Start-Process wt -Verb RunAs -ArgumentList "-p `"PowerShell`" $exe -NoExit -EncodedCommand $encoded"
+    
+    Write-Host "󰮯 Elevating to Administrator..." -ForegroundColor Cyan
+    
+    if (Get-Command wt -ErrorAction SilentlyContinue) {
+        Start-Process wt -Verb RunAs -ArgumentList "-p `"PowerShell`" $exe -NoExit -EncodedCommand $encoded"
+    } else {
+        Start-Process $exe -Verb RunAs -ArgumentList "-NoExit", "-EncodedCommand", $encoded
+    }
 }
 
 # ==============================================================================
@@ -114,6 +128,13 @@ function termux {
     $targetIP = if ($EndIP -match "\.") { $EndIP } else { $BaseIP + $EndIP }
     Write-Host " Connecting to Termux at $targetIP..." -ForegroundColor Cyan
     ssh -p $Port "$User@$targetIP"
+}
+
+function open {
+    param([string]$Path = ".")
+    $resolvedPath = Resolve-Path $Path 
+    Write-Host " Opening: $resolvedPath" -ForegroundColor Cyan
+    explorer.exe $Path
 }
 
 # ==============================================================================
@@ -520,8 +541,10 @@ function info {
 
     Write-Host "`n  [ System & Elevation]" -ForegroundColor Yellow
     Write-Host "   rr       - 󰮯 Re-run last command as Admin"
+    Write-Host "   open     -  Open Current Directory in File Explorer "
     Write-Host "   cleanup  - 󰃢 Run Windows Disk Cleanup"
     Write-Host "   termux   -  Connect to Termux (requires IP/ID)"
+
 
     Write-Host "`n  [󰚰 Updates & Apps]" -ForegroundColor Yellow
     Write-Host "   upall    - 󱑢 Full upgrade (Winget, Store, Windows, Firefox)"
