@@ -480,7 +480,7 @@ function ff {
     if (-not $selection) { return }
 
     if (Test-Path $selection -PathType Container) {
-        Start-Process explorer $selection
+        Set-Location $selection
     } else {
         Start-Process $selection
     }
@@ -530,7 +530,7 @@ function pirith {
 # ==============================================================================
 # 9. NETWORK
 # ==============================================================================
-function wg-socks { & "C:\Program Files\wireproxy\wg-socks.ps1" @args }
+function wg-socks { & "$RepoPath\scripts\wg-socks.ps1" @args }
 
 # ==============================================================================
 # 10. INFO & DOCUMENTATION

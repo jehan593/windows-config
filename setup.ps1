@@ -27,7 +27,6 @@ if (-not (Get-Command choco -ErrorAction SilentlyContinue)) {
     Set-ExecutionPolicy Bypass -Scope Process -Force
     [System.Net.ServicePointManager]::SecurityProtocol = [System.Net.ServicePointManager]::SecurityProtocol -bor 3072
     Invoke-RestMethod https://community.chocolatey.org/install.ps1 | Invoke-Expression
-    # Refresh PATH so choco is available immediately
     $env:Path = [System.Environment]::GetEnvironmentVariable("Path", "Machine") + ";" + [System.Environment]::GetEnvironmentVariable("Path", "User")
     Write-Host "Chocolatey installed." -ForegroundColor Green
 } else {
@@ -57,7 +56,7 @@ foreach ($app in $apps) {
     }
 }
 
-# D. Vim Configuration (Link _vimrc)
+# D. Vim Configuration
 Write-Host "`nLinking Vim Configuration..." -ForegroundColor Cyan
 $RepoVimrc = Join-Path $PSScriptRoot "_vimrc"
 $HomeVimrc = Join-Path $HOME "_vimrc"
@@ -70,43 +69,34 @@ if (Test-Path $RepoVimrc) {
     Write-Host "_vimrc not found in repo." -ForegroundColor Red
 }
 
-# D.2 Vim Color Scheme (Nord)
-Write-Host "`nInstalling Vim Color Scheme..." -ForegroundColor Cyan
+# D.2 Vim Nord Color Scheme
+Write-Host "`nInstalling Vim Nord Color Scheme..." -ForegroundColor Cyan
 $VimColorsDir = Join-Path $HOME "vimfiles\colors"
-if (!(Test-Path $VimColorsDir)) {
-    New-Item -ItemType Directory -Path $VimColorsDir -Force | Out-Null
-}
-
-$NordUrl = "https://raw.githubusercontent.com/nordtheme/vim/main/colors/nord.vim"
-$NordPath = Join-Path $VimColorsDir "nord.vim"
+if (!(Test-Path $VimColorsDir)) { New-Item -ItemType Directory -Path $VimColorsDir -Force | Out-Null }
 
 try {
-    Invoke-WebRequest -Uri $NordUrl -OutFile $NordPath -UseBasicParsing -ErrorAction Stop
-    Write-Host "Downloaded Nord theme to: $NordPath" -ForegroundColor Green
+    Invoke-WebRequest -Uri "https://raw.githubusercontent.com/nordtheme/vim/main/colors/nord.vim" -OutFile (Join-Path $VimColorsDir "nord.vim") -UseBasicParsing -ErrorAction Stop
+    Write-Host "Nord theme downloaded." -ForegroundColor Green
 } catch {
     Write-Host "Failed to download Nord theme: $_" -ForegroundColor Red
 }
 
-# E. Install Martian Mono Nerd Font
+# E. Martian Mono Nerd Font
 Write-Host "`nInstalling Martian Mono Nerd Font..." -ForegroundColor Cyan
 if (!(Get-ChildItem "C:\Windows\Fonts" | Where-Object { $_.Name -like "*Martian*Nerd*" })) {
-    $fontName = "MartianMono"
-    $fontUrl = "https://github.com/ryanoasis/nerd-fonts/releases/latest/download/$fontName.zip"
     $tempZip = "$env:TEMP\fonts.zip"
     $tempFolder = "$env:TEMP\MartianMonoFont"
     try {
-        Invoke-WebRequest -Uri $fontUrl -OutFile $tempZip -UseBasicParsing -ErrorAction Stop
+        Invoke-WebRequest -Uri "https://github.com/ryanoasis/nerd-fonts/releases/latest/download/MartianMono.zip" -OutFile $tempZip -UseBasicParsing -ErrorAction Stop
         if (!(Test-Path $tempFolder)) { New-Item -ItemType Directory -Path $tempFolder }
         Expand-Archive -Path $tempZip -DestinationPath $tempFolder -Force
 
-        $fontFiles = Get-ChildItem -Path $tempFolder -Include "*.ttf", "*.otf" -Recurse
-        foreach ($file in $fontFiles) {
+        foreach ($file in (Get-ChildItem -Path $tempFolder -Include "*.ttf", "*.otf" -Recurse)) {
             $targetPath = Join-Path "C:\Windows\Fonts" $file.Name
             try {
                 if (!(Test-Path $targetPath)) {
                     Copy-Item $file.FullName $targetPath -Force
-                    $registryPath = "HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Fonts"
-                    New-ItemProperty -Path $registryPath -Name $file.Name -Value $file.Name -PropertyType String -Force | Out-Null
+                    New-ItemProperty -Path "HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Fonts" -Name $file.Name -Value $file.Name -PropertyType String -Force | Out-Null
                 }
             } catch { Write-Host "Could not install $($file.Name)" -ForegroundColor Gray }
         }
@@ -121,7 +111,7 @@ if (!(Get-ChildItem "C:\Windows\Fonts" | Where-Object { $_.Name -like "*Martian*
 }
 
 # F. PowerShell Profile Linking
-Write-Host "`nLinking Profile Scripts..." -ForegroundColor Cyan
+Write-Host "`nLinking PowerShell Profile..." -ForegroundColor Cyan
 $RepoProfile = Join-Path $PSScriptRoot "Microsoft.PowerShell_profile.ps1"
 $Profiles = @(
     "$HOME\Documents\WindowsPowerShell\Microsoft.PowerShell_profile.ps1",
@@ -145,15 +135,13 @@ foreach ($Path in $Profiles) {
 
 # G. Windows Terminal Nord Theme
 Write-Host "`nInstalling Windows Terminal Nord Theme..." -ForegroundColor Cyan
-$wtFragmentPath = "$Env:LocalAppData\Microsoft\Windows Terminal\Fragments\nord"
 $nordJson = Join-Path $PSScriptRoot "files\nord.json"
 
 if (-not (Test-Path $nordJson)) {
-    Write-Host "nord.json not found in repo folder." -ForegroundColor Red
+    Write-Host "nord.json not found in repo." -ForegroundColor Red
 } else {
-    if (!(Test-Path $wtFragmentPath)) {
-        New-Item -ItemType Directory -Path $wtFragmentPath -Force | Out-Null
-    }
+    $wtFragmentPath = "$Env:LocalAppData\Microsoft\Windows Terminal\Fragments\nord"
+    if (!(Test-Path $wtFragmentPath)) { New-Item -ItemType Directory -Path $wtFragmentPath -Force | Out-Null }
     Copy-Item -Path $nordJson -Destination $wtFragmentPath -Force
     Write-Host "Nord theme installed. Restart Windows Terminal and select it in your profile." -ForegroundColor Green
 }
@@ -166,36 +154,37 @@ $wallpaperDst = Join-Path ([Environment]::GetFolderPath("MyPictures")) "Wallpape
 if (-not (Test-Path $wallpaperSrc)) {
     Write-Host "Wallpaper not found in repo." -ForegroundColor Red
 } else {
-    if (!(Test-Path $wallpaperDst)) {
-        New-Item -ItemType Directory -Path $wallpaperDst -Force | Out-Null
-    }
+    if (!(Test-Path $wallpaperDst)) { New-Item -ItemType Directory -Path $wallpaperDst -Force | Out-Null }
     Copy-Item -Path $wallpaperSrc -Destination $wallpaperDst -Force
     Write-Host "Wallpaper copied to: $wallpaperDst" -ForegroundColor Green
 }
 
-# I. Install wireproxy
-Write-Host "`nInstalling wireproxy..." -ForegroundColor Cyan
-$wireproxyDir = "C:\Program Files\wireproxy"
-$wireproxyExe = "$wireproxyDir\wireproxy.exe"
+# I. wg-socks Setup
+Write-Host "`nSetting up wg-socks..." -ForegroundColor Cyan
+$configScriptsDir = "$env:USERPROFILE\windows-config-scripts"
+$wgsocksDir = "$configScriptsDir\wg-socks"
+$wgsocksConf = "$wgsocksDir\configs"
+$wireproxyExe = "$wgsocksDir\wireproxy.exe"
 
+# Create folder structure
+if (!(Test-Path $configScriptsDir)) { New-Item -ItemType Directory -Path $configScriptsDir -Force | Out-Null }
+if (!(Test-Path $wgsocksDir)) { New-Item -ItemType Directory -Path $wgsocksDir -Force | Out-Null }
+if (!(Test-Path $wgsocksConf)) { New-Item -ItemType Directory -Path $wgsocksConf -Force | Out-Null }
+Write-Host "Folder structure created." -ForegroundColor Green
+
+# Install wireproxy
 if (-not (Test-Path $wireproxyExe)) {
-    $wireproxyUrl = "https://github.com/whyvl/wireproxy/releases/download/v1.0.9/wireproxy_windows_amd64.tar.gz"
     $tempFile = "$env:TEMP\wireproxy.tar.gz"
     $tempFolder = "$env:TEMP\wireproxy"
     try {
-        Invoke-WebRequest -Uri $wireproxyUrl -OutFile $tempFile -UseBasicParsing -ErrorAction Stop
+        Invoke-WebRequest -Uri "https://github.com/whyvl/wireproxy/releases/download/v1.0.9/wireproxy_windows_amd64.tar.gz" -OutFile $tempFile -UseBasicParsing -ErrorAction Stop
         if (!(Test-Path $tempFolder)) { New-Item -ItemType Directory -Path $tempFolder -Force | Out-Null }
         tar -xzf $tempFile -C $tempFolder
         $innerArchive = Get-ChildItem -Path $tempFolder -Recurse | Where-Object { $_.Extension -match "\.gz|\.tar" } | Select-Object -First 1
         if ($innerArchive) { tar -xzf $innerArchive.FullName -C $tempFolder }
         $wireproxyBin = Get-ChildItem -Path $tempFolder -Recurse -Filter "wireproxy.exe" | Select-Object -First 1
         if ($wireproxyBin) {
-            if (!(Test-Path $wireproxyDir)) { New-Item -ItemType Directory -Path $wireproxyDir -Force | Out-Null }
             Copy-Item $wireproxyBin.FullName $wireproxyExe -Force
-            $currentPath = [Environment]::GetEnvironmentVariable("PATH", "Machine")
-            if ($currentPath -notlike "*$wireproxyDir*") {
-                [Environment]::SetEnvironmentVariable("PATH", "$currentPath;$wireproxyDir", "Machine")
-            }
             Write-Host "wireproxy installed." -ForegroundColor Green
         } else {
             Write-Host "Could not find wireproxy.exe after extraction." -ForegroundColor Red
@@ -209,17 +198,36 @@ if (-not (Test-Path $wireproxyExe)) {
     Write-Host "wireproxy already installed." -ForegroundColor Green
 }
 
-# Link wg-socks script
-Write-Host "`nLinking wg-socks script..." -ForegroundColor Cyan
-$wgSocksScript = Join-Path $PSScriptRoot "scripts\wg-socks.ps1"
-$wgSocksDest = "C:\Program Files\wireproxy\wg-socks.ps1"
+# J. mpv Configuration
+Write-Host "`nLinking mpv Configuration..." -ForegroundColor Cyan
+$mpvConfigDir = "$env:APPDATA\mpv"
+$repoMpvDir = Join-Path $PSScriptRoot "mpv"
 
-if (Test-Path $wgSocksScript) {
-    if (Test-Path $wgSocksDest) { Remove-Item $wgSocksDest -Force }
-    New-Item -ItemType SymbolicLink -Path $wgSocksDest -Value $wgSocksScript -Force
-    Write-Host "wg-socks script linked." -ForegroundColor Green
+if (-not (Test-Path $repoMpvDir)) {
+    Write-Host "mpv config folder not found in repo." -ForegroundColor Red
 } else {
-    Write-Host "wg-socks.ps1 not found in repo." -ForegroundColor Red
+    if (!(Test-Path $mpvConfigDir)) { New-Item -ItemType Directory -Path $mpvConfigDir -Force | Out-Null }
+
+    foreach ($file in @("mpv.conf", "input.conf")) {
+        $src = Join-Path $repoMpvDir $file
+        $dst = Join-Path $mpvConfigDir $file
+
+        if (-not (Test-Path $src)) {
+            Write-Host "$file not found in repo." -ForegroundColor Red
+            continue
+        }
+
+        if (Test-Path $dst) {
+            $existing = Get-Item $dst -Force
+            if ($existing.LinkType -eq "SymbolicLink" -and $existing.Target -eq $src) {
+                Write-Host "Already linked: $dst" -ForegroundColor Gray
+                continue
+            }
+            Remove-Item $dst -Force
+        }
+        New-Item -ItemType SymbolicLink -Path $dst -Value $src -Force | Out-Null
+        Write-Host "Linked: $dst" -ForegroundColor Green
+    }
 }
 
 # ==============================================================================

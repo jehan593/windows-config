@@ -1,7 +1,7 @@
 param([string]$Action, [string]$Arg1, [string]$Arg2)
 
-$binaryPath = "C:\Program Files\wireproxy\wireproxy.exe"
-$confDir = "C:\ProgramData\wireproxy"
+$binaryPath = "$env:USERPROFILE\windows-config-scripts\wg-socks\wireproxy.exe"
+$confDir = "$env:USERPROFILE\windows-config-scripts\wg-socks\configs"
 
 function Is-Admin {
     $p = New-Object Security.Principal.WindowsPrincipal([Security.Principal.WindowsIdentity]::GetCurrent())

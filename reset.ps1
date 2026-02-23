@@ -56,7 +56,7 @@ if (Test-Path $HomeVimrc) {
     Write-Host "Not found, skipping: $HomeVimrc" -ForegroundColor Gray
 }
 
-# C. Remove Vim Color Scheme
+# C. Remove Vim Nord Color Scheme
 Write-Host "`nRemoving Vim Nord Theme..." -ForegroundColor Yellow
 $NordPath = Join-Path $HOME "vimfiles\colors\nord.vim"
 if (Test-Path $NordPath) {
@@ -97,21 +97,19 @@ if (Test-Path $wallpaperDst) {
 }
 
 # G.0 Backup WireGuard Configs
-$wireproxyConf = "C:\ProgramData\wireproxy"
-if (Test-Path $wireproxyConf) {
-    $backupDir = Join-Path ([Environment]::GetFolderPath("MyDocuments")) "wireproxy-backup"
+$wgsocksConf = "$env:USERPROFILE\windows-config-scripts\wg-socks\configs"
+if (Test-Path $wgsocksConf) {
+    $backupDir = Join-Path ([Environment]::GetFolderPath("Desktop")) "wg-socks-backup"
     Write-Host "`nBacking up WireGuard configs to: $backupDir" -ForegroundColor Cyan
     if (!(Test-Path $backupDir)) { New-Item -ItemType Directory -Path $backupDir -Force | Out-Null }
-    Copy-Item -Path "$wireproxyConf\*.conf" -Destination $backupDir -Force
+    Copy-Item -Path "$wgsocksConf\*.conf" -Destination $backupDir -Force
     Write-Host "Configs backed up." -ForegroundColor Green
 } else {
     Write-Host "`nNo WireGuard configs found to backup." -ForegroundColor Gray
 }
 
-# G. Remove wireproxy and wg-socks
-Write-Host "`nRemoving wireproxy and wg-socks..." -ForegroundColor Yellow
-
-# Stop and remove all wg-socks services first
+# G. Stop and Remove wg-socks Services
+Write-Host "`nStopping and removing wg-socks services..." -ForegroundColor Yellow
 $services = Get-Service -ErrorAction SilentlyContinue | Where-Object { $_.Name -like "*-wgsocks" }
 foreach ($svc in $services) {
     Write-Host "  Removing service: $($svc.Name)" -ForegroundColor Gray
@@ -119,33 +117,17 @@ foreach ($svc in $services) {
     nssm remove $svc.Name confirm 2>&1 | Out-Null
 }
 
-# Remove wireproxy directory
-$wireproxyDir = "C:\Program Files\wireproxy"
-if (Test-Path $wireproxyDir) {
-    Remove-Item $wireproxyDir -Recurse -Force
-    Write-Host "Removed: $wireproxyDir" -ForegroundColor Green
+# H. Remove windows-config-scripts
+Write-Host "`nRemoving windows-config-scripts..." -ForegroundColor Yellow
+$configScriptsDir = "$env:USERPROFILE\windows-config-scripts"
+if (Test-Path $configScriptsDir) {
+    Remove-Item $configScriptsDir -Recurse -Force
+    Write-Host "Removed: $configScriptsDir" -ForegroundColor Green
 } else {
     Write-Host "Not found, skipping." -ForegroundColor Gray
 }
 
-# Remove wireproxy config directory
-$wireproxyConf = "C:\ProgramData\wireproxy"
-if (Test-Path $wireproxyConf) {
-    Remove-Item $wireproxyConf -Recurse -Force
-    Write-Host "Removed: $wireproxyConf" -ForegroundColor Green
-} else {
-    Write-Host "Not found, skipping." -ForegroundColor Gray
-}
-
-# Remove wireproxy from PATH
-$currentPath = [Environment]::GetEnvironmentVariable("PATH", "Machine")
-if ($currentPath -like "*$wireproxyDir*") {
-    $newPath = ($currentPath -split ';' | Where-Object { $_ -ne $wireproxyDir }) -join ';'
-    [Environment]::SetEnvironmentVariable("PATH", $newPath, "Machine")
-    Write-Host "Removed wireproxy from PATH." -ForegroundColor Green
-}
-
-# H. Remove Init Caches
+# I. Remove Init Caches
 Write-Host "`nRemoving Init Caches..." -ForegroundColor Yellow
 @("$env:TEMP\starship_init.ps1", "$env:TEMP\zoxide_init.ps1") | ForEach-Object {
     if (Test-Path $_) {
@@ -153,6 +135,24 @@ Write-Host "`nRemoving Init Caches..." -ForegroundColor Yellow
         Write-Host "Removed: $_" -ForegroundColor Green
     } else {
         Write-Host "Not found, skipping: $_" -ForegroundColor Gray
+    }
+}
+
+# J. Remove mpv Configuration Symlinks
+Write-Host "`nRemoving mpv Configuration Symlinks..." -ForegroundColor Yellow
+$mpvConfigDir = "$env:APPDATA\mpv"
+foreach ($file in @("mpv.conf", "input.conf")) {
+    $dst = Join-Path $mpvConfigDir $file
+    if (Test-Path $dst) {
+        $existing = Get-Item $dst -Force
+        if ($existing.LinkType -eq "SymbolicLink") {
+            Remove-Item $dst -Force
+            Write-Host "Removed symlink: $dst" -ForegroundColor Green
+        } else {
+            Write-Host "Skipping (not a symlink): $dst" -ForegroundColor Gray
+        }
+    } else {
+        Write-Host "Not found, skipping: $dst" -ForegroundColor Gray
     }
 }
 
@@ -171,7 +171,6 @@ if ($response -eq 'y') {
         Write-Host "Done." -ForegroundColor Green
     }
 
-    # Uninstall mpv via Chocolatey
     if (Get-Command choco -ErrorAction SilentlyContinue) {
         Write-Host "Uninstalling mpv..." -ForegroundColor Yellow
         choco uninstall mpv -y
@@ -185,7 +184,7 @@ if ($response -eq 'y') {
 # 4. FINALIZATION
 # ==============================================================================
 Write-Host "`n--- Unsetup Complete ---" -ForegroundColor Magenta
-Write-Host "Restart your Terminal for all changes to take effect." -ForegroundColor Yellow
-Write-Host "NOTE: If your Windows Terminal profile uses the Nord color scheme," -ForegroundColor Yellow
-Write-Host "      you will need to change it in Settings > Profiles > Color Scheme." -ForegroundColor Yellow
+Write-Host "`n NOTE: Change your Windows Terminal color scheme from Nord to a built-in one." -ForegroundColor Yellow
+Write-Host "        Settings > Profiles > Color Scheme" -ForegroundColor Gray
+Write-Host "`nRestart your Terminal for all changes to take effect." -ForegroundColor Yellow
 Pause
