@@ -58,7 +58,7 @@ foreach ($app in $apps) {
 
 # D. Vim Configuration
 Write-Host "`nLinking Vim Configuration..." -ForegroundColor Cyan
-$RepoVimrc = Join-Path $PSScriptRoot "_vimrc"
+$RepoVimrc = Join-Path $PSScriptRoot "configs\_vimrc"
 $HomeVimrc = Join-Path $HOME "_vimrc"
 
 if (Test-Path $RepoVimrc) {
@@ -112,7 +112,7 @@ if (!(Get-ChildItem "C:\Windows\Fonts" | Where-Object { $_.Name -like "*Martian*
 
 # F. PowerShell Profile Linking
 Write-Host "`nLinking PowerShell Profile..." -ForegroundColor Cyan
-$RepoProfile = Join-Path $PSScriptRoot "Microsoft.PowerShell_profile.ps1"
+$RepoProfile = Join-Path $PSScriptRoot "profile\Microsoft.PowerShell_profile.ps1"
 $Profiles = @(
     "$HOME\Documents\WindowsPowerShell\Microsoft.PowerShell_profile.ps1",
     "$HOME\Documents\PowerShell\Microsoft.PowerShell_profile.ps1"
@@ -135,7 +135,7 @@ foreach ($Path in $Profiles) {
 
 # G. Windows Terminal Nord Theme
 Write-Host "`nInstalling Windows Terminal Nord Theme..." -ForegroundColor Cyan
-$nordJson = Join-Path $PSScriptRoot "files\nord.json"
+$nordJson = Join-Path $PSScriptRoot "assets\nord.json"
 
 if (-not (Test-Path $nordJson)) {
     Write-Host "nord.json not found in repo." -ForegroundColor Red
@@ -148,7 +148,7 @@ if (-not (Test-Path $nordJson)) {
 
 # H. Wallpapers
 Write-Host "`nCopying Wallpapers..." -ForegroundColor Cyan
-$wallpaperSrc = Join-Path $PSScriptRoot "files\wallpaper.jpg"
+$wallpaperSrc = Join-Path $PSScriptRoot "assets\wallpaper.jpg"
 $wallpaperDst = Join-Path ([Environment]::GetFolderPath("MyPictures")) "Wallpapers"
 
 if (-not (Test-Path $wallpaperSrc)) {
@@ -201,7 +201,7 @@ if (-not (Test-Path $wireproxyExe)) {
 # J. mpv Configuration
 Write-Host "`nLinking mpv Configuration..." -ForegroundColor Cyan
 $mpvConfigDir = "$env:APPDATA\mpv"
-$repoMpvDir = Join-Path $PSScriptRoot "mpv"
+$repoMpvDir = Join-Path $PSScriptRoot "configs\mpv"
 
 if (-not (Test-Path $repoMpvDir)) {
     Write-Host "mpv config folder not found in repo." -ForegroundColor Red

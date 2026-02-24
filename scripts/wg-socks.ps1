@@ -28,10 +28,6 @@ function Install-Socks {
         return
     }
 
-    if (-not (Get-Command nssm -ErrorAction SilentlyContinue)) {
-        Write-Host " nssm not found. Please install it (winget install nssm)." -ForegroundColor Red; return
-    }
-
     if (-not $ConfigPath -or -not $Port) {
         Write-Host "󰋖 Usage: wg-socks install <config_path> <port>" -ForegroundColor Red; return
     }
@@ -111,10 +107,6 @@ function Remove-Socks {
     if (-not $Name) { Write-Host "󰋖 Usage: wg-socks remove <name>" -ForegroundColor Red; return }
 
     if (-not (Is-Admin)) { Elevate-Action "remove $Name"; return }
-
-    if (-not (Get-Command nssm -ErrorAction SilentlyContinue)) {
-        Write-Host " nssm not found. Please install it (winget install nssm)." -ForegroundColor Red; return
-    }
 
     $confFile = "$confDir\$($Name -replace '-wgsocks','').conf"
     Write-Host "󰗨 Stopping and removing $Name..." -ForegroundColor Yellow
