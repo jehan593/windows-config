@@ -40,9 +40,6 @@ function reload {
 }
 
 function conf {
-    if (-not (Test-Path $RepoPath)) {
-        Write-Host " Config folder not found: $RepoPath" -ForegroundColor Red; return
-    }
     Write-Host "󰨞 Opening Configs..." -ForegroundColor Cyan
     codium $RepoPath
 }
@@ -245,15 +242,8 @@ function ups {
 
 function upf {
     $url = "https://raw.githubusercontent.com/yokoffing/Betterfox/main/user.js"
+    $overridesPath = "$RepoPath\configs\firefox\user-overrides.js"
     $profilesPath = "$env:APPDATA\Mozilla\Firefox\Profiles"
-    $prefs = @(
-        '',
-        '// --- Custom Overrides ---',
-        'user_pref("browser.search.suggest.enabled", true);',
-        'user_pref("browser.contentblocking.category", "");',
-        'user_pref("privacy.globalprivacycontrol.enabled", false);',
-        'user_pref("gfx.webrender.software", true);'
-    )
 
     if (-not (Test-Path $profilesPath)) {
         Write-Host " Firefox profiles not found." -ForegroundColor Red; return
@@ -269,7 +259,10 @@ function upf {
         Write-Host "󰈹 Updating profile: $($prof.Name)..." -ForegroundColor Cyan
         try {
             Invoke-WebRequest -Uri $url -OutFile $userFilePath -UseBasicParsing -ErrorAction Stop
-            Add-Content -Path $userFilePath -Value ($prefs -join "`n")
+            if (Test-Path $overridesPath) {
+                Add-Content -Path $userFilePath -Value "`n// --- Custom Overrides ---"
+                Get-Content $overridesPath | Add-Content -Path $userFilePath
+            }
             Write-Host " Successfully updated: $userFilePath" -ForegroundColor Green
         } catch {
             Write-Host " Failed to update $($prof.Name): $($_.Exception.Message)" -ForegroundColor Red
@@ -278,9 +271,6 @@ function upf {
 }
 
 function upc {
-    if (-not (Test-Path $RepoPath)) {
-        Write-Host " Config folder not found: $RepoPath" -ForegroundColor Red; return
-    }
     Write-Host " Checking for config updates..." -ForegroundColor Cyan
     git -C $RepoPath pull --rebase --autostash
     if ($LASTEXITCODE -eq 0) {
@@ -299,8 +289,6 @@ function inst {
         Where-Object { $_ -match '^\S+' -and $_ -notmatch 'Name|---' } |
         fzf --exact --multi --reverse --header "󰏓 Select apps to INSTALL (Tab to multi-select)"
 
-    if (-not $selected) { Write-Host "󰜺 No apps selected." -ForegroundColor Gray; return }
-
     foreach ($item in $selected) {
         $id = ($item -split '\s{2,}')[1]
         if ($id) {
@@ -314,8 +302,6 @@ function uninst {
     $selected = winget list | Out-String -Stream |
         Where-Object { $_ -match '^\S+' -and $_ -notmatch 'Name|---' } |
         fzf --exact --multi --reverse --header "󰏔 Select apps to UNINSTALL (Tab to multi-select)"
-
-    if (-not $selected) { Write-Host "󰜺 No apps selected." -ForegroundColor Gray; return }
 
     foreach ($item in $selected) {
         $name = ($item -split '\s{2,}', 2)[0]
@@ -346,7 +332,6 @@ function up {
     if (-not $list) { Write-Host " No updates found in the list." -ForegroundColor Green; return }
 
     $selected = $list | fzf --exact --multi --reverse --header "󰚰 Select apps to UPDATE"
-    if (-not $selected) { Write-Host "󰜺 No apps selected." -ForegroundColor Gray; return }
 
     foreach ($line in $selected) {
         if ($line.Length -ge $versionStart) {
@@ -363,8 +348,6 @@ function la {
     $selected = winget list | Out-String -Stream |
         Where-Object { $_ -match '^\S+' -and $_ -notmatch 'Name|---' } |
         fzf --exact --reverse --header " Search installed apps"
-
-    if (-not $selected) { Write-Host "󰜺 No app selected." -ForegroundColor Gray; return }
 
     $id = ($selected -split '\s{2,}')[1]
     if ($id) {
@@ -405,8 +388,6 @@ function ff {
 
     $selection = fd . $SearchPath --hidden --color never --exclude "Windows" |
         fzf --exact --layout=reverse --height=40% --header " Searching: $SearchPath"
-
-    if (-not $selection) { return }
 
     if (Test-Path $selection -PathType Container) {
         Set-Location $selection
