@@ -285,29 +285,45 @@ function upc {
 # 6. INTERACTIVE TOOLS (FZF) & KEYBINDINGS
 # ==============================================================================
 function inst {
-    $selected = winget search -q "." | Out-String -Stream |
-        Where-Object { $_ -match '^\S+' -and $_ -notmatch 'Name|---' } |
-        fzf --exact --multi --reverse --header "󰏓 Select apps to INSTALL (Tab to multi-select)"
+    param([string[]]$Id)
+    if ($Id) {
+        foreach ($i in $Id) {
+            Write-Host " Installing: $i" -ForegroundColor Green
+            winget install $i
+        }
+    } else {
+        $selected = winget search -q "." | Out-String -Stream |
+            Where-Object { $_ -match '^\S+' -and $_ -notmatch 'Name|---' } |
+            fzf --exact --multi --reverse --header "󰏓 Select apps to INSTALL (Tab to multi-select)"
 
-    foreach ($item in $selected) {
-        $id = ($item -split '\s{2,}')[1]
-        if ($id) {
-            Write-Host " Installing: $id" -ForegroundColor Green
-            winget install --id $id.Trim() --exact
+        foreach ($item in $selected) {
+            $id = ($item -split '\s{2,}')[1]
+            if ($id) {
+                Write-Host " Installing: $id" -ForegroundColor Green
+                winget install --id $id.Trim() --exact
+            }
         }
     }
 }
 
 function uninst {
-    $selected = winget list | Out-String -Stream |
-        Where-Object { $_ -match '^\S+' -and $_ -notmatch 'Name|---' } |
-        fzf --exact --multi --reverse --header "󰏔 Select apps to UNINSTALL (Tab to multi-select)"
+    param([string[]]$Id)
+    if ($Id) {
+        foreach ($i in $Id) {
+            Write-Host "󰗨 Removing: $i" -ForegroundColor Cyan
+            winget uninstall $i
+        }
+    } else {
+        $selected = winget list | Out-String -Stream |
+            Where-Object { $_ -match '^\S+' -and $_ -notmatch 'Name|---' } |
+            fzf --exact --multi --reverse --header "󰏔 Select apps to UNINSTALL (Tab to multi-select)"
 
-    foreach ($item in $selected) {
-        $name = ($item -split '\s{2,}', 2)[0]
-        if ($name) {
-            Write-Host "󰗨 Removing: $name" -ForegroundColor Cyan
-            winget uninstall --name "$($name.Trim())" --exact
+        foreach ($item in $selected) {
+            $name = ($item -split '\s{2,}', 2)[0]
+            if ($name) {
+                Write-Host "󰗨 Removing: $name" -ForegroundColor Cyan
+                winget uninstall --name "$($name.Trim())" --exact
+            }
         }
     }
 }
