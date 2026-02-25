@@ -402,13 +402,13 @@ function ff {
 function ctt {
     if (-not (Test-Admin)) { Invoke-Elevated -Command "ctt"; return }
     Write-Host "󱓞 Launching Chris Titus Tech Toolbox..." -ForegroundColor Cyan
-    irm https://christitus.com/win | iex
+    Invoke-RestMethod https://christitus.com/win | Invoke-Expression
 }
 
 function massgrave {
     if (-not (Test-Admin)) { Invoke-Elevated -Command "massgrave"; return }
     Write-Host "󰄲 Launching Massgrave Activation Tool..." -ForegroundColor Cyan
-    irm https://get.activated.win | iex
+    Invoke-RestMethod https://get.activated.win | Invoke-Expression
 }
 
 # ==============================================================================
@@ -434,7 +434,8 @@ function pirith {
 # ==============================================================================
 # 9. NETWORK
 # ==============================================================================
-function wg-socks { & "$RepoPath\scripts\wg-socks.ps1" @args }
+function wgsocks { & "$RepoPath\scripts\wgsocks.ps1" @args }
+function warp { & "$RepoPath\scripts\warp.ps1" @args }
 
 # ==============================================================================
 # 10. INFO & DOCUMENTATION
@@ -477,7 +478,8 @@ function info {
     Write-Host "   massgrave- 󰄲 Launch Massgrave Activation Tool"
 
     Write-Host "`n  [󰒍 Network]" -ForegroundColor Yellow
-    Write-Host "   wg-socks - 󰒄 Manage WireGuard SOCKS5 tunnels"
+    Write-Host "   wgsocks - 󰒄 Manage WireGuard SOCKS5 tunnels"
+    Write-Host "   warp     - 󰖂 Manage WARP tunnel (on/off/rotate/status)"
     Write-Host "---------------------------`n"
 }
 

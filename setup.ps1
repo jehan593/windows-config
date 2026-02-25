@@ -35,7 +35,7 @@ if (-not (Get-Command choco -ErrorAction SilentlyContinue)) {
 
 # B. Winget Apps
 Write-Host "`nInstalling Dependencies via Winget..." -ForegroundColor Cyan
-$apps = @("Starship.Starship", "junegunn.fzf", "Git.Git", "ajeetdsouza.zoxide", "vim.vim", "Microsoft.PowerShell", "sharkdp.fd", "NSSM.NSSM")
+$apps = @("Starship.Starship", "junegunn.fzf", "Git.Git", "ajeetdsouza.zoxide", "vim.vim", "Microsoft.PowerShell", "sharkdp.fd", "NSSM.NSSM", "WireGuard.WireGuard", "ViRb3.wgcf")
 
 foreach ($app in $apps) {
     $installed = winget list --id $app --exact --source winget 2>&1 | Out-String
@@ -113,6 +113,20 @@ $repoMpvDir = Join-Path $PSScriptRoot "configs\mpv"
 if (Test-Path $mpvConfigDir) { Remove-Item $mpvConfigDir -Recurse -Force }
 New-Item -ItemType SymbolicLink -Path $mpvConfigDir -Value $repoMpvDir -Force | Out-Null
 Write-Host "Linked: $mpvConfigDir" -ForegroundColor Green
+
+# G. Brave Policies
+Write-Host "`nApplying Brave Policies..." -ForegroundColor Cyan
+$bravePolicySrc = Join-Path $PSScriptRoot "configs\brave\policies.json"
+
+if (Test-Path $bravePolicySrc) {
+    $policies = Get-Content $bravePolicySrc | ConvertFrom-Json
+    $regPath = "HKLM:\SOFTWARE\Policies\BraveSoftware\Brave"
+    if (!(Test-Path $regPath)) { New-Item -Path $regPath -Force | Out-Null }
+    foreach ($key in $policies.PSObject.Properties) {
+        New-ItemProperty -Path $regPath -Name $key.Name -Value $key.Value -PropertyType DWORD -Force | Out-Null
+    }
+    Write-Host "Brave policies applied via registry." -ForegroundColor Green
+}
 
 # ==============================================================================
 # 4. ASSETS & THEMING

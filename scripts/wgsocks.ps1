@@ -3,12 +3,12 @@ param([string]$Action, [string]$Arg1, [string]$Arg2)
 $binaryPath = "$env:USERPROFILE\windows-config-scripts\wg-socks\wireproxy.exe"
 $confDir = "$env:USERPROFILE\windows-config-scripts\wg-socks\configs"
 
-function Is-Admin {
+function _IsAdmin {
     $p = New-Object Security.Principal.WindowsPrincipal([Security.Principal.WindowsIdentity]::GetCurrent())
     return $p.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
 }
 
-function Elevate-Action {
+function _ElevateAction {
     param([string]$Command)
     $exe = if ($PSEdition -eq "Core") { "pwsh" } else { "powershell.exe" }
     $arguments = "-NoExit -NoProfile -ExecutionPolicy Bypass -File `"$PSCommandPath`" $Command"
@@ -16,20 +16,20 @@ function Elevate-Action {
     exit
 }
 
-function Install-Socks {
+function _InstallSocks {
     param([string]$ConfigPath, [string]$Port)
 
-    if (-not (Is-Admin)) {
+    if (-not (_IsAdmin)) {
         $fullPath = Resolve-Path $ConfigPath -ErrorAction SilentlyContinue
         if (-not $fullPath) {
             Write-Host " Error: File not found: $ConfigPath" -ForegroundColor Red; return
         }
-        Elevate-Action "install `"$fullPath`" $Port"
+        _ElevateAction "install `"$fullPath`" $Port"
         return
     }
 
     if (-not $ConfigPath -or -not $Port) {
-        Write-Host "󰋖 Usage: wg-socks install <config_path> <port>" -ForegroundColor Red; return
+        Write-Host "󰋖 Usage: wgsocks install <config_path> <port>" -ForegroundColor Red; return
     }
     if (-not (Test-Path $ConfigPath)) {
         Write-Host " Error: File not found: $ConfigPath" -ForegroundColor Red; return
@@ -60,7 +60,7 @@ function Install-Socks {
     Write-Host " SUCCESS: $serviceName is active on port $Port" -ForegroundColor Green
 }
 
-function List-Socks {
+function _ListSocks {
     $services = Get-Service -ErrorAction SilentlyContinue | Where-Object { $_.Name -like "*-wgsocks" }
     if (-not $services) { Write-Host "󰒄 No tunnels found." -ForegroundColor Gray; return }
 
@@ -80,9 +80,9 @@ function List-Socks {
     Write-Host ""
 }
 
-function Test-Socks {
+function _TestSocks {
     param([string]$Name)
-    if (-not $Name) { Write-Host "󰋖 Usage: wg-socks test <name>" -ForegroundColor Red; return }
+    if (-not $Name) { Write-Host " Usage: wgsocks test <name>" -ForegroundColor Red; return }
 
     $baseName = $Name -replace '-wgsocks', ''
     $confFile = "$confDir\$baseName.conf"
@@ -98,15 +98,15 @@ function Test-Socks {
         $ip = Invoke-RestMethod -Uri "https://ifconfig.me/ip" -Proxy "socks5://127.0.0.1:$port" -ErrorAction Stop
         Write-Host " Proxy Working! IP: $ip" -ForegroundColor Green
     } catch {
-        Write-Host " Test Failed. Is the service running? Check with: wg-socks list" -ForegroundColor Red
+        Write-Host " Test Failed. Is the service running? Check with: wgsocks list" -ForegroundColor Red
     }
 }
 
-function Remove-Socks {
+function _RemoveSocks {
     param([string]$Name)
-    if (-not $Name) { Write-Host "󰋖 Usage: wg-socks remove <name>" -ForegroundColor Red; return }
+    if (-not $Name) { Write-Host "󰋖 Usage: wgsocks remove <name>" -ForegroundColor Red; return }
 
-    if (-not (Is-Admin)) { Elevate-Action "remove $Name"; return }
+    if (-not (_IsAdmin)) { _ElevateAction "remove $Name"; return }
 
     $confFile = "$confDir\$($Name -replace '-wgsocks','').conf"
     Write-Host "󰗨 Stopping and removing $Name..." -ForegroundColor Yellow
@@ -116,23 +116,22 @@ function Remove-Socks {
     Write-Host " Removed successfully." -ForegroundColor Green
 }
 
-# Only check wireproxy at the top since it's relevant to all actions
 if (-not (Test-Path $binaryPath)) {
     Write-Host " wireproxy.exe not found at: $binaryPath" -ForegroundColor Red; exit
 }
 
 switch ($Action) {
-    "install" { Install-Socks $Arg1 $Arg2 }
-    "list"    { List-Socks }
-    "remove"  { Remove-Socks $Arg1 }
-    "test"    { Test-Socks $Arg1 }
+    "install" { _InstallSocks $Arg1 $Arg2 }
+    "list"    { _ListSocks }
+    "remove"  { _RemoveSocks $Arg1 }
+    "test"    { _TestSocks $Arg1 }
     default {
         Write-Host "`n 󰒄 WireGuard SOCKS5 Manager" -ForegroundColor Cyan
         Write-Host " ---------------------------------------------------" -ForegroundColor DarkGray
-        Write-Host "  install <path> <port> 󱌣 Create new tunnel service"
-        Write-Host "  list                   List all tunnels"
-        Write-Host "  test <name>           󰒄 Test tunnel connectivity"
-        Write-Host "  remove <name>         󰗨 Remove tunnel service"
+        Write-Host "  wgsocks install <path> <port> 󱌣 Create new tunnel service"
+        Write-Host "  wgsocks list                   List all tunnels"
+        Write-Host "  wgsocks test <name>           󰒄 Test tunnel connectivity"
+        Write-Host "  wgsocks remove <name>         󰗨 Remove tunnel service"
         Write-Host " ---------------------------------------------------`n"
     }
 }

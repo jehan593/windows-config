@@ -87,6 +87,16 @@ if (Test-Path $mpvConfigDir) {
     Write-Host "Not found, skipping." -ForegroundColor Gray
 }
 
+# D. Brave Policies
+Write-Host "`nRemoving Brave Policies..." -ForegroundColor Yellow
+$regPath = "HKLM:\SOFTWARE\Policies\BraveSoftware\Brave"
+if (Test-Path $regPath) {
+    Remove-Item $regPath -Recurse -Force
+    Write-Host "Removed Brave policies from registry." -ForegroundColor Green
+} else {
+    Write-Host "Not found, skipping." -ForegroundColor Gray
+}
+
 # ==============================================================================
 # 3. ASSETS & THEMING
 # ==============================================================================
@@ -153,6 +163,16 @@ Write-Host "`nRemoving Init Caches..." -ForegroundColor Yellow
     } else {
         Write-Host "Not found, skipping: $_" -ForegroundColor Gray
     }
+}
+
+# H. warp
+Write-Host "`nRemoving warp..." -ForegroundColor Yellow
+$svc = Get-Service -Name "WireGuardTunnel`$warp" -ErrorAction SilentlyContinue
+if ($svc) {
+    wireguard /uninstalltunnelservice warp
+    Write-Host "Tunnel removed." -ForegroundColor Green
+} else {
+    Write-Host "Tunnel not running, skipping." -ForegroundColor Gray
 }
 
 # ==============================================================================
