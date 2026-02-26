@@ -16,13 +16,42 @@ if (-not $currentPrincipal.IsInRole([Security.Principal.WindowsBuiltInRole]::Adm
 }
 
 # ==============================================================================
-# 2. DOTFILES & CONFIG LINKING
+# UI HELPERS
+# ==============================================================================
+function _PrintHeader {
+    param([string]$Title)
+    Write-Host ""
+    Write-Host "!!  $Title" -ForegroundColor Red
+    Write-Host "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━" -ForegroundColor DarkBlue
+}
+
+function _PrintFooter {
+    Write-Host "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`n" -ForegroundColor DarkBlue
+}
+
+function _Ok  { param([string]$Msg) Write-Host ("│  [OK]    {0}" -f $Msg) -ForegroundColor Green }
+function _Info { param([string]$Msg) Write-Host ("│  [INFO]  {0}" -f $Msg) -ForegroundColor Blue }
+function _Err  { param([string]$Msg) Write-Host ("│  [ERR]   {0}" -f $Msg) -ForegroundColor Red }
+
+# ==============================================================================
+# 2. PRE-FLIGHT
 # ==============================================================================
 Clear-Host
-Write-Host "--- Starting Unsetup ---" -ForegroundColor Cyan
+Write-Host ""
+Write-Host "┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓" -ForegroundColor Red
+Write-Host "┃         Windows Config Reset                ┃" -ForegroundColor Red
+Write-Host "┃    This will UNDO everything setup!         ┃" -ForegroundColor Yellow
+Write-Host "┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛" -ForegroundColor Red
 
-# A. PowerShell Profile Symlinks
-Write-Host "`nRemoving PowerShell Profile Symlinks..." -ForegroundColor Yellow
+_PrintHeader "Pre-flight"
+$confirm = Read-Host "│  [WARN]  Are you sure you want to reset? (y/N)"
+if ($confirm -notmatch '^[Yy]$') { _Info "Aborted."; _PrintFooter; exit }
+_PrintFooter
+
+# ==============================================================================
+# 3. DOTFILES & CONFIG LINKING
+# ==============================================================================
+_PrintHeader "Removing PowerShell Profile Symlinks"
 $Profiles = @(
     "$HOME\Documents\WindowsPowerShell\Microsoft.PowerShell_profile.ps1",
     "$HOME\Documents\PowerShell\Microsoft.PowerShell_profile.ps1"
@@ -32,178 +61,179 @@ foreach ($Path in $Profiles) {
         $item = Get-Item $Path -Force
         if ($item.LinkType -eq "SymbolicLink") {
             Remove-Item $Path -Force
-            Write-Host "Removed symlink: $Path" -ForegroundColor Green
+            _Ok "Removed symlink: $Path"
         } else {
-            Write-Host "Skipping (not a symlink): $Path" -ForegroundColor Gray
+            _Info "Not a symlink, skipping: $Path"
         }
     } else {
-        Write-Host "Not found, skipping: $Path" -ForegroundColor Gray
+        _Info "Not found, skipping: $Path"
     }
 }
+_PrintFooter
 
-# B. Vim
-Write-Host "`nRemoving Vim Configuration..." -ForegroundColor Yellow
+_PrintHeader "Removing Vim Configuration"
 $HomeVimrc = Join-Path $HOME "_vimrc"
 if (Test-Path $HomeVimrc) {
     $item = Get-Item $HomeVimrc -Force
     if ($item.LinkType -eq "SymbolicLink") {
         Remove-Item $HomeVimrc -Force
-        Write-Host "Removed symlink: $HomeVimrc" -ForegroundColor Green
+        _Ok "Removed symlink: $HomeVimrc"
     } else {
-        Write-Host "Skipping (not a symlink): $HomeVimrc" -ForegroundColor Gray
+        _Info "Not a symlink, skipping: $HomeVimrc"
     }
 } else {
-    Write-Host "Not found, skipping: $HomeVimrc" -ForegroundColor Gray
+    _Info "Not found, skipping: $HomeVimrc"
 }
 
 $NordPath = Join-Path $HOME "vimfiles\colors\nord.vim"
 if (Test-Path $NordPath) {
     Remove-Item $NordPath -Force
-    Write-Host "Removed: $NordPath" -ForegroundColor Green
+    _Ok "Removed Nord vim theme."
 } else {
-    Write-Host "Not found, skipping." -ForegroundColor Gray
+    _Info "Nord vim theme not found, skipping."
 }
 
 $undoDir = Join-Path $HOME "vimfiles\undodir"
 if (Test-Path $undoDir) {
     Remove-Item $undoDir -Recurse -Force
-    Write-Host "Removed: $undoDir" -ForegroundColor Green
+    _Ok "Removed undo directory."
 } else {
-    Write-Host "Not found, skipping." -ForegroundColor Gray
+    _Info "Undo directory not found, skipping."
 }
+_PrintFooter
 
-# C. mpv
-Write-Host "`nRemoving mpv Configuration..." -ForegroundColor Yellow
+_PrintHeader "Removing mpv Configuration"
 $mpvConfigDir = "$env:APPDATA\mpv"
 if (Test-Path $mpvConfigDir) {
     $item = Get-Item $mpvConfigDir -Force
     if ($item.LinkType -eq "SymbolicLink") {
         Remove-Item $mpvConfigDir -Force
-        Write-Host "Removed symlink: $mpvConfigDir" -ForegroundColor Green
+        _Ok "Removed symlink: $mpvConfigDir"
     } else {
-        Write-Host "Skipping (not a symlink): $mpvConfigDir" -ForegroundColor Gray
+        _Info "Not a symlink, skipping: $mpvConfigDir"
     }
 } else {
-    Write-Host "Not found, skipping." -ForegroundColor Gray
+    _Info "Not found, skipping."
 }
+_PrintFooter
 
-# D. Brave Policies
-Write-Host "`nRemoving Brave Policies..." -ForegroundColor Yellow
+_PrintHeader "Removing Brave Policies"
 $regPath = "HKLM:\SOFTWARE\Policies\BraveSoftware\Brave"
 if (Test-Path $regPath) {
     Remove-Item $regPath -Recurse -Force
-    Write-Host "Removed Brave policies from registry." -ForegroundColor Green
+    _Ok "Removed Brave policies from registry."
 } else {
-    Write-Host "Not found, skipping." -ForegroundColor Gray
+    _Info "Not found, skipping."
 }
+_PrintFooter
 
 # ==============================================================================
-# 3. ASSETS & THEMING
+# 4. ASSETS & THEMING
 # ==============================================================================
-
-# D. Windows Terminal Nord Theme
-Write-Host "`nRemoving Windows Terminal Nord Theme..." -ForegroundColor Yellow
+_PrintHeader "Removing Windows Terminal Nord Theme"
 $wtFragmentPath = "$Env:LocalAppData\Microsoft\Windows Terminal\Fragments\nord"
 if (Test-Path $wtFragmentPath) {
     Remove-Item $wtFragmentPath -Recurse -Force
-    Write-Host "Removed: $wtFragmentPath" -ForegroundColor Green
+    _Ok "Removed Nord theme."
 } else {
-    Write-Host "Not found, skipping." -ForegroundColor Gray
+    _Info "Not found, skipping."
 }
+_PrintFooter
 
-# E. Wallpapers
-Write-Host "`nRemoving Wallpapers..." -ForegroundColor Yellow
+_PrintHeader "Removing Wallpapers"
 $wallpaperDst = Join-Path ([Environment]::GetFolderPath("MyPictures")) "Wallpapers"
 if (Test-Path $wallpaperDst) {
     Remove-Item $wallpaperDst -Recurse -Force
-    Write-Host "Removed: $wallpaperDst" -ForegroundColor Green
+    _Ok "Removed wallpapers."
 } else {
-    Write-Host "Not found, skipping." -ForegroundColor Gray
+    _Info "Not found, skipping."
 }
+_PrintFooter
 
 # ==============================================================================
-# 4. TOOLS & SCRIPTS
+# 5. TOOLS & SCRIPTS
 # ==============================================================================
-
-# F. wg-socks
-Write-Host "`nRemoving wg-socks..." -ForegroundColor Yellow
-
+_PrintHeader "Removing wg-socks"
 $wgsocksConf = "$env:USERPROFILE\windows-config-scripts\wg-socks\configs"
 if (Test-Path $wgsocksConf) {
     $backupDir = Join-Path ([Environment]::GetFolderPath("Desktop")) "wg-socks-backup"
-    Write-Host "Backing up WireGuard configs to: $backupDir" -ForegroundColor Cyan
     if (!(Test-Path $backupDir)) { New-Item -ItemType Directory -Path $backupDir -Force | Out-Null }
     Copy-Item -Path "$wgsocksConf\*.conf" -Destination $backupDir -Force
-    Write-Host "Configs backed up." -ForegroundColor Green
+    _Ok "Configs backed up to: $backupDir"
 } else {
-    Write-Host "No WireGuard configs found to backup." -ForegroundColor Gray
+    _Info "No configs found to backup."
 }
 
 $services = Get-Service -ErrorAction SilentlyContinue | Where-Object { $_.Name -like "*-wgsocks" }
 foreach ($svc in $services) {
-    Write-Host "  Removing service: $($svc.Name)" -ForegroundColor Gray
     nssm stop $svc.Name 2>&1 | Out-Null
     nssm remove $svc.Name confirm 2>&1 | Out-Null
+    _Ok "Removed service: $($svc.Name)"
 }
 
 $configScriptsDir = "$env:USERPROFILE\windows-config-scripts"
 if (Test-Path $configScriptsDir) {
     Remove-Item $configScriptsDir -Recurse -Force
-    Write-Host "Removed: $configScriptsDir" -ForegroundColor Green
+    _Ok "Removed: $configScriptsDir"
 } else {
-    Write-Host "Not found, skipping." -ForegroundColor Gray
+    _Info "Not found, skipping."
 }
+_PrintFooter
 
-# G. Init Caches
-Write-Host "`nRemoving Init Caches..." -ForegroundColor Yellow
+_PrintHeader "Removing Init Caches"
 @("$env:TEMP\starship_init.ps1", "$env:TEMP\zoxide_init.ps1") | ForEach-Object {
     if (Test-Path $_) {
         Remove-Item $_ -Force
-        Write-Host "Removed: $_" -ForegroundColor Green
+        _Ok "Removed: $_"
     } else {
-        Write-Host "Not found, skipping: $_" -ForegroundColor Gray
+        _Info "Not found, skipping: $_"
     }
 }
+_PrintFooter
 
-# H. warp
-Write-Host "`nRemoving warp..." -ForegroundColor Yellow
+_PrintHeader "Removing WARP Tunnel"
 $svc = Get-Service -Name "WireGuardTunnel`$warp" -ErrorAction SilentlyContinue
 if ($svc) {
     wireguard /uninstalltunnelservice warp
-    Write-Host "Tunnel removed." -ForegroundColor Green
+    _Ok "Tunnel removed."
 } else {
-    Write-Host "Tunnel not running, skipping." -ForegroundColor Gray
+    _Info "Tunnel not running, skipping."
 }
+_PrintFooter
 
 # ==============================================================================
-# 5. OPTIONAL - Uninstall Apps
+# 6. OPTIONAL - Uninstall Apps
 # ==============================================================================
-Write-Host "`nWould you like to uninstall apps installed by setup.ps1?" -ForegroundColor Cyan
-Write-Host "  (Starship, fzf, Git, zoxide, vim, pwsh, fd, NSSM, mpv)" -ForegroundColor Gray
-$response = Read-Host "Uninstall apps? (y/N)"
+_PrintHeader "Optional: Package Removal"
+_Info "Targets: Starship, fzf, Git, zoxide, vim, pwsh, fd, NSSM, WireGuard, wgcf, mpv"
+Write-Host "│"
+$response = Read-Host "│  Remove these packages? (y/N)"
 
-if ($response -eq 'y') {
-    $apps = @("Starship.Starship", "junegunn.fzf", "Git.Git", "ajeetdsouza.zoxide", "vim.vim", "Microsoft.PowerShell", "sharkdp.fd", "NSSM.NSSM")
+if ($response -match '^[Yy]$') {
+    $apps = @(
+        "Starship.Starship", "junegunn.fzf", "Git.Git", "ajeetdsouza.zoxide",
+        "vim.vim", "Microsoft.PowerShell", "sharkdp.fd", "NSSM.NSSM",
+        "WireGuard.WireGuard", "ViRb3.wgcf"
+    )
     foreach ($app in $apps) {
-        Write-Host "Uninstalling $app..." -ForegroundColor Yellow
         winget uninstall --id $app --exact --silent 2>&1 | Out-Null
-        Write-Host "Done." -ForegroundColor Green
+        _Ok "Uninstalled: $app"
     }
 
     if (Get-Command choco -ErrorAction SilentlyContinue) {
-        Write-Host "Uninstalling mpv..." -ForegroundColor Yellow
-        choco uninstall mpv -y
-        Write-Host "Done." -ForegroundColor Green
+        choco uninstall mpv -y | Out-Null
+        _Ok "Uninstalled: mpv"
     }
 } else {
-    Write-Host "Skipping app uninstall." -ForegroundColor Gray
+    _Info "Skipping package removal."
 }
+_PrintFooter
 
 # ==============================================================================
-# 6. FINALIZATION
+# 7. FINALIZATION
 # ==============================================================================
-Write-Host "`n--- Unsetup Complete ---" -ForegroundColor Magenta
-Write-Host "`n NOTE: Change your Windows Terminal color scheme from Nord to a built-in one." -ForegroundColor Yellow
-Write-Host "        Settings > Profiles > Color Scheme" -ForegroundColor Gray
-Write-Host "`nRestart your Terminal for all changes to take effect." -ForegroundColor Yellow
+Write-Host "Reset complete!" -ForegroundColor Green
+Write-Host "NOTE: Change your Windows Terminal color scheme from Nord to a built-in one." -ForegroundColor Yellow
+Write-Host "      Settings > Profiles > Color Scheme" -ForegroundColor Gray
+Write-Host "Open a new terminal session to finish.`n" -ForegroundColor Blue
 Pause

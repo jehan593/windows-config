@@ -13,33 +13,44 @@ function _ElevateAction {
     param([string]$Command)
     $exe = if ($PSEdition -eq "Core") { "pwsh" } else { "powershell.exe" }
     $arguments = "-NoExit -NoProfile -ExecutionPolicy Bypass -File `"$PSCommandPath`" $Command"
+    Write-Host " 󰮯 Elevating to Administrator..." -ForegroundColor Cyan
     Start-Process $exe -ArgumentList $arguments -Verb RunAs
     exit
+}
+
+function _PrintHeader {
+    param([string]$Icon, [string]$Title)
+    Write-Host ""
+    Write-Host "$Icon  $Title" -ForegroundColor Cyan
+    Write-Host "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━" -ForegroundColor DarkBlue
+}
+
+function _PrintFooter {
+    Write-Host "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`n" -ForegroundColor DarkBlue
+}
+
+function _PrintRow {
+    param([string]$Icon, [string]$Label, [string]$Value, [string]$Color = "White")
+    Write-Host ("│  {0} {1,-12} {2}" -f $Icon, $Label, $Value) -ForegroundColor $Color
 }
 
 function _WarpOn {
     if (-not (_IsAdmin)) { _ElevateAction "on"; return }
     if (-not (Test-Path $warpConf)) {
-        Write-Host " warp.conf not found. Run: warp rotate" -ForegroundColor Red; return
+        Write-Host " 󰅙 warp.conf not found. Run: warp rotate" -ForegroundColor Red; return
     }
-
-    Write-Host ""
-    Write-Host "   󰖂  WireGuard" -ForegroundColor Cyan
-    Write-Host "     ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━" -ForegroundColor DarkBlue
+    _PrintHeader "󰖂" "WireGuard WARP"
     wireguard /installtunnelservice $warpConf
-    Write-Host ("     󰤨  {0,-11} {1}" -f "Status", "CONNECTED") -ForegroundColor Green
-    Write-Host "     ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`n" -ForegroundColor DarkBlue
+    _PrintRow "󰤨" "Status" "CONNECTED" "Green"
+    _PrintFooter
 }
 
 function _WarpOff {
     if (-not (_IsAdmin)) { _ElevateAction "off"; return }
-
-    Write-Host ""
-    Write-Host "   󰖂  WireGuard" -ForegroundColor Cyan
-    Write-Host "     ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━" -ForegroundColor DarkBlue
+    _PrintHeader "󰖂" "WireGuard WARP"
     wireguard /uninstalltunnelservice $tunnel
-    Write-Host ("     󰤭  {0,-11} {1}" -f "Status", "DISCONNECTED") -ForegroundColor Red
-    Write-Host "     ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`n" -ForegroundColor DarkBlue
+    _PrintRow "󰤭" "Status" "DISCONNECTED" "Red"
+    _PrintFooter
 }
 
 function _WarpRotate {
@@ -47,19 +58,19 @@ function _WarpRotate {
 
     $svc = Get-Service -Name "WireGuardTunnel`$warp" -ErrorAction SilentlyContinue
     if ($svc -and $svc.Status -eq "Running") {
-        Write-Host " Tunnel is active. Run: warp off first." -ForegroundColor Red; return
+        Write-Host " 󰅙 Tunnel is active. Run: warp off first." -ForegroundColor Red; return
     }
 
-    Write-Host " Rotating WARP credentials..." -ForegroundColor Cyan
+    _PrintHeader "󰖂" "Rotating WARP Credentials"
     if (!(Test-Path $warpDir)) { New-Item -ItemType Directory -Path $warpDir -Force | Out-Null }
     Push-Location $warpDir
 
     try {
         if (Test-Path "$warpDir\wgcf-account.toml") {
-            Write-Host " Updating existing account..." -ForegroundColor Cyan
+            _PrintRow "󰚰" "Account" "Updating existing..." "Cyan"
             wgcf update
         } else {
-            Write-Host " Registering new account..." -ForegroundColor Cyan
+            _PrintRow "󰀄" "Account" "Registering new..." "Cyan"
             wgcf register --accept-tos
         }
 
@@ -67,29 +78,28 @@ function _WarpRotate {
         $generated = Get-ChildItem -Path $warpDir -Filter "wgcf-profile.conf" | Select-Object -First 1
         if ($generated) {
             Copy-Item $generated.FullName $warpConf -Force
-            Write-Host " New config generated." -ForegroundColor Green
+            _PrintRow "󰄬" "Config" "Generated successfully" "Green"
         } else {
-            Write-Host " Failed to generate config." -ForegroundColor Red
+            _PrintRow "󰅙" "Config" "Failed to generate" "Red"
         }
     } finally {
         Pop-Location
+        _PrintFooter
     }
 }
 
 function _WarpStatus {
     $svc = Get-Service -Name "WireGuardTunnel`$warp" -ErrorAction SilentlyContinue
-    Write-Host ""
-    Write-Host "   󰖂  WireGuard WARP" -ForegroundColor Cyan
-    Write-Host "     ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━" -ForegroundColor DarkBlue
+    _PrintHeader "󰖂" "WireGuard WARP"
     if ($svc -and $svc.Status -eq "Running") {
-        Write-Host ("     󰤨  {0,-11} {1}" -f "Status", "CONNECTED") -ForegroundColor Green
+        _PrintRow "󰤨" "Status" "CONNECTED" "Green"
     } else {
-        Write-Host ("     󰤭  {0,-11} {1}" -f "Status", "DISCONNECTED") -ForegroundColor Red
+        _PrintRow "󰤭" "Status" "DISCONNECTED" "Red"
     }
     if (Test-Path $warpConf) {
-        Write-Host ("      {0,-11} {1}" -f "Config", $warpConf) -ForegroundColor Blue
+        _PrintRow "󱁤" "Config" $warpConf "Blue"
     }
-    Write-Host "     ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`n" -ForegroundColor DarkBlue
+    _PrintFooter
 }
 
 switch ($Action) {
@@ -98,12 +108,11 @@ switch ($Action) {
     "rotate" { _WarpRotate }
     "status" { _WarpStatus }
     default {
-        Write-Host "`n   󰖂  WARP Manager" -ForegroundColor Cyan
-        Write-Host "     ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━" -ForegroundColor DarkBlue
-        Write-Host "      on      󰤨 Connect tunnel"
-        Write-Host "      off     󰤭 Disconnect tunnel"
-        Write-Host "      rotate   Rotate WARP credentials"
-        Write-Host "      status  󰖂 Show tunnel status"
-        Write-Host "     ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`n" -ForegroundColor DarkBlue
+        _PrintHeader "󰖂" "WARP Manager"
+        _PrintRow "󰤨" "on" "Connect tunnel"
+        _PrintRow "󰤭" "off" "Disconnect tunnel"
+        _PrintRow "󰚰" "rotate" "Rotate WARP credentials"
+        _PrintRow "󰖂" "status" "Show tunnel status"
+        _PrintFooter
     }
 }
