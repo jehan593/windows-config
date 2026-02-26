@@ -39,7 +39,7 @@ function _Err  { param([string]$Msg) Write-Host ("│  [ERR]   {0}" -f $Msg) -Fo
 Clear-Host
 Write-Host ""
 Write-Host "┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓" -ForegroundColor Cyan
-Write-Host "┃        Windows Config Setup                 ┃" -ForegroundColor Cyan
+Write-Host "┃        Windows Config Setup                ┃" -ForegroundColor Cyan
 Write-Host "┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛" -ForegroundColor Cyan
 
 # ==============================================================================

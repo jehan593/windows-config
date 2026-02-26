@@ -39,8 +39,8 @@ function _Err  { param([string]$Msg) Write-Host ("│  [ERR]   {0}" -f $Msg) -Fo
 Clear-Host
 Write-Host ""
 Write-Host "┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓" -ForegroundColor Red
-Write-Host "┃         Windows Config Reset                ┃" -ForegroundColor Red
-Write-Host "┃    This will UNDO everything setup!         ┃" -ForegroundColor Yellow
+Write-Host "┃         Windows Config Reset               ┃" -ForegroundColor Red
+Write-Host "┃    This will UNDO everything setup!        ┃" -ForegroundColor Yellow
 Write-Host "┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛" -ForegroundColor Red
 
 _PrintHeader "Pre-flight"
