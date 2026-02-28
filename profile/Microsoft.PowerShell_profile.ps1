@@ -423,7 +423,11 @@ function ff {
     }
 
     $selection = fd . $SearchPath --hidden --color never --exclude "Windows" |
-        fzf --exact --layout=reverse --height=40% --header " Searching: $SearchPath"
+        fzf --exact --layout=reverse --height=40% `
+            --header " Enter: Open | Ctrl-O: Open folder" `
+            --bind "ctrl-o:execute(powershell -NoProfile -Command `"if (Test-Path '{}' -PathType Container) { explorer.exe '{}' } else { explorer.exe /select,'{}' }`")+abort"
+
+    if (-not $selection) { return }
 
     if (Test-Path $selection -PathType Container) {
         Set-Location $selection
