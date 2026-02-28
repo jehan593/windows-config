@@ -145,15 +145,36 @@ if (-not (Test-Path $binaryPath)) {
     Write-Host "󰅙 wireproxy.exe not found at: $binaryPath" -ForegroundColor Red; exit
 }
 
+function _RefreshSocks {
+    if (-not (_IsAdmin)) { _ElevateAction "refresh"; return }
+
+    $services = Get-Service -ErrorAction SilentlyContinue | Where-Object { $_.Name -like "*-wgsocks" }
+    if (-not $services) {
+        _PrintHeader "󰒄" "Refresh Tunnels"
+        _PrintRow "󰋼" "Status" "No tunnels found" "Gray"
+        _PrintFooter
+        return
+    }
+
+    _PrintHeader "󰒄" "Refresh Tunnels"
+    foreach ($svc in $services) {
+        nssm restart $svc.Name 2>&1 | Out-Null
+        _PrintRow "󰑐" $svc.Name "Restarted" "Green"
+    }
+    _PrintFooter
+}
+
 switch ($Action) {
     "install" { _InstallSocks $Arg1 $Arg2 }
     "list"    { _ListSocks }
     "remove"  { _RemoveSocks $Arg1 }
     "test"    { _TestSocks $Arg1 }
+    "refresh" { _RefreshSocks } 
     default {
         _PrintHeader "󰒄" "WireGuard SOCKS5 Manager"
         _PrintRow "󱌣" "install" "<path> <port>  Create tunnel"
         _PrintRow "󰒄" "list" "List all tunnels"
+        _PrintRow "󰑐" "refresh" "Restart all tunnels" 
         _PrintRow "󰄬" "test" "<name>         Test connectivity"
         _PrintRow "󰗨" "remove" "<name>         Remove tunnel"
         _PrintFooter
