@@ -304,24 +304,52 @@ function upc {
 # ==============================================================================
 # 6. INTERACTIVE TOOLS (FZF) & KEYBINDINGS
 # ==============================================================================
+
 function inst {
-    param([string[]]$Id)
+    param([string[]]$Id, [switch]$Refresh)
+    if ($Refresh) {
+        Remove-Item "$env:TEMP\winget_search_cache.txt" -ErrorAction SilentlyContinue
+        Write-Host "󰚰 Cache cleared." -ForegroundColor Cyan
+    }
     if ($Id) {
         foreach ($i in $Id) {
             Write-Host " 󰐕 Installing: $i" -ForegroundColor Green
             winget install $i
         }
     } else {
-        $selected = winget search -q "." | Out-String -Stream |
-            Where-Object { $_ -match '^\S+' -and $_ -notmatch 'Name|---' } |
-            fzf --exact --multi --reverse --header "󰏓 Select apps to INSTALL (Tab to multi-select)"
+        $cacheFile = "$env:TEMP\winget_search_cache.txt"
+        $useCache = (Test-Path $cacheFile) -and ((Get-Item $cacheFile).LastWriteTime -gt (Get-Date).AddHours(-24))
 
-        foreach ($item in $selected) {
-            $id = ($item -split '\s{2,}')[1]
-            if ($id) {
-                Write-Host " 󰐕 Installing: $id" -ForegroundColor Green
-                winget install --id $id.Trim() --exact
-            }
+        if (-not $useCache) {
+            Write-Host "󰍉 Fetching package list..." -ForegroundColor Cyan
+            Find-WinGetPackage -Source winget |
+                ForEach-Object { $_.Id } |
+                Set-Content $cacheFile
+        }
+
+        $selected = Get-Content $cacheFile |
+            fzf --exact --multi --reverse `
+                --header "󰏓 Ctrl-P: Preview | Tab: multi-select" `
+                --preview "winget show --id {}" `
+                --preview-window "right:60%:hidden" `
+                --bind "ctrl-p:toggle-preview"
+
+        if (-not $selected) { return }
+
+        $ids = @($selected | ForEach-Object { $_.Trim() } | Where-Object { $_ })
+
+        if ($ids.Count -gt 1) {
+            Write-Host ""
+            Write-Host "󰏓 Selected for installation:" -ForegroundColor Cyan
+            $ids | ForEach-Object { Write-Host "   + $_" -ForegroundColor Green }
+            Write-Host ""
+            $confirm = Read-Host "Install $($ids.Count) package(s)? (Y/n)"
+            if ($confirm -match '^[Nn]$') { Write-Host "Aborted." -ForegroundColor Gray; return }
+        }
+
+        foreach ($id in $ids) {
+            Write-Host "`n 󰐕 Installing: $id" -ForegroundColor Cyan
+            winget install --id $id --exact
         }
     }
 }
@@ -334,61 +362,76 @@ function uninst {
             winget uninstall $i
         }
     } else {
-        $selected = winget list | Out-String -Stream |
-            Where-Object { $_ -match '^\S+' -and $_ -notmatch 'Name|---' } |
-            fzf --exact --multi --reverse --header "󰏔 Select apps to UNINSTALL (Tab to multi-select)"
+        $selected = Get-WinGetPackage |
+            Select-Object -ExpandProperty Id |
+            fzf --exact --multi --reverse `
+                --header "󰏔 Ctrl-P: Preview | Tab: multi-select" `
+                --preview "winget show --id {}" `
+                --preview-window "right:60%:hidden" `
+                --bind "ctrl-p:toggle-preview"
 
-        foreach ($item in $selected) {
-            $name = ($item -split '\s{2,}', 2)[0]
-            if ($name) {
-                Write-Host " 󰛌 Removing: $name" -ForegroundColor Cyan
-                winget uninstall --name "$($name.Trim())" --exact
-            }
+        if (-not $selected) { return }
+
+        $ids = @($selected | ForEach-Object { $_.Trim() } | Where-Object { $_ })
+
+        if ($ids.Count -gt 1) {
+            Write-Host ""
+            Write-Host "󰏔 Selected for removal:" -ForegroundColor Cyan
+            $ids | ForEach-Object { Write-Host "   - $_" -ForegroundColor Red }
+            Write-Host ""
+            $confirm = Read-Host "Uninstall $($ids.Count) package(s)? (Y/n)"
+            if ($confirm -match '^[Nn]$') { Write-Host "Aborted." -ForegroundColor Gray; return }
         }
-    }
-}
 
-function up {
-    $raw = winget upgrade --accept-source-agreements | Out-String -Stream
-    $headerLine = $raw | Where-Object { $_ -like "*Name*Id*Version*" } | Select-Object -First 1
-
-    if (-not $headerLine) {
-        if ($raw -match "No installed package") { Write-Host "  Everything is up to date!" -ForegroundColor Green }
-        else { Write-Host " 󰅙 Error: Could not parse winget output." -ForegroundColor Red }
-        return
-    }
-
-    $idStart      = $headerLine.IndexOf("Id")
-    $versionStart = $headerLine.IndexOf("Version")
-    $list = $raw | Where-Object {
-        $line = $_.Trim()
-        $line -ne "" -and $line -notmatch '^-+$' -and $line -notmatch 'Name\s+Id' -and $line.Length -gt $idStart
-    }
-
-    if (-not $list) { Write-Host "  No updates found in the list." -ForegroundColor Green; return }
-
-    $selected = $list | fzf --exact --multi --reverse --header "󰚰 Select apps to UPDATE"
-
-    foreach ($line in $selected) {
-        if ($line.Length -ge $versionStart) {
-            $id = $line.Substring($idStart, ($versionStart - $idStart)).Trim()
-            if ($id) {
-                Write-Host "`n󰑢 Updating: $id" -ForegroundColor Yellow
-                winget upgrade --id "$id" --exact
-            }
+        foreach ($id in $ids) {
+            Write-Host "`n 󰛌 Removing: $id" -ForegroundColor Cyan
+            winget uninstall --id $id --exact
         }
     }
 }
 
 function la {
-    $selected = winget list | Out-String -Stream |
-        Where-Object { $_ -match '^\S+' -and $_ -notmatch 'Name|---' } |
-        fzf --exact --reverse --header " Search installed apps"
+    $selected = Get-WinGetPackage |
+        Select-Object -ExpandProperty Id |
+        fzf --exact --reverse `
+            --header "󰘥 Ctrl-P: Preview | Enter: Show info" `
+            --preview "winget show --id {}" `
+            --preview-window "right:60%:hidden" `
+            --bind "ctrl-p:toggle-preview"
 
-    $id = ($selected -split '\s{2,}')[1]
-    if ($id) {
-        Write-Host "`n󰘥 Fetching info for: $id" -ForegroundColor Yellow
-        winget show --id $id.Trim() --exact
+    if (-not $selected) { return }
+    Write-Host "`n󰘥 Fetching info for: $selected" -ForegroundColor Yellow
+    winget show --id $selected.Trim() --exact
+}
+
+function up {
+    $updates = Get-WinGetPackage | Where-Object { $_.IsUpdateAvailable }
+    if (-not $updates) { Write-Host "  Everything is up to date!" -ForegroundColor Green; return }
+
+    $selected = $updates |
+        Select-Object -ExpandProperty Id |
+        fzf --exact --multi --reverse `
+            --header "󰚰 Ctrl-P: Preview | Tab: multi-select" `
+            --preview "winget show --id {}" `
+            --preview-window "right:60%:hidden" `
+            --bind "ctrl-p:toggle-preview"
+
+    if (-not $selected) { return }
+
+    $ids = @($selected | ForEach-Object { $_.Trim() } | Where-Object { $_ })
+
+    if ($ids.Count -gt 1) {
+        Write-Host ""
+        Write-Host "󰚰 Selected for upgrade:" -ForegroundColor Cyan
+        $ids | ForEach-Object { Write-Host "   + $_" -ForegroundColor Yellow }
+        Write-Host ""
+        $confirm = Read-Host "Upgrade $($ids.Count) package(s)? (Y/n)"
+        if ($confirm -match '^[Nn]$') { Write-Host "Aborted." -ForegroundColor Gray; return }
+    }
+
+    foreach ($id in $ids) {
+        Write-Host "`n󰑢 Upgrading: $id" -ForegroundColor Yellow
+        winget upgrade --id $id --exact
     }
 }
 
@@ -423,17 +466,13 @@ function ff {
     }
 
     $selection = fd . $SearchPath --hidden --color never --exclude "Windows" |
-        fzf --exact --layout=reverse --height=40% `
-            --header " Enter: Open | Ctrl-O: Open folder" `
-            --bind "ctrl-o:execute(powershell -NoProfile -Command `"if (Test-Path '{}' -PathType Container) { explorer.exe '{}' } else { explorer.exe /select,'{}' }`")+abort"
+        fzf --exact --layout=reverse --height=40% --header " Searching: $SearchPath"
 
     if (-not $selection) { return }
 
-    if (Test-Path $selection -PathType Container) {
-        Set-Location $selection
-    } else {
-        Start-Process $selection
-    }
+    $quoted = "`"$($selection.Trim())`""
+    Set-Clipboard $quoted
+    Write-Host " 󰅍 Copied: $quoted" -ForegroundColor Cyan
 }
 
 # ==============================================================================
@@ -519,3 +558,4 @@ function z {
     if ($PWD.Path -eq $before) {return}
     Get-ChildItem
 }
+

@@ -141,10 +141,10 @@ if (Test-Path $wtFragmentPath) {
 _PrintFooter
 
 _PrintHeader "Removing Wallpapers"
-$wallpaperDst = Join-Path ([Environment]::GetFolderPath("MyPictures")) "Wallpapers"
+$wallpaperDst = Join-Path ([Environment]::GetFolderPath("MyPictures")) "windows-config-wallpapers"
 if (Test-Path $wallpaperDst) {
-    Remove-Item $wallpaperDst -Recurse -Force
-    _Ok "Removed wallpapers."
+    Remove-Item $wallpaperDst -Force
+    _Ok "Removed wallpapers symlink."
 } else {
     _Info "Not found, skipping."
 }
@@ -154,29 +154,40 @@ _PrintFooter
 # 5. TOOLS & SCRIPTS
 # ==============================================================================
 _PrintHeader "Removing wg-socks"
-$wgsocksConf = "$env:USERPROFILE\windows-config-scripts\wg-socks\configs"
-if (Test-Path $wgsocksConf) {
-    $backupDir = Join-Path ([Environment]::GetFolderPath("Desktop")) "wg-socks-backup"
-    if (!(Test-Path $backupDir)) { New-Item -ItemType Directory -Path $backupDir -Force | Out-Null }
-    Copy-Item -Path "$wgsocksConf\*.conf" -Destination $backupDir -Force
-    _Ok "Configs backed up to: $backupDir"
-} else {
-    _Info "No configs found to backup."
-}
-
 $services = Get-Service -ErrorAction SilentlyContinue | Where-Object { $_.Name -like "*-wgsocks" }
-foreach ($svc in $services) {
-    nssm stop $svc.Name 2>&1 | Out-Null
-    nssm remove $svc.Name confirm 2>&1 | Out-Null
-    _Ok "Removed service: $($svc.Name)"
-}
-
 $configScriptsDir = "$env:USERPROFILE\windows-config-scripts"
-if (Test-Path $configScriptsDir) {
-    Remove-Item $configScriptsDir -Recurse -Force
-    _Ok "Removed: $configScriptsDir"
+
+if ($services) {
+    $stopTunnels = Read-Host "│  Remove existing tunnels and backup configs? (y/N)"
+    if ($stopTunnels -match '^[Yy]$') {
+        $wgsocksConf = "$configScriptsDir\wg-socks\configs"
+        if (Test-Path $wgsocksConf) {
+            $backupDir = Join-Path ([Environment]::GetFolderPath("Desktop")) "wg-socks-backup"
+            if (!(Test-Path $backupDir)) { New-Item -ItemType Directory -Path $backupDir -Force | Out-Null }
+            Copy-Item -Path "$wgsocksConf\*.conf" -Destination $backupDir -Force
+            _Ok "Configs backed up to: $backupDir"
+        }
+        foreach ($svc in $services) {
+            nssm stop $svc.Name 2>&1 | Out-Null
+            nssm remove $svc.Name confirm 2>&1 | Out-Null
+            _Ok "Removed service: $($svc.Name)"
+        }
+        if (Test-Path $configScriptsDir) {
+            Remove-Item $configScriptsDir -Recurse -Force
+            _Ok "Removed: $configScriptsDir"
+        }
+    } else {
+        _Info "Skipping tunnel removal."
+        Get-ChildItem $configScriptsDir -Exclude "wg-socks" | Remove-Item -Recurse -Force
+        _Ok "Removed all except wg-socks."
+    }
 } else {
-    _Info "Not found, skipping."
+    if (Test-Path $configScriptsDir) {
+        Remove-Item $configScriptsDir -Recurse -Force
+        _Ok "Removed: $configScriptsDir"
+    } else {
+        _Info "Not found, skipping."
+    }
 }
 _PrintFooter
 

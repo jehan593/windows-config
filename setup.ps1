@@ -76,6 +76,16 @@ foreach ($app in $apps) {
 }
 _PrintFooter
 
+_PrintHeader "PowerShell Modules"
+if (-not (Get-Module -ListAvailable -Name Microsoft.WinGet.Client)) {
+    _Info "Installing Microsoft.WinGet.Client..."
+    Install-Module -Name Microsoft.WinGet.Client -Force -Scope CurrentUser
+    _Ok "Microsoft.WinGet.Client installed."
+} else {
+    _Ok "Microsoft.WinGet.Client already installed."
+}
+_PrintFooter
+
 _PrintHeader "Chocolatey Apps"
 if (-not (Get-Command mpv -ErrorAction SilentlyContinue)) {
     _Info "Installing mpv..."
@@ -195,12 +205,15 @@ if (Test-Path $nordJson) {
 _PrintFooter
 
 _PrintHeader "Wallpapers"
-$wallpaperSrc = Join-Path $PSScriptRoot "assets\wallpaper.jpg"
-$wallpaperDst = Join-Path ([Environment]::GetFolderPath("MyPictures")) "Wallpapers"
+$wallpaperSrc = Join-Path $PSScriptRoot "assets\wallpapers"
+$wallpaperDst = Join-Path ([Environment]::GetFolderPath("MyPictures")) "windows-config-wallpapers"
+
 if (Test-Path $wallpaperSrc) {
-    if (!(Test-Path $wallpaperDst)) { New-Item -ItemType Directory -Path $wallpaperDst -Force | Out-Null }
-    Copy-Item -Path $wallpaperSrc -Destination $wallpaperDst -Force
-    _Ok "Wallpaper copied to: $wallpaperDst"
+    if (Test-Path $wallpaperDst) { Remove-Item $wallpaperDst -Force }
+    New-Item -ItemType SymbolicLink -Path $wallpaperDst -Value $wallpaperSrc -Force | Out-Null
+    _Ok "Linked: $wallpaperDst"
+} else {
+    _Info "Wallpapers folder not found in repo, skipping."
 }
 _PrintFooter
 
