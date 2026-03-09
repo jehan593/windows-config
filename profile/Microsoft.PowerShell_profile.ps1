@@ -154,8 +154,10 @@ function upall {
     choco upgrade all -y
     _PrintFooter
     upf
+    wp
     ups
     upw
+
 }
 
 function cup {
@@ -512,6 +514,46 @@ function pirith {
     }
 }
 
+function wp {
+    $wallpapersDir = Join-Path ([Environment]::GetFolderPath("MyPictures")) "config-wallpapers"
+
+    if (-not (Test-Path $wallpapersDir)) {
+        _PrintHeader "󰋊" "Wallpapers"
+        _PrintRow "󰅙" "Error" "Wallpapers directory not found" "Red"
+        _PrintFooter; return
+    }
+
+    _PrintHeader "󰋊" "Wallpapers"
+
+    $changes = git -C $wallpapersDir status --porcelain 2>$null
+    if ($changes) {
+        _PrintRow "󰊢" "Local" "Uncommitted changes found" "Yellow"
+        git -C $wallpapersDir add -A 2>$null | Out-Null
+        git -C $wallpapersDir commit -m "sync: local wallpaper changes" 2>$null | Out-Null
+        if ($LASTEXITCODE -eq 0) {
+            _PrintRow "󰄬" "Commit" "Changes committed" "Green"
+        } else {
+            _PrintRow "󰅙" "Commit" "Failed to commit" "Red"
+        }
+    }
+
+    git -C $wallpapersDir pull --rebase --autostash 2>$null | Out-Null
+    if ($LASTEXITCODE -eq 0) {
+        _PrintRow "󰄬" "Pull" "Up to date" "Green"
+    } else {
+        _PrintRow "󰅙" "Pull" "Pull failed" "Red"
+    }
+
+    git -C $wallpapersDir push 2>$null | Out-Null
+    if ($LASTEXITCODE -eq 0) {
+        _PrintRow "󰄬" "Push" "Synced to GitHub" "Green"
+    } else {
+        _PrintRow "󰅙" "Push" "Nothing to push or push failed" "Gray"
+    }
+
+    _PrintFooter
+}
+
 # ==============================================================================
 # 9. NETWORK
 # ==============================================================================
@@ -527,7 +569,7 @@ function info {
     _PrintRow "" "System"    "rr, open, cleanup, termux"
     _PrintRow "󰚰" "Updates"   "upall, cup, upa, ups, upw, upf, upc"
     _PrintRow "󰍉" "FZF"       "ff, inst, uninst, up, la, Ctrl+H"
-    _PrintRow "󰎈" "Media"     "pirith"
+    _PrintRow "󰎈" "Media"     "pirith, wp"
     _PrintRow "󱓞" "Tools"     "ctt, massgrave"
     _PrintRow "󰒄" "Network"   "wgsocks, warp"
     _PrintFooter
