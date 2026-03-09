@@ -205,15 +205,15 @@ if (Test-Path $nordJson) {
 _PrintFooter
 
 _PrintHeader "Wallpapers"
-$wallpaperSrc = Join-Path $PSScriptRoot "assets\wallpapers"
-$wallpaperDst = Join-Path ([Environment]::GetFolderPath("MyPictures")) "windows-config-wallpapers"
-
-if (Test-Path $wallpaperSrc) {
-    if (Test-Path $wallpaperDst) { Remove-Item $wallpaperDst -Force }
-    New-Item -ItemType SymbolicLink -Path $wallpaperDst -Value $wallpaperSrc -Force | Out-Null
-    _Ok "Linked: $wallpaperDst"
+$wallpaperDst = Join-Path ([Environment]::GetFolderPath("MyPictures")) "config-wallpapers"
+if (-not (Test-Path $wallpaperDst)) {
+    _Info "Cloning wallpapers..."
+    git clone https://github.com/jehan593/my-wallpapers.git $wallpaperDst
+    _Ok "Wallpapers cloned to: $wallpaperDst"
 } else {
-    _Info "Wallpapers folder not found in repo, skipping."
+    _Info "Wallpapers already exist, pulling latest..."
+    git -C $wallpaperDst pull --rebase --autostash
+    _Ok "Wallpapers updated."
 }
 _PrintFooter
 

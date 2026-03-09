@@ -141,10 +141,10 @@ if (Test-Path $wtFragmentPath) {
 _PrintFooter
 
 _PrintHeader "Removing Wallpapers"
-$wallpaperDst = Join-Path ([Environment]::GetFolderPath("MyPictures")) "windows-config-wallpapers"
+$wallpaperDst = Join-Path ([Environment]::GetFolderPath("MyPictures")) "config-wallpapers"
 if (Test-Path $wallpaperDst) {
-    Remove-Item $wallpaperDst -Force
-    _Ok "Removed wallpapers symlink."
+    Remove-Item $wallpaperDst -Recurse -Force
+    _Ok "Removed wallpapers."
 } else {
     _Info "Not found, skipping."
 }
