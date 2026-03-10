@@ -77,6 +77,9 @@ foreach ($app in $apps) {
 _PrintFooter
 
 _PrintHeader "PowerShell Modules"
+_Info "Installing NuGet provider..."
+Install-PackageProvider -Name NuGet -MinimumVersion 2.8.5.201 -Force -Scope CurrentUser | Out-Null
+_Ok "NuGet provider installed."
 if (-not (Get-Module -ListAvailable -Name Microsoft.WinGet.Client)) {
     _Info "Installing Microsoft.WinGet.Client..."
     Install-Module -Name Microsoft.WinGet.Client -Force -Scope CurrentUser
