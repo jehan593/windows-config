@@ -264,7 +264,7 @@ _PrintFooter
 # ==============================================================================
 # 7. FINALIZATION
 # ==============================================================================
-Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope LocalMachine -Force -ErrorAction SilentlyContinue 2>$null
+Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope LocalMachine -Force *>$null
 _Ok "Execution policy set."
 Write-Host "Setup complete!" -ForegroundColor Green
 Write-Host "Restart your Terminal for all changes to take effect." -ForegroundColor Blue
