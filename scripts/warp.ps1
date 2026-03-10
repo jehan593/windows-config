@@ -1,4 +1,4 @@
-param([string]$Action)
+﻿param([string]$Action)
 
 $warpConf = "$env:USERPROFILE\windows-config-scripts\warp\warp.conf"
 $warpDir  = "$env:USERPROFILE\windows-config-scripts\warp"

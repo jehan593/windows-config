@@ -1,4 +1,4 @@
-param([string]$Action, [string]$Arg1, [string]$Arg2)
+﻿param([string]$Action, [string]$Arg1, [string]$Arg2)
 
 $binaryPath = "$env:USERPROFILE\windows-config-scripts\wg-socks\wireproxy.exe"
 $confDir = "$env:USERPROFILE\windows-config-scripts\wg-socks\configs"
