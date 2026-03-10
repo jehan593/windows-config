@@ -68,7 +68,7 @@ foreach ($app in $apps) {
     $installed = winget list --id $app --exact --source winget 2>&1 | Out-String
     if ($installed -notmatch $app) {
         _Info "Installing $app..."
-        winget install --id $app --silent --accept-package-agreements --accept-source-agreements
+        winget install --id $app --source winget --silent --accept-package-agreements --accept-source-agreements
         _Ok "$app installed."
     } else {
         _Ok "$app already installed."
