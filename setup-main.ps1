@@ -62,7 +62,7 @@ _PrintHeader "Winget Apps"
 $apps = @(
     "Starship.Starship", "junegunn.fzf", "Git.Git", "ajeetdsouza.zoxide",
     "vim.vim", "Microsoft.PowerShell", "sharkdp.fd", "NSSM.NSSM",
-    "WireGuard.WireGuard", "ViRb3.wgcf"
+    "WireGuard.WireGuard", "ViRb3.wgcf", "Windows.Terminal"
 )
 foreach ($app in $apps) {
     $installed = winget list --id $app --exact --source winget 2>&1 | Out-String
@@ -261,10 +261,45 @@ if (-not (Test-Path $wireproxyExe)) {
 }
 _PrintFooter
 
+_PrintHeader "Windows Terminal Configuration"
+$wtSettingsPath = "$env:LocalAppData\Packages\Microsoft.WindowsTerminal_8wekyb3d8bbwe\LocalState\settings.json"
+
+if (Test-Path $wtSettingsPath) {
+    $settings = Get-Content $wtSettingsPath -Raw | ConvertFrom-Json
+
+    # Set default profile to PowerShell 7
+    $pwshProfile = $settings.profiles.list | Where-Object { $_.name -like "*PowerShell*" -and $_.name -notlike "*Windows*" } | Select-Object -First 1
+    if ($pwshProfile) {
+        $settings.defaultProfile = $pwshProfile.guid
+        _Ok "Default profile set to PowerShell 7."
+    } else {
+        _Info "PowerShell 7 profile not found, skipping."
+    }
+
+    # Set font and color scheme on default profile
+    if (-not $pwshProfile.font) {
+        $pwshProfile | Add-Member -NotePropertyName "font" -NotePropertyValue ([PSCustomObject]@{ face = "MartianMono Nerd Font Mono"; size = 9 }) -Force
+    } else {
+        $pwshProfile.font.face = "MartianMono Nerd Font Mono"
+        $pwshProfile.font.size = 9
+    }
+    $pwshProfile.colorScheme = "Nord"
+    _Ok "Font set to MartianMono Nerd Font Mono size 9."
+    _Ok "Color scheme set to Nord."
+
+    $settings | ConvertTo-Json -Depth 20 | Set-Content $wtSettingsPath -Encoding UTF8
+    _Ok "Windows Terminal settings saved."
+} else {
+    _Info "Windows Terminal settings not found, skipping."
+}
+_PrintFooter
+
 # ==============================================================================
 # 7. FINALIZATION
 # ==============================================================================
-Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope LocalMachine -Force *>$null
+try {
+    Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope LocalMachine -Force -ErrorAction Stop
+} catch {}
 _Ok "Execution policy set."
 Write-Host "Setup complete!" -ForegroundColor Green
 Write-Host "Restart your Terminal for all changes to take effect." -ForegroundColor Blue
