@@ -62,7 +62,7 @@ _PrintHeader "Winget Apps"
 $apps = @(
     "Starship.Starship", "junegunn.fzf", "Git.Git", "ajeetdsouza.zoxide",
     "vim.vim", "Microsoft.PowerShell", "sharkdp.fd", "NSSM.NSSM",
-    "WireGuard.WireGuard", "ViRb3.wgcf", "Windows.Terminal"
+    "WireGuard.WireGuard", "ViRb3.wgcf", "Microsoft.WindowsTerminal"
 )
 foreach ($app in $apps) {
     $installed = winget list --id $app --exact --source winget 2>&1 | Out-String
@@ -276,16 +276,20 @@ if (Test-Path $wtSettingsPath) {
         _Info "PowerShell 7 profile not found, skipping."
     }
 
-    # Set font and color scheme on default profile
-    if (-not $pwshProfile.font) {
-        $pwshProfile | Add-Member -NotePropertyName "font" -NotePropertyValue ([PSCustomObject]@{ face = "MartianMono Nerd Font Mono"; size = 9 }) -Force
-    } else {
-        $pwshProfile.font.face = "MartianMono Nerd Font Mono"
-        $pwshProfile.font.size = 9
+    # Set font and color scheme in defaults (applies to all profiles)
+    if (-not $settings.profiles.defaults) {
+        $settings.profiles | Add-Member -NotePropertyName "defaults" -NotePropertyValue ([PSCustomObject]@{}) -Force
     }
-    $pwshProfile.colorScheme = "Nord"
-    _Ok "Font set to MartianMono Nerd Font Mono size 9."
-    _Ok "Color scheme set to Nord."
+
+    $settings.profiles.defaults | Add-Member -NotePropertyName "font" -NotePropertyValue ([PSCustomObject]@{
+        face = "MartianMono Nerd Font Mono"
+        size = 9
+    }) -Force
+
+    $settings.profiles.defaults | Add-Member -NotePropertyName "colorScheme" -NotePropertyValue "Nord" -Force
+
+    _Ok "Font set to MartianMono Nerd Font Mono size 9 for all profiles."
+    _Ok "Color scheme set to Nord for all profiles."
 
     $settings | ConvertTo-Json -Depth 20 | Set-Content $wtSettingsPath -Encoding UTF8
     _Ok "Windows Terminal settings saved."
