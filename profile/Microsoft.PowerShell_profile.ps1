@@ -34,7 +34,7 @@ Import-CachedCommand -Command "zoxide"   -CacheName "zoxide_init"
 # ==============================================================================
 function reload {
     Write-Host "  Restarting PowerShell session..." -ForegroundColor Cyan
-    $exe = if ($PSEdition -eq "Core") { "pwsh" } else { "powershell" }
+    $exe = "pwsh"
     Start-Process $exe -ArgumentList "-NoExit", "-Command", "Set-Location '$PWD'"
     exit
 }
@@ -54,7 +54,7 @@ function Test-Admin {
 
 function Invoke-Elevated {
     param([string]$Command)
-    $exe = if ($PSEdition -eq "Core") { "pwsh" } else { "powershell" }
+    $exe = "pwsh"
     $encoded = [Convert]::ToBase64String([Text.Encoding]::Unicode.GetBytes($Command))
     Write-Host "󰮯 Elevating to Administrator..." -ForegroundColor Cyan
     if (Get-Command wt -ErrorAction SilentlyContinue) {

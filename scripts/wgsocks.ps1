@@ -10,7 +10,7 @@ function _IsAdmin {
 
 function _ElevateAction {
     param([string]$Command)
-    $exe = if ($PSEdition -eq "Core") { "pwsh" } else { "powershell.exe" }
+    $exe = "pwsh"
     $arguments = "-NoExit -NoProfile -ExecutionPolicy Bypass -File `"$PSCommandPath`" $Command"
     Start-Process $exe -ArgumentList $arguments -Verb RunAs
     exit

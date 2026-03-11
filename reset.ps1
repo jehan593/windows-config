@@ -9,9 +9,8 @@ if (-not $PSScriptRoot) {
 $currentPrincipal = New-Object Security.Principal.WindowsPrincipal([Security.Principal.WindowsIdentity]::GetCurrent())
 if (-not $currentPrincipal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) {
     Write-Host "Requesting Administrative privileges..." -ForegroundColor Yellow
-    $exe = if ($PSEdition -eq "Core") { "pwsh" } else { "powershell.exe" }
     $arguments = "-NoProfile -ExecutionPolicy Bypass -File `"$PSCommandPath`""
-    Start-Process $exe -ArgumentList $arguments -Verb RunAs
+    Start-Process pwsh -ArgumentList $arguments -Verb RunAs
     exit
 }
 
@@ -29,7 +28,7 @@ function _PrintFooter {
     Write-Host "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`n" -ForegroundColor DarkBlue
 }
 
-function _Ok  { param([string]$Msg) Write-Host ("│  [OK]    {0}" -f $Msg) -ForegroundColor Green }
+function _Ok   { param([string]$Msg) Write-Host ("│  [OK]    {0}" -f $Msg) -ForegroundColor Green }
 function _Info { param([string]$Msg) Write-Host ("│  [INFO]  {0}" -f $Msg) -ForegroundColor Blue }
 function _Err  { param([string]$Msg) Write-Host ("│  [ERR]   {0}" -f $Msg) -ForegroundColor Red }
 
@@ -40,7 +39,7 @@ Clear-Host
 Write-Host ""
 Write-Host "┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓" -ForegroundColor Red
 Write-Host "┃         Windows Config Reset               ┃" -ForegroundColor Red
-Write-Host "┃    This will UNDO everything setup!        ┃" -ForegroundColor Yellow
+Write-Host "┃    This will UNDO everything setup did!    ┃" -ForegroundColor Yellow
 Write-Host "┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛" -ForegroundColor Red
 
 _PrintHeader "Pre-flight"
@@ -53,7 +52,6 @@ _PrintFooter
 # ==============================================================================
 _PrintHeader "Removing PowerShell Profile Symlinks"
 $Profiles = @(
-    "$HOME\Documents\WindowsPowerShell\Microsoft.PowerShell_profile.ps1",
     "$HOME\Documents\PowerShell\Microsoft.PowerShell_profile.ps1"
 )
 foreach ($Path in $Profiles) {
@@ -134,7 +132,7 @@ _PrintHeader "Removing Windows Terminal Nord Theme"
 $wtFragmentPath = "$Env:LocalAppData\Microsoft\Windows Terminal\Fragments\nord"
 if (Test-Path $wtFragmentPath) {
     Remove-Item $wtFragmentPath -Recurse -Force
-    _Ok "Removed Nord theme."
+    _Ok "Removed Nord theme fragment."
 } else {
     _Info "Not found, skipping."
 }
@@ -192,7 +190,7 @@ if ($services) {
 _PrintFooter
 
 _PrintHeader "Removing Init Caches"
-@("$env:TEMP\starship_init.ps1", "$env:TEMP\zoxide_init.ps1") | ForEach-Object {
+@("$env:TEMP\starship_init.ps1", "$env:TEMP\zoxide_init.ps1", "$env:TEMP\winget_search_cache.txt") | ForEach-Object {
     if (Test-Path $_) {
         Remove-Item $_ -Force
         _Ok "Removed: $_"
@@ -230,7 +228,6 @@ if ($response -match '^[Yy]$') {
         winget uninstall --id $app --exact --silent 2>&1 | Out-Null
         _Ok "Uninstalled: $app"
     }
-
     if (Get-Command choco -ErrorAction SilentlyContinue) {
         choco uninstall mpv -y | Out-Null
         _Ok "Uninstalled: mpv"
@@ -241,10 +238,50 @@ if ($response -match '^[Yy]$') {
 _PrintFooter
 
 # ==============================================================================
-# 7. FINALIZATION
+# 7. WINDOWS TERMINAL RESTORE
 # ==============================================================================
-Write-Host "Reset complete!" -ForegroundColor Green
-Write-Host "NOTE: Change your Windows Terminal color scheme from Nord to a built-in one." -ForegroundColor Yellow
-Write-Host "      Settings > Profiles > Color Scheme" -ForegroundColor Gray
-Write-Host "Open a new terminal session to finish.`n" -ForegroundColor Blue
+_PrintHeader "Restoring Windows Terminal Configuration"
+$wtSettingsPath = "$env:LocalAppData\Packages\Microsoft.WindowsTerminal_8wekyb3d8bbwe\LocalState\settings.json"
+
+if (Test-Path $wtSettingsPath) {
+    $settings = Get-Content $wtSettingsPath -Raw | ConvertFrom-Json
+
+    $ps5Profile = $settings.profiles.list | Where-Object { $_.name -like "*Windows PowerShell*" } | Select-Object -First 1
+    if ($ps5Profile) {
+        $settings.defaultProfile = $ps5Profile.guid
+        _Ok "Default profile restored to Windows PowerShell."
+    } else {
+        _Info "Windows PowerShell profile not found, skipping."
+    }
+
+    if (-not $settings.profiles.defaults) {
+        $settings.profiles | Add-Member -NotePropertyName "defaults" -NotePropertyValue ([PSCustomObject]@{}) -Force
+    }
+
+    $settings.profiles.defaults | Add-Member -NotePropertyName "font" -NotePropertyValue ([PSCustomObject]@{
+        face = "Cascadia Mono"
+        size = 12
+    }) -Force
+    $settings.profiles.defaults | Add-Member -NotePropertyName "colorScheme" -NotePropertyValue "Campbell" -Force
+
+    _Ok "Font restored to Cascadia Mono size 12."
+    _Ok "Color scheme restored to Campbell."
+
+    $settings | ConvertTo-Json -Depth 20 | Set-Content $wtSettingsPath -Encoding UTF8
+    _Ok "Windows Terminal settings saved."
+} else {
+    _Info "Windows Terminal settings not found, skipping."
+}
+_PrintFooter
+
+# ==============================================================================
+# 8. FINALIZATION
+# ==============================================================================
+Write-Host ""
+Write-Host "┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓" -ForegroundColor Green
+Write-Host "┃           Reset Complete!                   ┃" -ForegroundColor Green
+Write-Host "┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛" -ForegroundColor Green
+Write-Host ""
+Write-Host "  Set a different wallpaper manually if prevous one from config-wallpapers:" -ForegroundColor White
+Write-Host ""
 Pause
