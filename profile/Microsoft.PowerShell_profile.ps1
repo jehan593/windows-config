@@ -118,6 +118,7 @@ function cleanup {
     }
     _PrintFooter
 }
+
 function open {
     param([string]$Path = ".")
     $resolvedPath = Resolve-Path $Path -ErrorAction SilentlyContinue
@@ -125,7 +126,7 @@ function open {
         Write-Host " 󱞣 Path not found: $Path" -ForegroundColor Red; return
     }
     Write-Host " 󰝰 Opening Explorer..." -ForegroundColor Cyan
-    explorer.exe $resolvedPath
+    explorer.exe $resolvedPath.Path.TrimEnd('\')
 }
 
 # ==============================================================================
