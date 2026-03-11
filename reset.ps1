@@ -141,8 +141,13 @@ _PrintFooter
 _PrintHeader "Removing Wallpapers"
 $wallpaperDst = Join-Path ([Environment]::GetFolderPath("MyPictures")) "config-wallpapers"
 if (Test-Path $wallpaperDst) {
-    Remove-Item $wallpaperDst -Recurse -Force
-    _Ok "Removed wallpapers."
+    $removeWallpapers = Read-Host "│  Remove wallpapers folder? (y/N)"
+    if ($removeWallpapers -match '^[Yy]$') {
+        Remove-Item $wallpaperDst -Recurse -Force
+        _Ok "Removed wallpapers."
+    } else {
+        _Info "Skipping wallpapers removal."
+    }
 } else {
     _Info "Not found, skipping."
 }
