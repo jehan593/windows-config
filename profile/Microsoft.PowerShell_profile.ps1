@@ -118,22 +118,6 @@ function cleanup {
     }
     _PrintFooter
 }
-
-function termux {
-    param (
-        [Parameter(Mandatory=$true)][string]$EndIP,
-        [string]$User = "u0_a310",
-        [string]$Port = "8022",
-        [string]$BaseIP = "192.168.8."
-    )
-    $targetIP = if ($EndIP -match "\.") { $EndIP } else { $BaseIP + $EndIP }
-    _PrintHeader "󰄜" "Termux SSH Connection"
-    _PrintRow "󰩟" "Target" "$targetIP`:$Port"
-    _PrintRow "󰀄" "User" $User
-    _PrintFooter
-    ssh -p $Port "$User@$targetIP"
-}
-
 function open {
     param([string]$Path = ".")
     $resolvedPath = Resolve-Path $Path -ErrorAction SilentlyContinue
@@ -566,7 +550,7 @@ function warp { & "$RepoPath\scripts\warp.ps1" @args }
 function info {
     _PrintHeader "󱈄" "Custom Shell Commands"
     _PrintRow "󰒍" "Profile"   "conf, reload"
-    _PrintRow "" "System"    "rr, open, cleanup, termux"
+    _PrintRow "" "System"    "rr, open, cleanup"
     _PrintRow "󰚰" "Updates"   "upall, cup, upa, ups, upw, upf, upc"
     _PrintRow "󰍉" "FZF"       "ff, inst, uninst, up, la, Ctrl+H"
     _PrintRow "󰎈" "Media"     "pirith, wp"
