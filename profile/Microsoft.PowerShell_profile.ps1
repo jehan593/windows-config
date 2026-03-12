@@ -462,6 +462,8 @@ function ff {
     Write-Host " 󰅍 Copied: $quoted" -ForegroundColor Cyan
 }
 
+function regtwk { & "$RepoPath\scripts\regtwk.ps1" }
+
 # ==============================================================================
 # 7. THIRD PARTY TOOLS
 # ==============================================================================
