@@ -96,8 +96,9 @@ function rr {
     $lastCommand = Get-History -Count 1
     if ($lastCommand) {
         $cmdString = $lastCommand.CommandLine
+        $currentPath = $PWD.Path
         Write-Host "󰁯 Elevating: $cmdString" -ForegroundColor Cyan
-        Invoke-Elevated -Command $cmdString
+        Invoke-Elevated -Command "Set-Location '$currentPath'; $cmdString"
     } else {
         Write-Host " 󱞣 No history found." -ForegroundColor Red
     }
@@ -126,6 +127,17 @@ function open {
     }
     Write-Host " 󰝰 Opening Explorer..." -ForegroundColor Cyan
     explorer.exe $resolvedPath.Path.TrimEnd('\')
+}
+
+function touch {
+    param([Parameter(Mandatory)][string]$Path)
+    if (Test-Path $Path) {
+        (Get-Item $Path).LastWriteTime = Get-Date
+        Write-Host " 󰃰 Updated timestamp: $Path" -ForegroundColor Cyan
+    } else {
+        New-Item -ItemType File -Path $Path -Force | Out-Null
+        Write-Host " 󰝒 Created: $Path" -ForegroundColor Green
+    }
 }
 
 # ==============================================================================
@@ -553,7 +565,7 @@ function warp { & "$RepoPath\scripts\warp.ps1" @args }
 function info {
     _PrintHeader "󱈄" "Custom Shell Commands"
     _PrintRow "󰒍" "Profile"   "conf, reload"
-    _PrintRow "" "System"    "rr, open, cleanup"
+    _PrintRow "" "System"    "rr, open, cleanup, touch"
     _PrintRow "󰚰" "Updates"   "upall, cup, upa, ups, upw, upf, upc"
     _PrintRow "󰍉" "FZF"       "ff, inst, uninst, up, la, Ctrl+H"
     _PrintRow "󰎈" "Media"     "pirith, wp"
