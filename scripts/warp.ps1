@@ -11,10 +11,8 @@ function _IsAdmin {
 
 function _ElevateAction {
     param([string]$Command)
-    $exe = "pwsh"
-    $arguments = "-NoExit -NoProfile -ExecutionPolicy Bypass -File `"$PSCommandPath`" $Command"
     Write-Host " 󰮯 Elevating to Administrator..." -ForegroundColor Cyan
-    Start-Process $exe -ArgumentList $arguments -Verb RunAs
+    Start-Process "wt" -ArgumentList "pwsh", "-NoExit", "-ExecutionPolicy", "Bypass", "-File", "`"$PSCommandPath`"", "$Command" -Verb RunAs
     exit
 }
 

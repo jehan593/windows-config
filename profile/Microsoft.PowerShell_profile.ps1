@@ -33,9 +33,8 @@ Import-CachedCommand -Command "zoxide"   -CacheName "zoxide_init"
 # 2. PROFILE MANAGEMENT
 # ==============================================================================
 function reload {
-    Write-Host "  Restarting PowerShell session..." -ForegroundColor Cyan
-    $exe = "pwsh"
-    Start-Process $exe -ArgumentList "-NoExit", "-Command", "Set-Location '$PWD'"
+    Write-Host "  Restarting PowerShell session..." -ForegroundColor Cyan
+    Start-Process "wt" -ArgumentList "pwsh", "-NoExit", "-Command", "Set-Location '$PWD'"
     exit
 }
 
@@ -142,7 +141,7 @@ function upall {
     wp
     ups
     upw
-
+    upc
 }
 
 function cup {
@@ -281,6 +280,7 @@ function upc {
     if ($LASTEXITCODE -eq 0) {
         _PrintRow "󰊢" "Status" "Configs up to date!" "Green"
         _PrintFooter
+        Pause
         reload
     } else {
         _PrintRow "󰅙" "Status" "Update Failed" "Red"
