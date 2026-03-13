@@ -53,14 +53,9 @@ function Test-Admin {
 
 function Invoke-Elevated {
     param([string]$Command)
-    $exe = "pwsh"
-    $encoded = [Convert]::ToBase64String([Text.Encoding]::Unicode.GetBytes($Command))
     Write-Host "󰮯 Elevating to Administrator..." -ForegroundColor Cyan
-    if (Get-Command wt -ErrorAction SilentlyContinue) {
-        Start-Process wt -Verb RunAs -ArgumentList "-p `"PowerShell`" $exe -NoExit -EncodedCommand $encoded"
-    } else {
-        Start-Process $exe -Verb RunAs -ArgumentList "-NoExit", "-EncodedCommand", $encoded
-    }
+    $encoded = [Convert]::ToBase64String([Text.Encoding]::Unicode.GetBytes($Command))
+    Start-Process wt -Verb RunAs -ArgumentList "pwsh", "-NoExit", "-EncodedCommand", $encoded
 }
 
 function _PrintHeader {

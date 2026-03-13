@@ -90,12 +90,29 @@ function _Tweak_RemoveGitContextMenu {
     _PrintFooter
 }
 
+function _Tweak_WallpaperSlideshowInterval {
+    _PrintHeader "󰒓" "04. Custom Wallpaper Slideshow Interval"
+
+    $val = Read-Host "│  Enter interval in minutes"
+    if (-not $val -or $val -notmatch '^\d+$') {
+        _Err "Invalid input. Please enter a number."
+        _PrintFooter; return
+    }
+
+    $ms = [int]$val * 60000
+    $path = "HKCU:\Control Panel\Personalization\Desktop Slideshow"
+    if (!(Test-Path $path)) { New-Item -Path $path -Force | Out-Null }
+    Set-ItemProperty -Path $path -Name "Interval" -Value $ms -Type DWord -Force
+    _Ok "Slideshow interval set to $val minute(s)."
+    _PrintFooter
+}
 # ==============================================================================
 # MENU
 # ==============================================================================
 $tweaks = @(
     "01  Add Text Document to New Context Menu (Notepad++)"
     "02  Remove Git GUI & Bash Here from Context Menu"
+    "03  Custom Wallpaper Slideshow Interval"
 )
 
 $selected = $tweaks | fzf --exact --multi --reverse `
@@ -107,5 +124,6 @@ foreach ($item in $selected) {
     switch -Regex ($item) {
         "^01" { _Tweak_TextFileContextMenu }
         "^02" { _Tweak_RemoveGitContextMenu }
+        "^03" { _Tweak_WallpaperSlideshowInterval }
     }
 }

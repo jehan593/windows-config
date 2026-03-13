@@ -70,7 +70,7 @@ _PrintHeader "Winget Apps"
 $apps = @(
     "Starship.Starship", "junegunn.fzf", "Git.Git", "ajeetdsouza.zoxide",
     "vim.vim", "sharkdp.fd", "NSSM.NSSM",
-    "WireGuard.WireGuard", "ViRb3.wgcf", "Microsoft.WindowsTerminal"
+    "WireGuard.WireGuard", "ViRb3.wgcf", "Microsoft.WindowsTerminal", "sylikc.JPEGView"
 )
 foreach ($app in $apps) {
     $installed = winget list --id $app --exact --source winget 2>&1 | Out-String
@@ -165,6 +165,21 @@ if (Test-Path $bravePolicySrc) {
         New-ItemProperty -Path $regPath -Name $key.Name -Value $key.Value -PropertyType DWORD -Force | Out-Null
     }
     _Ok "Brave policies applied via registry."
+}
+_PrintFooter
+
+_PrintHeader "JpegView Configuration"
+$jpegviewSrc = Join-Path $PSScriptRoot "configs\jpegview\JPEGView.ini"
+$jpegviewDst = "$env:APPDATA\JPEGView\JPEGView.ini"
+$jpegviewDir = Split-Path $jpegviewDst
+
+if (Test-Path $jpegviewSrc) {
+    if (!(Test-Path $jpegviewDir)) { New-Item -ItemType Directory -Path $jpegviewDir -Force | Out-Null }
+    if (Test-Path $jpegviewDst) { Remove-Item $jpegviewDst -Force }
+    New-Item -ItemType SymbolicLink -Path $jpegviewDst -Value $jpegviewSrc -Force | Out-Null
+    _Ok "Linked: $jpegviewDst"
+} else {
+    _Info "JPEGView config not found in repo, skipping."
 }
 _PrintFooter
 
