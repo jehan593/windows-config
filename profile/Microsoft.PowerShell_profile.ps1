@@ -114,14 +114,29 @@ function cleanup {
     _PrintFooter
 }
 
+function exp {
+    param([string]$Path = ".")
+    $resolvedPath = Resolve-Path $Path -ErrorAction SilentlyContinue
+    if (-not $resolvedPath) {
+        Write-Host " 󱞣 Path not found: $Path" -ForegroundColor Red; return
+    }
+    $target = $resolvedPath.Path.TrimEnd('\')
+    if (Test-Path $target -PathType Leaf) {
+        $target = Split-Path $target -Parent
+    }
+    Write-Host " 󰝰 Opening Explorer..." -ForegroundColor Cyan
+    explorer.exe $target
+}
+
 function open {
     param([string]$Path = ".")
     $resolvedPath = Resolve-Path $Path -ErrorAction SilentlyContinue
     if (-not $resolvedPath) {
         Write-Host " 󱞣 Path not found: $Path" -ForegroundColor Red; return
     }
-    Write-Host " 󰝰 Opening Explorer..." -ForegroundColor Cyan
-    explorer.exe $resolvedPath.Path.TrimEnd('\')
+    $target = $resolvedPath.Path.TrimEnd('\')
+    Write-Host " 󰏌 Opening..." -ForegroundColor Cyan
+    Start-Process $target
 }
 
 function touch {
