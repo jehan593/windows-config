@@ -106,6 +106,25 @@ function _Tweak_WallpaperSlideshowInterval {
     _Ok "Slideshow interval set to $val minute(s)."
     _PrintFooter
 }
+
+function _Tweak_MpvSendTo {
+    _PrintHeader "󰒓" "03. Add mpv to Send To Menu"
+
+    $mpvPath = "C:\ProgramData\chocolatey\lib\mpvio.install\tools\mpv.exe"
+    if (-not (Test-Path $mpvPath)) {
+        _Err "mpv not found."
+        _PrintFooter; return
+    }
+
+    $sendToPath = [Environment]::GetFolderPath("SendTo")
+    $shortcut = (New-Object -ComObject WScript.Shell).CreateShortcut("$sendToPath\Play with mpv.lnk")
+    $shortcut.TargetPath = $mpvPath
+    $shortcut.IconLocation = $mpvPath
+    $shortcut.Save()
+    _Ok "Added mpv to Send To menu."
+    _Info "Select files > Right-click > Send To > Play with mpv"
+    _PrintFooter
+}
 # ==============================================================================
 # MENU
 # ==============================================================================
@@ -113,6 +132,7 @@ $tweaks = @(
     "01  Add Text Document to New Context Menu (Notepad++)"
     "02  Remove Git GUI & Bash Here from Context Menu"
     "03  Custom Wallpaper Slideshow Interval"
+    "04  Add mpv to Send To Menu"
 )
 
 $selected = $tweaks | fzf --exact --multi --reverse `
@@ -125,5 +145,6 @@ foreach ($item in $selected) {
         "^01" { _Tweak_TextFileContextMenu }
         "^02" { _Tweak_RemoveGitContextMenu }
         "^03" { _Tweak_WallpaperSlideshowInterval }
+        "^04" { _Tweak_MpvSendTo  }
     }
 }
