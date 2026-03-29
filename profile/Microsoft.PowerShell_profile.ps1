@@ -324,10 +324,11 @@ function inst {
         foreach ($i in $Id) {
             Write-Host " 󰐕 Installing: $i" -ForegroundColor Green
             winget install $i
+            Add-Content -Path (Get-PSReadLineOption).HistorySavePath -Value "winget install $i"
         }
     } else {
         $cacheFile = "$env:TEMP\winget_search_cache.txt"
-        $useCache = (Test-Path $cacheFile) -and ((Get-Item $cacheFile).LastWriteTime -gt (Get-Date).AddHours(-24))
+        $useCache = (Test-Path $cacheFile) -and ((Get-Item $cacheFile).LastWriteTime -gt (Get-Date).AddDays(-7))
 
         if (-not $useCache) {
             Write-Host "󰍉 Fetching package list..." -ForegroundColor Cyan
@@ -359,6 +360,7 @@ function inst {
         foreach ($id in $ids) {
             Write-Host "`n 󰐕 Installing: $id" -ForegroundColor Cyan
             winget install --id $id --exact
+            Add-Content -Path (Get-PSReadLineOption).HistorySavePath -Value "winget install --id $id --exact"
         }
     }
 }
@@ -369,6 +371,7 @@ function uninst {
         foreach ($i in $Id) {
             Write-Host " 󰛌 Removing: $i" -ForegroundColor Cyan
             winget uninstall $i
+            Add-Content -Path (Get-PSReadLineOption).HistorySavePath -Value "winget uninstall $i"
         }
     } else {
         $selected = Get-WinGetPackage |
@@ -395,6 +398,7 @@ function uninst {
         foreach ($id in $ids) {
             Write-Host "`n 󰛌 Removing: $id" -ForegroundColor Cyan
             winget uninstall --id $id --exact
+            Add-Content -Path (Get-PSReadLineOption).HistorySavePath -Value "winget uninstall --id $id --exact"
         }
     }
 }
