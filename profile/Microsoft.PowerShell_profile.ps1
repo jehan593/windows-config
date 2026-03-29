@@ -150,6 +150,36 @@ function touch {
     }
 }
 
+function sz {
+    param([Parameter(Mandatory)][string]$Path)
+    $resolved = Resolve-Path $Path -ErrorAction SilentlyContinue
+    if (-not $resolved) {
+        Write-Host " 󱞣 Path not found: $Path" -ForegroundColor Red; return
+    }
+
+    function _FormatSize($bytes) {
+        if     ($bytes -ge 1TB) { "{0:N2} TB" -f ($bytes / 1TB) }
+        elseif ($bytes -ge 1GB) { "{0:N2} GB" -f ($bytes / 1GB) }
+        elseif ($bytes -ge 1MB) { "{0:N2} MB" -f ($bytes / 1MB) }
+        elseif ($bytes -ge 1KB) { "{0:N2} KB" -f ($bytes / 1KB) }
+        else                    { "$bytes B" }
+    }
+
+    _PrintHeader "󰋊" "Size"
+    if (Test-Path $resolved.Path -PathType Leaf) {
+        $file = Get-Item $resolved.Path
+        _PrintRow "󰈔" "File" $file.Name "White"
+        _PrintRow "󰋊" "Size" (_FormatSize $file.Length) "Cyan"
+    } else {
+        $items = Get-ChildItem $resolved.Path -Recurse -ErrorAction SilentlyContinue
+        $size = ($items | Measure-Object -Property Length -Sum).Sum
+        _PrintRow "󰉋" "Folder" (Split-Path $resolved.Path -Leaf) "White"
+        _PrintRow "󰋊" "Size" (_FormatSize $size) "Cyan"
+        _PrintRow "󰈔" "Items" "$($items.Count) files" "Gray"
+    }
+    _PrintFooter
+}
+
 # ==============================================================================
 # 5. MAINTENANCE & UPDATES
 # ==============================================================================
@@ -579,7 +609,7 @@ function warp { & "$RepoPath\scripts\warp.ps1" @args }
 function info {
     _PrintHeader "󱈄" "Custom Shell Commands"
     _PrintRow "󰒍" "Profile"   "conf, reload"
-    _PrintRow "" "System"    "rr, open, cleanup, touch"
+    _PrintRow "" "System"    "rr, open, exp, cleanup, touch, sz"
     _PrintRow "󰚰" "Updates"   "upall, cup, upa, ups, upw, upf, upc"
     _PrintRow "󰍉" "FZF"       "ff, inst, uninst, up, la, Ctrl+H"
     _PrintRow "󰎈" "Media"     "pirith, wp"
