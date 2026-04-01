@@ -96,52 +96,47 @@ function _ListSocks {
     _PrintFooter
 }
 
-function _TestSocks {
-    param([string]$Name)
-    if (-not $Name) {
-        Write-Host "󰋖 Usage: wgsocks test <name>" -ForegroundColor Red; return
+function _UninstallSocks {
+    if (-not (_IsAdmin)) { _ElevateAction "uninstall"; return }
+
+    $services = @(Get-Service -ErrorAction SilentlyContinue | Where-Object { $_.Name -like "*-wgsocks" })
+    if (-not $services) {
+        Write-Host "󰋼 No tunnels found." -ForegroundColor Gray; return
     }
 
-    $baseName = $Name -replace '-wgsocks', ''
-    $confFile = "$confDir\$baseName.conf"
-    if (-not (Test-Path $confFile)) {
-        Write-Host "󰅙 Error: Config not found for '$Name'" -ForegroundColor Red; return
+    _PrintHeader "󰗨" "Uninstall Tunnels"
+    for ($i = 0; $i -lt $services.Count; $i++) {
+        $confFile = "$confDir\$($services[$i].Name -replace '-wgsocks','').conf"
+        $port = (Get-Content $confFile -ErrorAction SilentlyContinue | Where-Object { $_ -match "BindAddress" }) -replace '.*:', ''
+        Write-Host ("│  {0,-4} {1,-35} {2}" -f "[$($i+1)]", $services[$i].Name, $port.Trim()) -ForegroundColor White
     }
+    Write-Host "│"
+    $input = Read-Host "│  Enter numbers to uninstall (comma separated)"
+    if (-not $input) { _PrintFooter; return }
 
-    $port = (Get-Content $confFile | Where-Object { $_ -match "BindAddress" }) -replace '.*:', ''
-    $port = $port.Trim()
+    $backupDir = Join-Path ([Environment]::GetFolderPath("Desktop")) "wg-socks-backup"
+    if (!(Test-Path $backupDir)) { New-Item -ItemType Directory -Path $backupDir -Force | Out-Null }
 
-    _PrintHeader "󰒄" "Testing Tunnel: $Name"
-    _PrintRow "󰋼" "Port" $port "Cyan"
-    try {
-        $ip = Invoke-RestMethod -Uri "https://ifconfig.me/ip" -Proxy "socks5://127.0.0.1:$port" -ErrorAction Stop
-        _PrintRow "󰄬" "Status" "Proxy Working" "Green"
-        _PrintRow "󰩟" "IP" $ip "Green"
-    } catch {
-        _PrintRow "󰅙" "Status" "Test Failed. Is the service running?" "Red"
+    $selected = $input -split ',' | ForEach-Object { $_.Trim() } | Where-Object { $_ -match '^\d+$' }
+    foreach ($num in $selected) {
+        $idx = [int]$num - 1
+        if ($idx -lt 0 -or $idx -ge $services.Count) {
+            Write-Host "│  󰅙 Invalid number: $num" -ForegroundColor Red; continue
+        }
+        $svc = $services[$idx]
+        $confFile = "$confDir\$($svc.Name -replace '-wgsocks','').conf"
+
+        if (Test-Path $confFile) {
+            Copy-Item $confFile $backupDir -Force
+            _PrintRow "󰄬" "Backup" "$($svc.Name) backed up to Desktop\wg-socks-backup" "Cyan"
+        }
+
+        nssm stop $svc.Name 2>&1 | Out-Null
+        nssm remove $svc.Name confirm 2>&1 | Out-Null
+        Remove-Item $confFile -ErrorAction SilentlyContinue
+        _PrintRow "󰄬" "Removed" $svc.Name "Green"
     }
     _PrintFooter
-}
-
-function _RemoveSocks {
-    param([string]$Name)
-    if (-not $Name) {
-        Write-Host "󰋖 Usage: wgsocks remove <name>" -ForegroundColor Red; return
-    }
-
-    if (-not (_IsAdmin)) { _ElevateAction "remove $Name"; return }
-
-    $confFile = "$confDir\$($Name -replace '-wgsocks','').conf"
-    _PrintHeader "󰗨" "Removing Tunnel: $Name"
-    nssm stop $Name
-    nssm remove $Name confirm
-    Remove-Item $confFile -ErrorAction SilentlyContinue
-    _PrintRow "󰄬" "Status" "Removed successfully" "Green"
-    _PrintFooter
-}
-
-if (-not (Test-Path $binaryPath)) {
-    Write-Host "󰅙 wireproxy.exe not found at: $binaryPath" -ForegroundColor Red; exit
 }
 
 function _RefreshSocks {
@@ -163,19 +158,21 @@ function _RefreshSocks {
     _PrintFooter
 }
 
+if (-not (Test-Path $binaryPath)) {
+    Write-Host "󰅙 wireproxy.exe not found at: $binaryPath" -ForegroundColor Red; exit
+}
+
 switch ($Action) {
-    "install" { _InstallSocks $Arg1 $Arg2 }
-    "list"    { _ListSocks }
-    "remove"  { _RemoveSocks $Arg1 }
-    "test"    { _TestSocks $Arg1 }
-    "refresh" { _RefreshSocks } 
+    "install"   { _InstallSocks $Arg1 $Arg2 }
+    "list"      { _ListSocks }
+    "uninstall" { _UninstallSocks }
+    "refresh"   { _RefreshSocks }
     default {
         _PrintHeader "󰒄" "WireGuard SOCKS5 Manager"
-        _PrintRow "󱌣" "install" "<path> <port>  Create tunnel"
-        _PrintRow "󰒄" "list" "List all tunnels"
-        _PrintRow "󰑐" "refresh" "Restart all tunnels" 
-        _PrintRow "󰄬" "test" "<name>         Test connectivity"
-        _PrintRow "󰗨" "remove" "<name>         Remove tunnel"
+        _PrintRow "󱌣" "install"   "<path> <port>  Create tunnel"
+        _PrintRow "󰒄" "list"      "List all tunnels"
+        _PrintRow "󰑐" "refresh"   "Restart all tunnels"
+        _PrintRow "󰗨" "uninstall" "Remove tunnel(s)"
         _PrintFooter
     }
 }
