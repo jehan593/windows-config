@@ -111,13 +111,13 @@ function _UninstallSocks {
         Write-Host ("│  {0,-4} {1,-35} {2}" -f "[$($i+1)]", $services[$i].Name, $port.Trim()) -ForegroundColor White
     }
     Write-Host "│"
-    $input = Read-Host "│  Enter numbers to uninstall (comma separated)"
-    if (-not $input) { _PrintFooter; return }
+    $inputs = Read-Host "│  Enter numbers to uninstall (comma separated)"
+    if (-not $inputs) { _PrintFooter; return }
 
     $backupDir = Join-Path ([Environment]::GetFolderPath("Desktop")) "wg-socks-backup"
     if (!(Test-Path $backupDir)) { New-Item -ItemType Directory -Path $backupDir -Force | Out-Null }
 
-    $selected = $input -split ',' | ForEach-Object { $_.Trim() } | Where-Object { $_ -match '^\d+$' }
+    $selected = $inputs -split ',' | ForEach-Object { $_.Trim() } | Where-Object { $_ -match '^\d+$' }
     foreach ($num in $selected) {
         $idx = [int]$num - 1
         if ($idx -lt 0 -or $idx -ge $services.Count) {
