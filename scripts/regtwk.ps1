@@ -125,6 +125,21 @@ function _Tweak_MpvSendTo {
     _Info "Select files > Right-click > Send To > Play with mpv"
     _PrintFooter
 }
+
+function _Tweak_DisableGameBar {
+    _PrintHeader "󰒓" "04. Disable Microsoft Game Bar / Gaming Overlay"
+
+    $path = "HKCU:\Software\Microsoft\Windows\CurrentVersion\GameDVR"
+    if (!(Test-Path $path)) { New-Item -Path $path -Force | Out-Null }
+    Set-ItemProperty -Path $path -Name "AppCaptureEnabled" -Value 0 -Type DWord -Force
+
+    $path2 = "HKCU:\System\GameConfigStore"
+    if (!(Test-Path $path2)) { New-Item -Path $path2 -Force | Out-Null }
+    Set-ItemProperty -Path $path2 -Name "GameDVR_Enabled" -Value 0 -Type DWord -Force
+
+    _Ok "Game Bar and overlay disabled."
+    _PrintFooter
+}
 # ==============================================================================
 # MENU
 # ==============================================================================
@@ -133,6 +148,7 @@ $tweaks = @(
     "02  Remove Git GUI & Bash Here from Context Menu"
     "03  Custom Wallpaper Slideshow Interval"
     "04  Add mpv to Send To Menu"
+    "05  Disable Microsoft Game Bar / Gaming Overlay"
 )
 
 $selected = $tweaks | fzf --exact --multi --reverse `
@@ -146,5 +162,6 @@ foreach ($item in $selected) {
         "^02" { _Tweak_RemoveGitContextMenu }
         "^03" { _Tweak_WallpaperSlideshowInterval }
         "^04" { _Tweak_MpvSendTo  }
+        "^05" { _Tweak_DisableGameBar }
     }
 }
