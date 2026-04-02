@@ -70,7 +70,7 @@ _PrintHeader "Winget Apps"
 $apps = @(
     "Starship.Starship", "junegunn.fzf", "Git.Git", "ajeetdsouza.zoxide",
     "vim.vim", "sharkdp.fd", "NSSM.NSSM",
-    "WireGuard.WireGuard", "ViRb3.wgcf", "Microsoft.WindowsTerminal", "sylikc.JPEGView", "Microsoft.Sysinternals.Suite"
+    "WireGuard.WireGuard", "ViRb3.wgcf", "Microsoft.WindowsTerminal", "sylikc.JPEGView"
 )
 foreach ($app in $apps) {
     $installed = winget list --id $app --exact --source winget 2>&1 | Out-String

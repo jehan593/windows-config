@@ -172,13 +172,14 @@ function sz {
         _PrintRow "󰈔" "File"    $file.Name "White"
         _PrintRow "󰋊" "Size"    (_FormatSize $file.Length) "Cyan"
     } else {
-        $raw = du64 -c -q $resolved.Path 2>&1
-        $csv = $raw | Where-Object { $_ -match "^`"" } | ConvertFrom-Csv -Header "Path","CurrentFileCount","CurrentFileSize","FileCount","DirectoryCount","DirectorySize","DirectorySizeOnDisk"
+        $items      = Get-ChildItem $resolved.Path -Recurse -Force -ErrorAction SilentlyContinue
+        $size       = ($items | Measure-Object -Property Length -Sum).Sum
+        $fileCount  = ($items | Where-Object { -not $_.PSIsContainer }).Count
+        $folderCount= ($items | Where-Object { $_.PSIsContainer }).Count
 
-        _PrintRow "󰈔" "Files"   $csv.FileCount "White"
-        _PrintRow "󰉋" "Folders" $csv.DirectoryCount "White"
-        _PrintRow "󰋊" "Size"    (_FormatSize ([long]$csv.DirectorySize)) "Cyan"
-        _PrintRow "󰋊" "On Disk" (_FormatSize ([long]$csv.DirectorySizeOnDisk)) "Cyan"
+        _PrintRow "󰈔" "Files"   "$fileCount" "White"
+        _PrintRow "󰉋" "Folders" "$folderCount" "White"
+        _PrintRow "󰋊" "Size"    (_FormatSize $size) "Cyan"
     }
 
     _PrintFooter
