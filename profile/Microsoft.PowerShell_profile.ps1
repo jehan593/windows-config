@@ -166,17 +166,21 @@ function sz {
     }
 
     _PrintHeader "󰋊" "Size"
+
     if (Test-Path $resolved.Path -PathType Leaf) {
         $file = Get-Item $resolved.Path
-        _PrintRow "󰈔" "File" $file.Name "White"
-        _PrintRow "󰋊" "Size" (_FormatSize $file.Length) "Cyan"
+        _PrintRow "󰈔" "File"    $file.Name "White"
+        _PrintRow "󰋊" "Size"    (_FormatSize $file.Length) "Cyan"
     } else {
-        $items = Get-ChildItem $resolved.Path -Recurse -ErrorAction SilentlyContinue
-        $size = ($items | Measure-Object -Property Length -Sum).Sum
-        _PrintRow "󰉋" "Folder" (Split-Path $resolved.Path -Leaf) "White"
-        _PrintRow "󰋊" "Size" (_FormatSize $size) "Cyan"
-        _PrintRow "󰈔" "Items" "$($items.Count) files" "Gray"
+        $raw = du64 -c -q $resolved.Path 2>&1
+        $csv = $raw | Where-Object { $_ -match "^`"" } | ConvertFrom-Csv -Header "Path","CurrentFileCount","CurrentFileSize","FileCount","DirectoryCount","DirectorySize","DirectorySizeOnDisk"
+
+        _PrintRow "󰈔" "Files"   $csv.FileCount "White"
+        _PrintRow "󰉋" "Folders" $csv.DirectoryCount "White"
+        _PrintRow "󰋊" "Size"    (_FormatSize ([long]$csv.DirectorySize)) "Cyan"
+        _PrintRow "󰋊" "On Disk" (_FormatSize ([long]$csv.DirectorySizeOnDisk)) "Cyan"
     }
+
     _PrintFooter
 }
 
