@@ -11,6 +11,7 @@ $env:FZF_DEFAULT_OPTS = @(
     '--color=hl:#c2a166,fg:#d8dee9,header:#5e81ac'
     '--color=info:#b48ead,pointer:#88c0d0,marker:#ebcb8b'
     '--color=fg+:#e5e9f0,prompt:#81a1c1,hl+:#ebcb8b'
+    '--cycle'
 ) -join ' '
 
 # Generic Cache Function to speed up Shell Start
@@ -45,7 +46,7 @@ function reload
 
 function conf
 {
-    Write-Host "󰨞 Opening Configs..." -ForegroundColor Cyan
+    Write-Host "󰅨 Opening Configs..." -ForegroundColor Cyan
     zed $RepoPath
 }
 
@@ -300,7 +301,7 @@ function upw
     $pausePath = "HKLM:\SOFTWARE\Microsoft\WindowsUpdate\UX\Settings"
     if (Get-ItemProperty -Path $pausePath -Name "PauseUpdatesExpiryTime" -ErrorAction SilentlyContinue)
     {
-        Write-Host " 󱠇 Updates paused. Resuming temporarily..." -ForegroundColor Yellow
+        Write-Host " 󱠇 Updates paused. Resuming..." -ForegroundColor Yellow
         Remove-ItemProperty -Path $pausePath -Name "PauseUpdatesExpiryTime" -ErrorAction SilentlyContinue
         Remove-ItemProperty -Path $pausePath -Name "PauseFeatureUpdatesStartTime" -ErrorAction SilentlyContinue
         Remove-ItemProperty -Path $pausePath -Name "PauseQualityUpdatesStartTime" -ErrorAction SilentlyContinue
@@ -465,7 +466,7 @@ function inst
         foreach ($i in $Id)
         {
             Write-Host " 󰐕 Installing: $i" -ForegroundColor Green
-            winget install $i
+            winget install $i --interactive
             Add-Content -Path (Get-PSReadLineOption).HistorySavePath -Value "winget install $i"
         }
     } else
@@ -482,7 +483,7 @@ function inst
         }
 
         $selected = Get-Content $cacheFile |
-            fzf --exact --multi --reverse `
+            fzf --multi --reverse `
                 --header "󰏓 Ctrl-P: Preview | Tab: multi-select" `
                 --preview "winget show --id {}" `
                 --preview-window "right:60%:hidden" `
@@ -509,7 +510,7 @@ function inst
         foreach ($id in $ids)
         {
             Write-Host "`n 󰐕 Installing: $id" -ForegroundColor Cyan
-            winget install --id $id --exact
+            winget install --id $id --exact --interactive
             Add-Content -Path (Get-PSReadLineOption).HistorySavePath -Value "winget install --id $id --exact"
         }
     }
@@ -530,7 +531,7 @@ function uninst
     {
         $selected = Get-WinGetPackage |
             Select-Object -ExpandProperty Id |
-            fzf --exact --multi --reverse `
+            fzf --multi --reverse `
                 --header "󰏔 Ctrl-P: Preview | Tab: multi-select" `
                 --preview "winget show --id {}" `
                 --preview-window "right:60%:hidden" `
@@ -567,7 +568,7 @@ function la
 {
     $selected = Get-WinGetPackage |
         Select-Object -ExpandProperty Id |
-        fzf --exact --reverse `
+        fzf --reverse `
             --header "󰘥 Ctrl-P: Preview | Enter: Show info" `
             --preview "winget show --id {}" `
             --preview-window "right:60%:hidden" `
@@ -589,7 +590,7 @@ function up
 
     $selected = $updates |
         Select-Object -ExpandProperty Id |
-        fzf --exact --multi --reverse `
+        fzf --multi --reverse `
             --header "󰚰 Ctrl-P: Preview | Tab: multi-select" `
             --preview "winget show --id {}" `
             --preview-window "right:60%:hidden" `
@@ -632,7 +633,7 @@ Set-PSReadLineKeyHandler -Key "Ctrl+h" -ScriptBlock {
 
     $selected = $content |
         Select-Object -Unique |
-        fzf --exact --reverse --height 40% --header " History Search"
+        fzf --reverse --height 40% --header " History Search"
 
     if ($selected)
     {
@@ -655,7 +656,7 @@ function ff
     }
 
     $selection = fd . $SearchPath --hidden --color never --exclude "Windows" |
-        fzf --exact --layout=reverse --height=40% --header " Searching: $SearchPath"
+        fzf --layout=reverse --height=40% --header " Searching: $SearchPath"
 
     if (-not $selection)
     { return
@@ -706,7 +707,7 @@ function pirith
     $selected = Get-ChildItem -Path $dir -File |
         Where-Object { $_.Extension -in @('.mp3', '.wav', '.aac', '.flac', '.ogg') } |
         ForEach-Object { $_.Name } |
-        fzf --exact --reverse --height 40% --header "󰪐  Select to Play"
+        fzf --reverse --height 40% --header "󰪐  Select to Play"
 
     if ($selected)
     {
