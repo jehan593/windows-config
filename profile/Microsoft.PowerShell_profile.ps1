@@ -765,7 +765,7 @@ function info
     _PrintRow "󰒍" "Profile"   "conf, reload"
     _PrintRow "" "System"    "rr, open, exp, cleanup, touch, sz"
     _PrintRow "󰚰" "Updates"   "upall, cup, upa, ups, upw, upf, upc"
-    _PrintRow "󰍉" "FZF"       "ff, inst, uninst, up, la, Ctrl+H"
+    _PrintRow "󰍉" "FZF"       "ff, inst, instd, up, la, Ctrl+H"
     _PrintRow "󰎈" "Media"     "pirith, wp"
     _PrintRow "󱓞" "Tools"     "ctt, massgrave"
     _PrintRow "󰒄" "Network"   "wgsocks, warp"
