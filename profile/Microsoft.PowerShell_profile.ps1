@@ -480,69 +480,57 @@ function inst
     }
 }
 
-function uninst
+function instd
 {
-    param([string[]]$Id)
-    if ($Id)
+    $result = Get-WinGetPackage |
+        Select-Object -ExpandProperty Id |
+        fzf --multi --reverse `
+            --header "󰘥 Ctrl-P: Preview | Ctrl-U: Uninstall | Enter: Show info" `
+            --preview "winget show --id {}" `
+            --preview-window "right:60%:hidden" `
+            --bind "ctrl-p:toggle-preview" `
+            --expect=ctrl-u,enter
+
+    if (-not $result)
+    { return
+    }
+
+    $key = $result[0]
+    $selected = @($result | Select-Object -Skip 1 | Where-Object { $_ })
+
+    if (-not $selected -or $selected[0] -eq "")
+    { return
+    }
+
+    if ($key -eq "ctrl-u")
     {
-        foreach ($i in $Id)
-        {
-            Write-Host " 󰛌 Removing: $i" -ForegroundColor Cyan
-            winget uninstall $i
-            Add-Content -Path (Get-PSReadLineOption).HistorySavePath -Value "winget uninstall $i"
-        }
-    } else
-    {
-        $selected = Get-WinGetPackage |
-            Select-Object -ExpandProperty Id |
-            fzf --multi --reverse `
-                --header "󰏔 Ctrl-P: Preview | Tab: multi-select" `
-                --preview "winget show --id {}" `
-                --preview-window "right:60%:hidden" `
-                --bind "ctrl-p:toggle-preview"
-
-        if (-not $selected)
-        { return
-        }
-
-        $ids = @($selected | ForEach-Object { $_.Trim() } | Where-Object { $_ })
-
-        if ($ids.Count -gt 1)
+        if ($selected.Count -gt 1)
         {
             Write-Host ""
             Write-Host "󰏔 Selected for removal:" -ForegroundColor Cyan
-            $ids | ForEach-Object { Write-Host "   - $_" -ForegroundColor Red }
+            $selected | ForEach-Object { Write-Host "   - $_" -ForegroundColor Red }
             Write-Host ""
-            $confirm = Read-Host "Uninstall $($ids.Count) package(s)? (Y/n)"
+            $confirm = Read-Host "Uninstall $($selected.Count) package(s)? (Y/n)"
             if ($confirm -match '^[Nn]$')
             { Write-Host "󰅙 Aborted." -ForegroundColor Gray; return
             }
         }
 
-        foreach ($id in $ids)
+        foreach ($id in $selected)
         {
             Write-Host "`n󰛌 Removing: $id" -ForegroundColor Cyan
             winget uninstall --id $id --exact
             Add-Content -Path (Get-PSReadLineOption).HistorySavePath -Value "winget uninstall --id $id --exact"
         }
+    } else
+    {
+        foreach ($pkg in $selected)
+        {
+            $pkg = $pkg.Trim()
+            Write-Host "`n󰘥 Fetching info for: $pkg" -ForegroundColor Yellow
+            winget show --id $pkg --exact
+        }
     }
-}
-
-function la
-{
-    $selected = Get-WinGetPackage |
-        Select-Object -ExpandProperty Id |
-        fzf --reverse `
-            --header "󰘥 Ctrl-P: Preview | Enter: Show info" `
-            --preview "winget show --id {}" `
-            --preview-window "right:60%:hidden" `
-            --bind "ctrl-p:toggle-preview"
-
-    if (-not $selected)
-    { return
-    }
-    Write-Host "`n󰘥 Fetching info for: $selected" -ForegroundColor Yellow
-    winget show --id $selected.Trim() --exact
 }
 
 function up
