@@ -1,4 +1,4 @@
-﻿# ==============================================================================
+# ==============================================================================
 # 1. ENVIRONMENT & INITIALIZATION
 # ==============================================================================
 $RepoPath = "$HOME\windows-config"
@@ -459,7 +459,7 @@ function inst
 
         $ids = @($selected | ForEach-Object { $_.Trim() } | Where-Object { $_ })
 
-        if ($ids.Count -gt 1)
+        if ($ids.Count -gt 0)
         {
             Write-Host ""
             Write-Host "󰏓 Selected for installation:" -ForegroundColor Cyan
