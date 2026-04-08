@@ -247,19 +247,9 @@ function cup {
             _PrintRow "" "Windows" "No updates available" "Green"
         }
         else {
-            $count = if ($updates -is [array]) {
-                $updates.Count
-            }
-            else {
-                1
-            }
-            _PrintRow "󰚰" "Windows" "$count update(s) available" "Yellow"
-            if ($updates -is [array]) {
-                $updates | ForEach-Object { Write-Host "   󱞩 $($_.Title)" -ForegroundColor Cyan }
-            }
-            else {
-                Write-Host "   󱞩 $($updates.Title)" -ForegroundColor Cyan
-            }
+            $updatesList = @($updates)
+            _PrintRow "󰚰" "Windows" "$($updatesList.Count) update(s) available" "Yellow"
+            $updatesList | ForEach-Object { Write-Host "   󱞩 $($_.Title)" -ForegroundColor Cyan }
         }
     }
     catch {
@@ -296,13 +286,8 @@ function upw {
             return
         }
 
-        $count = if ($updates -is [array]) {
-            $updates.Count
-        }
-        else {
-            1
-        }
-        _PrintRow "󰚰" "Found" "$count update(s)" "Yellow"
+        $updatesList = @($updates)
+        _PrintRow "󰚰" "Found" "$($updatesList.Count) update(s)" "Yellow"
 
         _PrintRow "󰏔" "Status" "Installing..." "Cyan"
         Get-WindowsUpdate -Install -AcceptAll -AutoReboot:$false -ErrorAction SilentlyContinue
