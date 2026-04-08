@@ -1,4 +1,4 @@
-﻿# ==============================================================================
+# ==============================================================================
 # 1. SELF-ELEVATION BLOCK
 # ==============================================================================
 if (-not $PSScriptRoot)
@@ -379,18 +379,47 @@ _PrintFooter
 
 _PrintHeader "Windows Terminal Configuration"
 $wtSettingsPath = "$env:LocalAppData\Packages\Microsoft.WindowsTerminal_8wekyb3d8bbwe\LocalState\settings.json"
-if (Test-Path $wtSettingsPath)
+$wtDir = Split-Path $wtSettingsPath
+
+if (-not (Test-Path $wtDir))
+{
+    New-Item -ItemType Directory -Path $wtDir -Force | Out-Null
+}
+
+if (-not (Test-Path $wtSettingsPath))
+{
+    # Generate a base settings.json for fresh systems so WT loads preferences on first launch
+    $barebonesSettings = @"
+{
+    "defaultProfile": "{574e775e-4f2a-5b96-ac1e-a2962a402336}",
+    "profiles": {
+        "defaults": {
+            "colorScheme": "Nord",
+            "font": {
+                "face": "MartianMono Nerd Font Mono",
+                "size": 9
+            }
+        },
+        "list": []
+    }
+}
+"@
+    Set-Content -Path $wtSettingsPath -Value $barebonesSettings -Encoding UTF8
+    _Ok "Created initial Windows Terminal settings (PWSH 7 as default, Nord, Font)."
+} else
 {
     $settings = Get-Content $wtSettingsPath -Raw | ConvertFrom-Json
 
     $pwshProfile = $settings.profiles.list | Where-Object { $_.name -like "*PowerShell*" -and $_.name -notlike "*Windows*" } | Select-Object -First 1
     if ($pwshProfile)
     {
-        $settings.defaultProfile = $pwshProfile.guid
+        $settings | Add-Member -NotePropertyName "defaultProfile" -NotePropertyValue $pwshProfile.guid -Force
         _Ok "Default profile set to PowerShell 7."
     } else
     {
-        _Info "PowerShell 7 profile not found, skipping."
+        # Profile not in list because terminal hasn't run since PWSH installation, fallback to deterministic GUID
+        $settings | Add-Member -NotePropertyName "defaultProfile" -NotePropertyValue "{574e775e-4f2a-5b96-ac1e-a2962a402336}" -Force
+        _Ok "Default profile set to PowerShell 7 (fallback GUID)."
     }
 
     if (-not $settings.profiles.defaults)
@@ -409,9 +438,6 @@ if (Test-Path $wtSettingsPath)
 
     $settings | ConvertTo-Json -Depth 20 | Set-Content $wtSettingsPath -Encoding UTF8
     _Ok "Windows Terminal settings saved."
-} else
-{
-    _Info "Windows Terminal not found. Restart Terminal manually after setup and re-run to apply settings."
 }
 _PrintFooter
 
