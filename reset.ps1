@@ -1,4 +1,4 @@
-﻿# ==============================================================================
+# ==============================================================================
 # 1. SELF-ELEVATION BLOCK
 # ==============================================================================
 if (-not $PSScriptRoot) {
@@ -234,14 +234,14 @@ _PrintFooter
 # 6. OPTIONAL - Uninstall Apps
 # ==============================================================================
 _PrintHeader "Optional: Package Removal"
-_Info "Targets: Starship, fzf, Git, zoxide, vim, pwsh, fd, NSSM, WireGuard, wgcf, mpv"
+_Info "Targets: Starship, fzf, Git, zoxide, vim, pwsh, bat, fd, NSSM, WireGuard, wgcf, mpv"
 Write-Host "│"
 $response = Read-Host "│  Remove these packages? (y/N)"
 
 if ($response -match '^[Yy]$') {
     $apps = @(
         "Starship.Starship", "junegunn.fzf", "Git.Git", "ajeetdsouza.zoxide",
-        "vim.vim", "Microsoft.PowerShell", "sharkdp.fd", "NSSM.NSSM",
+        "vim.vim", "Microsoft.PowerShell", "sharkdp.bat", "sharkdp.fd", "NSSM.NSSM",
         "WireGuard.WireGuard", "ViRb3.wgcf"
     )
     foreach ($app in $apps) {

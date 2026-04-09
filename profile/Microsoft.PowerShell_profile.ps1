@@ -919,6 +919,12 @@ function info {
 # ==============================================================================
 # 11. OVERRIDES
 # ==============================================================================
+$env:BAT_THEME = "Nord"
+Remove-Item Alias:cat -Force -ErrorAction SilentlyContinue
+if (Get-Command bat -ErrorAction SilentlyContinue) {
+    Set-Alias cat bat
+}
+
 Remove-Item Alias:cd -Force -ErrorAction SilentlyContinue
 Remove-Item Alias:z  -Force -ErrorAction SilentlyContinue
 
