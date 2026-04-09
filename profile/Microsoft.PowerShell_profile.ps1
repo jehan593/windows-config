@@ -236,7 +236,7 @@ function cup {
         "n" | store updates
     }
     else {
-        _PrintRow "󱞣" "Store" "Command not found" "Gray"
+        _PrintRow "󱞣" "Store" "Command not found. Update Microsoft Store." "Gray"
     }
     Write-Host ""
     Write-Host " Windows Update" -ForegroundColor Magenta
@@ -308,7 +308,7 @@ function ups {
         _PrintFooter
     }
     else {
-        Write-Host " 󰅙 Command 'store' not found." -ForegroundColor Gray
+        Write-Host " 󰅙 Command 'store' not found. Update Microsoft Store." -ForegroundColor Gray
     }
 }
 
