@@ -739,15 +739,17 @@ function ff {
     }
 
     $selection = fd . $SearchPath --hidden --color never --exclude "Windows" |
-    fzf --layout=reverse --height=40% --header "󱎟 Searching: $SearchPath"
+    fzf --no-multi --layout=reverse --height=40% --header "󱎟 Searching: $SearchPath"
 
     if (-not $selection) {
         return
     }
 
     $quoted = "`"$($selection.Trim())`""
-    Set-Clipboard $quoted
-    Write-Host "󰅍 Copied: $quoted" -ForegroundColor Cyan
+    $escaped = " $quoted" -replace '([+^%~()\[\]{}])', '{$1}'
+    $wshell = New-Object -ComObject WScript.Shell
+    $wshell.SendKeys($escaped)
+    $wshell.SendKeys('{HOME}')
 }
 
 function regtwk {
