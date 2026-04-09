@@ -2,6 +2,7 @@
 
 $warpConf = "$env:USERPROFILE\windows-config-scripts\warp\warp.conf"
 $warpDir  = "$env:USERPROFILE\windows-config-scripts\warp"
+$warpIcon = "$env:USERPROFILE\windows-config\assets\warp\warp.ico"
 $tunnel   = "warp"
 
 function _IsAdmin
@@ -37,18 +38,69 @@ function _PrintRow
     Write-Host ("│  {0} {1,-12} {2}" -f $Icon, $Label, $Value) -ForegroundColor $Color
 }
 
+$trayStopFile = "$env:TEMP\warp-tray.stop"
+
+function _TrayStart
+{
+    $resolvedIcon = $warpIcon
+    $stopFile     = $trayStopFile
+
+    $trayCode = {
+        param($iconPath, $stopFile)
+        Add-Type -AssemblyName System.Windows.Forms
+        Add-Type -AssemblyName System.Drawing
+
+        $icon = New-Object System.Drawing.Icon $iconPath
+        $tray = New-Object System.Windows.Forms.NotifyIcon
+        $tray.Icon    = $icon
+        $tray.Text    = "WARP Connected"
+        $tray.Visible = $true
+
+        # Poll for stop file instead of blocking on Application::Run
+        $timer = New-Object System.Windows.Forms.Timer
+        $timer.Interval = 500
+        $timer.add_Tick({
+                if (Test-Path $stopFile)
+                {
+                    $tray.Visible = $false
+                    Remove-Item $stopFile -Force -ErrorAction SilentlyContinue
+                    $timer.Stop()
+                    [System.Windows.Forms.Application]::Exit()
+                }
+            })
+        $timer.Start()
+        [System.Windows.Forms.Application]::Run()
+        $tray.Visible = $false
+    }
+
+    # Clean up any leftover stop file
+    Remove-Item $trayStopFile -Force -ErrorAction SilentlyContinue
+
+    $rs = [runspacefactory]::CreateRunspace()
+    $rs.Open()
+    $ps = [powershell]::Create()
+    $ps.Runspace = $rs
+    $ps.AddScript($trayCode).AddArgument($resolvedIcon).AddArgument($stopFile) | Out-Null
+    $ps.BeginInvoke() | Out-Null
+}
+
+function _TrayStop
+{
+    # Signal the tray thread to exit cleanly
+    New-Item -ItemType File -Path $trayStopFile -Force | Out-Null
+    Start-Sleep -Milliseconds 600  # give it a moment to clean up
+}
+
 function _WarpOn
 {
     if (-not (_IsAdmin))
     { _ElevateAction "on"; return
     }
 
-    # Auto-rotate if config not found
     if (-not (Test-Path $warpConf))
     {
         Write-Host " 󰅍 Config not found. Auto-rotating credentials..." -ForegroundColor Cyan
         _WarpRotate
-        # Check again after rotation
         if (-not (Test-Path $warpConf))
         {
             Write-Host " 󰅙 Failed to generate config. Aborting connection." -ForegroundColor Red
@@ -58,6 +110,7 @@ function _WarpOn
 
     _PrintHeader "󰖂" "WireGuard WARP"
     wireguard /installtunnelservice $warpConf
+    _TrayStart
     _PrintRow "󰤨" "Status" "CONNECTED" "Green"
     _PrintFooter
 }
@@ -69,6 +122,7 @@ function _WarpOff
     }
     _PrintHeader "󰖂" "WireGuard WARP"
     wireguard /uninstalltunnelservice $tunnel
+    _TrayStop
     _PrintRow "󰤭" "Status" "DISCONNECTED" "Red"
     _PrintFooter
 }
@@ -155,8 +209,8 @@ switch ($Action)
     default
     {
         _PrintHeader "󰖂" "WARP Manager"
-        _PrintRow "󰤨" "on" "Connect tunnel"
-        _PrintRow "󰤭" "off" "Disconnect tunnel"
+        _PrintRow "󰤨" "on"     "Connect tunnel"
+        _PrintRow "󰤭" "off"    "Disconnect tunnel"
         _PrintRow "󰚰" "rotate" "Rotate WARP credentials"
         _PrintRow "󰖂" "status" "Show tunnel status"
         _PrintFooter
