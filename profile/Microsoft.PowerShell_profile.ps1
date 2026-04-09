@@ -852,15 +852,66 @@ function warp {
 # 10. INFO & DOCUMENTATION
 # ==============================================================================
 function info {
-    _PrintHeader "󱈄" "Custom Shell Commands"
-    _PrintRow "󰒍" "Profile"   "conf, reload"
-    _PrintRow "" "System"    "rr, open, exp, cleanup, touch, sz"
-    _PrintRow "󰚰" "Updates"   "upall, cup, upp, ups, upw, upf, upc"
-    _PrintRow "󰍉" "FZF"       "ff, inst, uninst, instd, upg, la, Ctrl+H"
-    _PrintRow "󰎈" "Media"     "pirith, wp"
-    _PrintRow "󱓞" "Tools"     "ctt, massgrave"
-    _PrintRow "󰒄" "Network"   "wgsocks, warp"
-    _PrintFooter
+    Write-Host ""
+    Write-Host " 󱈄 Custom Shell Commands & Aliases" -ForegroundColor White
+    Write-Host " ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━" -ForegroundColor DarkBlue
+
+    function _InfoGroup([string]$Icon, [string]$Title) {
+        Write-Host " $Icon $Title" -ForegroundColor Yellow
+    }
+
+    function _InfoCmd([string]$Cmd, [string]$Desc) {
+        Write-Host "   " -NoNewline
+        Write-Host ("{0,-12}" -f $Cmd) -NoNewline -ForegroundColor Cyan
+        Write-Host " - $Desc" -ForegroundColor Gray
+    }
+
+    _InfoGroup "󰒍" "Profile & Config"
+    _InfoCmd "conf" "Open dotfiles config in Zed"
+    _InfoCmd "reload" "Restart PowerShell session"
+    Write-Host ""
+    
+    _InfoGroup "" "System & Files"
+    _InfoCmd "la" "List directory contents (including hidden)"
+    _InfoCmd "rr" "Re-run last command as Admin"
+    _InfoCmd "exp" "Open path in Explorer (default: .)"
+    _InfoCmd "open" "Open path in default app (default: .)"
+    _InfoCmd "touch" "Create a new file or update timestamp"
+    _InfoCmd "sz" "Calculate file or directory size"
+    _InfoCmd "cleanup" "Clean Windows temp and component store"
+    Write-Host ""
+
+    _InfoGroup "󰚰" "Updates & Maintenance"
+    _InfoCmd "upall" "Run all system updates listed below"
+    _InfoCmd "cup" "Check Winget, Store, and Windows for updates"
+    _InfoCmd "upp" "Winget: Upgrade all packages automatically"
+    _InfoCmd "upg" "Winget: Upgrade packages interactively"
+    _InfoCmd "ups" "MS Store: Install all app updates"
+    _InfoCmd "upw" "Windows Update: Install all available updates"
+    _InfoCmd "upf" "Firefox: Sync Betterfox overrides"
+    _InfoCmd "upc" "Configs: Pull latest from dotfiles repo"
+    Write-Host ""
+
+    _InfoGroup "󰍉" "Interactive Utilities (FZF)"
+    _InfoCmd "ff" "Fuzzy find files & copy path to clipboard"
+    _InfoCmd "inst" "Winget: Install packages"
+    _InfoCmd "uninst" "Winget: Uninstall packages"
+    _InfoCmd "instd" "Winget: View info or uninstall packages"
+    _InfoCmd "Ctrl+H" "Fuzzy search and execute command history"
+    Write-Host ""
+
+    _InfoGroup "󰎈" "Media & Third-Party"
+    _InfoCmd "pirith" "Play audio from local selection using MPV"
+    _InfoCmd "wp" "Sync local wallpapers to/from GitHub repo"
+    _InfoCmd "ctt" "Download and run Chris Titus Tech toolbox"
+    _InfoCmd "massgrave" "Download and run Windows Activation scripts"
+    Write-Host ""
+
+    _InfoGroup "󰒄" "Network"
+    _InfoCmd "wgsocks" "Toggle WireGuard SOCKS proxy"
+    _InfoCmd "warp" "Toggle Cloudflare WARP"
+
+    Write-Host " ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`n" -ForegroundColor DarkBlue
 }
 
 # ==============================================================================
