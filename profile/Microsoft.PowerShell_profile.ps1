@@ -511,7 +511,7 @@ function uninst {
         }
     }
     else {
-        $selected = Get-WinGetPackage | 
+        $selected = Get-WinGetPackage |
         Select-Object -ExpandProperty Id |
         fzf --multi --reverse `
             --header "󰏔 Ctrl-P: Preview | Tab: multi-select" `
@@ -545,50 +545,21 @@ function uninst {
 }
 
 function instd {
-    $result = Get-WinGetPackage |
+    $selected = Get-WinGetPackage |
     Select-Object -ExpandProperty Id |
     fzf --multi --reverse `
-        --header "󰘥 Ctrl-P: Preview | Ctrl-U: Uninstall | Enter: Show info" `
+        --header "󰘥 Ctrl-P: Preview | Enter: Show info" `
         --preview "winget show --id {}" `
         --preview-window "right:60%:hidden" `
-        --bind "ctrl-p:toggle-preview" `
-        --expect=ctrl-u,enter
-
-    if (-not $result) {
+        --bind "ctrl-p:toggle-preview" |
+    Where-Object { $_ }
+    if (-not $selected) {
         return
     }
-
-    $key = $result[0]
-    $selected = @($result | Select-Object -Skip 1 | Where-Object { $_ })
-
-    if (-not $selected -or $selected[0] -eq "") {
-        return
-    }
-
-    if ($key -eq "ctrl-u") {
-        if ($selected.Count -gt 0) {
-            Write-Host ""
-            Write-Host "󰏔 Selected for removal:" -ForegroundColor Cyan
-            $selected | ForEach-Object { Write-Host "   - $_" -ForegroundColor Red }
-            Write-Host ""
-            $confirm = Read-Host "Uninstall $($selected.Count) package(s)? (Y/n)"
-            if ($confirm -match '^[Nn]$') {
-                Write-Host "󰅙 Aborted." -ForegroundColor Gray; return
-            }
-        }
-
-        foreach ($id in $selected) {
-            Write-Host "`n󰛌 Removing: $id" -ForegroundColor Cyan
-            winget uninstall --id $id --exact
-            Add-Content -Path (Get-PSReadLineOption).HistorySavePath -Value "winget uninstall --id $id --exact"
-        }
-    }
-    else {
-        foreach ($pkg in $selected) {
-            $pkg = $pkg.Trim()
-            Write-Host "`n󰘥 Fetching info for: $pkg" -ForegroundColor Yellow
-            winget show --id $pkg --exact
-        }
+    foreach ($pkg in $selected) {
+        $pkg = $pkg.Trim()
+        Write-Host "`n󰘥 Fetching info for: $pkg" -ForegroundColor Yellow
+        winget show --id $pkg --exact
     }
 }
 
@@ -872,7 +843,7 @@ function info {
     _InfoCmd "conf" "Open dotfiles config in Zed"
     _InfoCmd "reload" "Restart PowerShell session"
     Write-Host ""
-    
+
     _InfoGroup "" "System & Files"
     _InfoCmd "z" "Jump to directory (zoxide) and list contents"
     _InfoCmd "la" "List directory contents (including hidden)"
@@ -900,7 +871,7 @@ function info {
     _InfoCmd "ff" "Fuzzy find files & copy path to clipboard"
     _InfoCmd "inst" "Winget: Install packages"
     _InfoCmd "uninst" "Winget: Uninstall packages"
-    _InfoCmd "instd" "Winget: View info or uninstall packages"
+    _InfoCmd "instd" "Winget: View packages"
     _InfoCmd "Ctrl+H" "Fuzzy search and execute command history"
     Write-Host ""
 
