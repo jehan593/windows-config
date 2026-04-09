@@ -639,7 +639,7 @@ function upg {
 
         foreach ($i in $resolvedIds) {
             Write-Host "`n󰑢 Upgrading: $i" -ForegroundColor Yellow
-            winget upgrade --id $i --exact --interactive
+            winget upgrade --id $i --exact
             Add-Content -Path (Get-PSReadLineOption).HistorySavePath -Value "winget upgrade --id $i --exact"
         }
     }
@@ -676,7 +676,7 @@ function upg {
 
         foreach ($id in $ids) {
             Write-Host "`n󰑢 Upgrading: $id" -ForegroundColor Yellow
-            winget upgrade --id $id --exact --interactive
+            winget upgrade --id $id --exact
             Add-Content -Path (Get-PSReadLineOption).HistorySavePath -Value "winget upgrade --id $id --exact"
         }
     }
@@ -855,7 +855,7 @@ function warp {
 # ==============================================================================
 function info {
     Write-Host ""
-    Write-Host " 󱈄 Custom Shell Commands & Aliases" -ForegroundColor White
+    Write-Host " 󱈄 Custom Commands" -ForegroundColor White
     Write-Host " ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━" -ForegroundColor DarkBlue
 
     function _InfoGroup([string]$Icon, [string]$Title) {
@@ -874,6 +874,7 @@ function info {
     Write-Host ""
     
     _InfoGroup "" "System & Files"
+    _InfoCmd "z" "Jump to directory (zoxide) and list contents"
     _InfoCmd "la" "List directory contents (including hidden)"
     _InfoCmd "rr" "Re-run last command as Admin"
     _InfoCmd "exp" "Open path in Explorer (default: .)"
@@ -881,6 +882,7 @@ function info {
     _InfoCmd "touch" "Create a new file or update timestamp"
     _InfoCmd "sz" "Calculate file or directory size"
     _InfoCmd "cleanup" "Clean Windows temp and component store"
+    _InfoCmd "regtwk" "Apply Windows Registry Tweaks"
     Write-Host ""
 
     _InfoGroup "󰚰" "Updates & Maintenance"
@@ -956,3 +958,10 @@ function z {
 function la {
     Get-ChildItem -Force @args
 }
+
+# ==============================================================================
+# 12. STARTUP MESSAGE
+# ==============================================================================
+Write-Host ""
+Write-Host "`e[38;2;235;203;139m󱈄 Run 'info' for custom commands`e[0m"
+Write-Host ""
