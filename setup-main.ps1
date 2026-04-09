@@ -54,15 +54,6 @@ Write-Host "┗━━━━━━━━━━━━━━━━━━━━━�
 # ==============================================================================
 # 3. PACKAGE MANAGERS & CORE TOOLS
 # ==============================================================================
-_PrintHeader "Windows Store & App Installer"
-_Info "Updating Windows Store..."
-winget install --id 9WZDNCRFJBMP --source msstore --accept-package-agreements --accept-source-agreements 2>&1 | Out-Null
-_Ok "Windows Store updated."
-_Info "Updating App Installer (winget)..."
-winget install --id Microsoft.AppInstaller --source msstore --accept-package-agreements --accept-source-agreements 2>&1 | Out-Null
-_Ok "App Installer updated."
-_PrintFooter
-
 _PrintHeader "Chocolatey"
 if (-not (Get-Command choco -ErrorAction SilentlyContinue))
 {
