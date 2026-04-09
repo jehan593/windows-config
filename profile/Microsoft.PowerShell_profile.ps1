@@ -211,7 +211,7 @@ function upall {
     if (-not (Test-Admin)) {
         Invoke-Elevated -Command "upall"; return
     }
-    upa
+    upp
     _PrintHeader "󱑢" "Choco Upgrade"
     choco upgrade all -y
     _PrintFooter
@@ -258,9 +258,9 @@ function cup {
     _PrintFooter
 }
 
-function upa {
+function upp {
     if (-not (Test-Admin)) {
-        Invoke-Elevated -Command "upa"; return
+        Invoke-Elevated -Command "upp"; return
     }
     _PrintHeader "󰏓" "Winget Upgrade"
     winget upgrade --all
@@ -592,40 +592,93 @@ function instd {
     }
 }
 
-function upas {
-    $updates = Get-WinGetPackage | Where-Object { $_.IsUpdateAvailable }
-    if (-not $updates) {
-        Write-Host "󰄬 Everything is up to date!" -ForegroundColor Green; return
-    }
+function upg {
+    param(
+        [Parameter(ValueFromRemainingArguments)]
+        [string[]]$Id
+    )
 
-    $selected = $updates |
-    Select-Object -ExpandProperty Id |
-    fzf --multi --reverse `
-        --header "󰚰 Ctrl-P: Preview | Tab: multi-select" `
-        --preview "winget show --id {}" `
-        --preview-window "right:60%:hidden" `
-        --bind "ctrl-p:toggle-preview"
+    if ($Id) {
+        Write-Host "`n󰍉 Resolving installed packages..." -ForegroundColor Cyan
+        $resolvedIds = @()
+        $resolvedNames = @()
+        $notFound = @()
 
-    if (-not $selected) {
-        return
-    }
+        $installed = Get-WinGetPackage -ErrorAction SilentlyContinue
 
-    $ids = @($selected | ForEach-Object { $_.Trim() } | Where-Object { $_ })
+        foreach ($i in $Id) {
+            $pkg = $installed | Where-Object { $_.Id -match $i -or $_.Name -match $i } | Select-Object -First 1
+            if ($pkg) {
+                $resolvedNames += "$($pkg.Name) [$($pkg.Id)]"
+                $resolvedIds += $pkg.Id
+            }
+            else {
+                $notFound += $i
+            }
+        }
 
-    if ($ids.Count -gt 0) {
+        if ($notFound.Count -gt 0) {
+            Write-Host ""
+            Write-Host "󱞣 Could not find installed packages for:" -ForegroundColor Red
+            $notFound | ForEach-Object { Write-Host "   - $_" -ForegroundColor Gray }
+        }
+
+        if ($resolvedNames.Count -eq 0) {
+            Write-Host "`n󰅙 No valid installed packages found. Aborted." -ForegroundColor Gray
+            return
+        }
+
         Write-Host ""
-        Write-Host "󰚰 Selected for upgrade:" -ForegroundColor Cyan
-        $ids | ForEach-Object { Write-Host "   + $_" -ForegroundColor Yellow }
+        Write-Host "󰚰 Selected to check for upgrade:" -ForegroundColor Cyan
+        $resolvedNames | ForEach-Object { Write-Host "   + $_" -ForegroundColor Yellow }
         Write-Host ""
-        $confirm = Read-Host "Upgrade $($ids.Count) package(s)? (Y/n)"
+        $confirm = Read-Host "Upgrade $($resolvedNames.Count) package(s)? (Y/n)"
         if ($confirm -match '^[Nn]$') {
             Write-Host "󰅙 Aborted." -ForegroundColor Gray; return
         }
-    }
 
-    foreach ($id in $ids) {
-        Write-Host "`n󰑢 Upgrading: $id" -ForegroundColor Yellow
-        winget upgrade --id $id --exact
+        foreach ($i in $resolvedIds) {
+            Write-Host "`n󰑢 Upgrading: $i" -ForegroundColor Yellow
+            winget upgrade --id $i --exact --interactive
+            Add-Content -Path (Get-PSReadLineOption).HistorySavePath -Value "winget upgrade --id $i --exact"
+        }
+    }
+    else {
+        $updates = Get-WinGetPackage | Where-Object { $_.IsUpdateAvailable }
+        if (-not $updates) {
+            Write-Host "󰄬 Everything is up to date!" -ForegroundColor Green; return
+        }
+
+        $selected = $updates |
+        Select-Object -ExpandProperty Id |
+        fzf --multi --reverse `
+            --header "󰚰 Ctrl-P: Preview | Tab: multi-select" `
+            --preview "winget show --id {}" `
+            --preview-window "right:60%:hidden" `
+            --bind "ctrl-p:toggle-preview"
+
+        if (-not $selected) {
+            return
+        }
+
+        $ids = @($selected | ForEach-Object { $_.Trim() } | Where-Object { $_ })
+
+        if ($ids.Count -gt 0) {
+            Write-Host ""
+            Write-Host "󰚰 Selected for upgrade:" -ForegroundColor Cyan
+            $ids | ForEach-Object { Write-Host "   + $_" -ForegroundColor Yellow }
+            Write-Host ""
+            $confirm = Read-Host "Upgrade $($ids.Count) package(s)? (Y/n)"
+            if ($confirm -match '^[Nn]$') {
+                Write-Host "󰅙 Aborted." -ForegroundColor Gray; return
+            }
+        }
+
+        foreach ($id in $ids) {
+            Write-Host "`n󰑢 Upgrading: $id" -ForegroundColor Yellow
+            winget upgrade --id $id --exact --interactive
+            Add-Content -Path (Get-PSReadLineOption).HistorySavePath -Value "winget upgrade --id $id --exact"
+        }
     }
 }
 
@@ -802,8 +855,8 @@ function info {
     _PrintHeader "󱈄" "Custom Shell Commands"
     _PrintRow "󰒍" "Profile"   "conf, reload"
     _PrintRow "" "System"    "rr, open, exp, cleanup, touch, sz"
-    _PrintRow "󰚰" "Updates"   "upall, cup, upa, ups, upw, upf, upc"
-    _PrintRow "󰍉" "FZF"       "ff, inst, uninst, instd, upas, la, Ctrl+H"
+    _PrintRow "󰚰" "Updates"   "upall, cup, upp, ups, upw, upf, upc"
+    _PrintRow "󰍉" "FZF"       "ff, inst, uninst, instd, upg, la, Ctrl+H"
     _PrintRow "󰎈" "Media"     "pirith, wp"
     _PrintRow "󱓞" "Tools"     "ctt, massgrave"
     _PrintRow "󰒄" "Network"   "wgsocks, warp"
