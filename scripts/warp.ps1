@@ -38,57 +38,49 @@ function _PrintRow
     Write-Host ("│  {0} {1,-12} {2}" -f $Icon, $Label, $Value) -ForegroundColor $Color
 }
 
-$trayStopFile = "$env:TEMP\warp-tray.stop"
+$trayPidFile = "$env:TEMP\warp-tray.pid"
 
 function _TrayStart
 {
-    $resolvedIcon = $warpIcon
-    $stopFile     = $trayStopFile
+    $script = @"
+Add-Type -AssemblyName System.Windows.Forms
+Add-Type -AssemblyName System.Drawing
 
-    $trayCode = {
-        param($iconPath, $stopFile)
-        Add-Type -AssemblyName System.Windows.Forms
-        Add-Type -AssemblyName System.Drawing
+`$icon = New-Object System.Drawing.Icon "$warpIcon"
+`$tray = New-Object System.Windows.Forms.NotifyIcon
+`$tray.Icon    = `$icon
+`$tray.Text    = "WARP Connected"
+`$tray.Visible = `$true
 
-        $icon = New-Object System.Drawing.Icon $iconPath
-        $tray = New-Object System.Windows.Forms.NotifyIcon
-        $tray.Icon    = $icon
-        $tray.Text    = "WARP Connected"
-        $tray.Visible = $true
+[System.Windows.Forms.Application]::Run()
+`$tray.Visible = `$false
+"@
 
-        # Poll for stop file instead of blocking on Application::Run
-        $timer = New-Object System.Windows.Forms.Timer
-        $timer.Interval = 500
-        $timer.add_Tick({
-                if (Test-Path $stopFile)
-                {
-                    $tray.Visible = $false
-                    Remove-Item $stopFile -Force -ErrorAction SilentlyContinue
-                    $timer.Stop()
-                    [System.Windows.Forms.Application]::Exit()
-                }
-            })
-        $timer.Start()
-        [System.Windows.Forms.Application]::Run()
-        $tray.Visible = $false
-    }
+    $trayScript = "$env:TEMP\warp-tray-icon.ps1"
+    $script | Set-Content $trayScript -Encoding UTF8
 
-    # Clean up any leftover stop file
-    Remove-Item $trayStopFile -Force -ErrorAction SilentlyContinue
+    $si                  = New-Object System.Diagnostics.ProcessStartInfo
+    $si.FileName         = "pwsh.exe"
+    $si.Arguments        = "-NonInteractive -NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -File `"$trayScript`""
+    $si.WindowStyle      = [System.Diagnostics.ProcessWindowStyle]::Hidden
+    $si.CreateNoWindow   = $true
+    $si.UseShellExecute  = $false
 
-    $rs = [runspacefactory]::CreateRunspace()
-    $rs.Open()
-    $ps = [powershell]::Create()
-    $ps.Runspace = $rs
-    $ps.AddScript($trayCode).AddArgument($resolvedIcon).AddArgument($stopFile) | Out-Null
-    $ps.BeginInvoke() | Out-Null
+    $proc = [System.Diagnostics.Process]::Start($si)
+    $proc.Id | Set-Content $trayPidFile
 }
 
 function _TrayStop
 {
-    # Signal the tray thread to exit cleanly
-    New-Item -ItemType File -Path $trayStopFile -Force | Out-Null
-    Start-Sleep -Milliseconds 600  # give it a moment to clean up
+    if (Test-Path $trayPidFile)
+    {
+        $trayPid = Get-Content $trayPidFile -ErrorAction SilentlyContinue
+        if ($trayPid)
+        {
+            Stop-Process -Id $trayPid -Force -ErrorAction SilentlyContinue
+        }
+        Remove-Item $trayPidFile -Force -ErrorAction SilentlyContinue
+    }
 }
 
 function _WarpOn
