@@ -263,7 +263,7 @@ function upa {
         Invoke-Elevated -Command "upa"; return
     }
     _PrintHeader "󰏓" "Winget Upgrade"
-    winget upgrade --all --interactive
+    winget upgrade --all
     _PrintFooter
 }
 
@@ -364,16 +364,56 @@ function upc {
 # ==============================================================================
 
 function inst {
-    param([string[]]$Id, [switch]$Refresh)
+    param(
+        [Parameter(ValueFromRemainingArguments)]
+        [string[]]$Id,
+        [switch]$Refresh
+    )
     if ($Refresh) {
         Remove-Item "$env:TEMP\winget_search_cache.txt" -ErrorAction SilentlyContinue
         Write-Host "󰚰 Cache cleared." -ForegroundColor Cyan
     }
     if ($Id) {
+        Write-Host "`n󰍉 Resolving package names..." -ForegroundColor Cyan
+        $resolvedIds = @()
+        $resolvedNames = @()
+        $notFound = @()
+
         foreach ($i in $Id) {
-            Write-Host "󰐕 Installing: $i" -ForegroundColor Green
-            winget install $i --interactive
-            Add-Content -Path (Get-PSReadLineOption).HistorySavePath -Value "winget install $i"
+            $pkg = Find-WinGetPackage -Query $i -Source winget -ErrorAction SilentlyContinue | Select-Object -First 1
+            if ($pkg -and $pkg.Name) {
+                $resolvedNames += "$($pkg.Name) [$($pkg.Id)]"
+                $resolvedIds += $pkg.Id
+            }
+            else {
+                $notFound += $i
+            }
+        }
+
+        if ($notFound.Count -gt 0) {
+            Write-Host ""
+            Write-Host "󱞣 Could not find packages for:" -ForegroundColor Red
+            $notFound | ForEach-Object { Write-Host "   - $_" -ForegroundColor Gray }
+        }
+
+        if ($resolvedNames.Count -eq 0) {
+            Write-Host "`n󰅙 No valid packages to install. Aborted." -ForegroundColor Gray
+            return
+        }
+
+        Write-Host ""
+        Write-Host "󰏓 Selected for installation:" -ForegroundColor Cyan
+        $resolvedNames | ForEach-Object { Write-Host "   + $_" -ForegroundColor Green }
+        Write-Host ""
+        $confirm = Read-Host "Install $($resolvedNames.Count) package(s)? (Y/n)"
+        if ($confirm -match '^[Nn]$') {
+            Write-Host "󰅙 Aborted." -ForegroundColor Gray; return
+        }
+
+        foreach ($i in $resolvedIds) {
+            Write-Host "`n󰐕 Installing: $i" -ForegroundColor Cyan
+            winget install --id $i --exact --source winget --interactive
+            Add-Content -Path (Get-PSReadLineOption).HistorySavePath -Value "winget install --id $i --exact --source winget"
         }
     }
     else {
@@ -413,8 +453,93 @@ function inst {
 
         foreach ($id in $ids) {
             Write-Host "`n󰐕 Installing: $id" -ForegroundColor Cyan
-            winget install --id $id --exact --interactive
-            Add-Content -Path (Get-PSReadLineOption).HistorySavePath -Value "winget install --id $id --exact"
+            winget install --id $id --exact --source winget --interactive
+            Add-Content -Path (Get-PSReadLineOption).HistorySavePath -Value "winget install --id $id --exact --source winget"
+        }
+    }
+}
+
+function uninst {
+    param(
+        [Parameter(ValueFromRemainingArguments)]
+        [string[]]$Id
+    )
+
+    if ($Id) {
+        Write-Host "`n󰍉 Resolving package names..." -ForegroundColor Cyan
+        $resolvedIds = @()
+        $resolvedNames = @()
+        $notFound = @()
+
+        $installed = Get-WinGetPackage -ErrorAction SilentlyContinue
+
+        foreach ($i in $Id) {
+            $pkg = $installed | Where-Object { $_.Id -match $i -or $_.Name -match $i } | Select-Object -First 1
+            if ($pkg) {
+                $resolvedNames += "$($pkg.Name) [$($pkg.Id)]"
+                $resolvedIds += $pkg.Id
+            }
+            else {
+                $notFound += $i
+            }
+        }
+
+        if ($notFound.Count -gt 0) {
+            Write-Host ""
+            Write-Host "󱞣 Could not find installed packages for:" -ForegroundColor Red
+            $notFound | ForEach-Object { Write-Host "   - $_" -ForegroundColor Gray }
+        }
+
+        if ($resolvedNames.Count -eq 0) {
+            Write-Host "`n󰅙 No valid packages to uninstall. Aborted." -ForegroundColor Gray
+            return
+        }
+
+        Write-Host ""
+        Write-Host "󰏔 Selected for removal:" -ForegroundColor Cyan
+        $resolvedNames | ForEach-Object { Write-Host "   - $_" -ForegroundColor Red }
+        Write-Host ""
+        $confirm = Read-Host "Uninstall $($resolvedNames.Count) package(s)? (Y/n)"
+        if ($confirm -match '^[Nn]$') {
+            Write-Host "󰅙 Aborted." -ForegroundColor Gray; return
+        }
+
+        foreach ($i in $resolvedIds) {
+            Write-Host "`n󰛌 Removing: $i" -ForegroundColor Cyan
+            winget uninstall --id $i --exact --interactive
+            Add-Content -Path (Get-PSReadLineOption).HistorySavePath -Value "winget uninstall --id $i --exact"
+        }
+    }
+    else {
+        $selected = Get-WinGetPackage | 
+        Select-Object -ExpandProperty Id |
+        fzf --multi --reverse `
+            --header "󰏔 Ctrl-P: Preview | Tab: multi-select" `
+            --preview "winget show --id {}" `
+            --preview-window "right:60%:hidden" `
+            --bind "ctrl-p:toggle-preview"
+
+        if (-not $selected) {
+            return
+        }
+
+        $ids = @($selected | ForEach-Object { $_.Trim() } | Where-Object { $_ })
+
+        if ($ids.Count -gt 0) {
+            Write-Host ""
+            Write-Host "󰏔 Selected for removal:" -ForegroundColor Cyan
+            $ids | ForEach-Object { Write-Host "   - $_" -ForegroundColor Red }
+            Write-Host ""
+            $confirm = Read-Host "Uninstall $($ids.Count) package(s)? (Y/n)"
+            if ($confirm -match '^[Nn]$') {
+                Write-Host "󰅙 Aborted." -ForegroundColor Gray; return
+            }
+        }
+
+        foreach ($id in $ids) {
+            Write-Host "`n󰛌 Removing: $id" -ForegroundColor Cyan
+            winget uninstall --id $id --exact --interactive
+            Add-Content -Path (Get-PSReadLineOption).HistorySavePath -Value "winget uninstall --id $id --exact"
         }
     }
 }
@@ -427,7 +552,7 @@ function instd {
         --preview "winget show --id {}" `
         --preview-window "right:60%:hidden" `
         --bind "ctrl-p:toggle-preview" `
-        --expect=ctrl-u, enter
+        --expect=ctrl-u,enter
 
     if (-not $result) {
         return
@@ -441,7 +566,7 @@ function instd {
     }
 
     if ($key -eq "ctrl-u") {
-        if ($selected.Count -gt 1) {
+        if ($selected.Count -gt 0) {
             Write-Host ""
             Write-Host "󰏔 Selected for removal:" -ForegroundColor Cyan
             $selected | ForEach-Object { Write-Host "   - $_" -ForegroundColor Red }
@@ -487,7 +612,7 @@ function upas {
 
     $ids = @($selected | ForEach-Object { $_.Trim() } | Where-Object { $_ })
 
-    if ($ids.Count -gt 1) {
+    if ($ids.Count -gt 0) {
         Write-Host ""
         Write-Host "󰚰 Selected for upgrade:" -ForegroundColor Cyan
         $ids | ForEach-Object { Write-Host "   + $_" -ForegroundColor Yellow }
@@ -500,7 +625,7 @@ function upas {
 
     foreach ($id in $ids) {
         Write-Host "`n󰑢 Upgrading: $id" -ForegroundColor Yellow
-        winget upgrade --id $id --exact --interactive
+        winget upgrade --id $id --exact
     }
 }
 
@@ -678,7 +803,7 @@ function info {
     _PrintRow "󰒍" "Profile"   "conf, reload"
     _PrintRow "" "System"    "rr, open, exp, cleanup, touch, sz"
     _PrintRow "󰚰" "Updates"   "upall, cup, upa, ups, upw, upf, upc"
-    _PrintRow "󰍉" "FZF"       "ff, inst, instd, upas, la, Ctrl+H"
+    _PrintRow "󰍉" "FZF"       "ff, inst, uninst, instd, upas, la, Ctrl+H"
     _PrintRow "󰎈" "Media"     "pirith, wp"
     _PrintRow "󱓞" "Tools"     "ctt, massgrave"
     _PrintRow "󰒄" "Network"   "wgsocks, warp"
