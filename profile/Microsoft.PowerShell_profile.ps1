@@ -328,8 +328,9 @@ function inst
     {
         Write-Host "`n󰐕 Installing: $id" -ForegroundColor Cyan
         winget install --id $id --exact --source winget --interactive @extraArgs
-        Add-Content -Path (Get-PSReadLineOption).HistorySavePath `
-            -Value "winget install --id $id --exact --source winget"
+        $histEntry = "winget install --id $id --exact --source winget"
+        Add-Content -Path (Get-PSReadLineOption).HistorySavePath -Value $histEntry
+        [Microsoft.PowerShell.PSConsoleReadLine]::AddToHistory($histEntry)
     }
 }
 
@@ -394,8 +395,9 @@ function uinst
     {
         Write-Host "`n󰛌 Removing: $id" -ForegroundColor Cyan
         winget uninstall --id $id --exact --interactive
-        Add-Content -Path (Get-PSReadLineOption).HistorySavePath `
-            -Value "winget uninstall --id $id --exact"
+        $histEntry = "winget uninstall --id $id --exact"
+        Add-Content -Path (Get-PSReadLineOption).HistorySavePath -Value $histEntry
+        [Microsoft.PowerShell.PSConsoleReadLine]::AddToHistory($histEntry)
     }
 }
 
@@ -465,8 +467,9 @@ function up
     {
         Write-Host "`n󰑢 Upgrading: $id" -ForegroundColor Yellow
         winget upgrade --id $id --exact
-        Add-Content -Path (Get-PSReadLineOption).HistorySavePath `
-            -Value "winget upgrade --id $id --exact"
+        $histEntry = "winget upgrade --id $id --exact"
+        Add-Content -Path (Get-PSReadLineOption).HistorySavePath -Value $histEntry
+        [Microsoft.PowerShell.PSConsoleReadLine]::AddToHistory($histEntry)
     }
 }
 
