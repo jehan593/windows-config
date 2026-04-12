@@ -251,7 +251,7 @@ function regtwk
 # ==============================================================================
 # 6. PACKAGE MANAGEMENT (WINGET + FZF)
 # ==============================================================================
-function in
+function inst
 {
     param(
         [Parameter(ValueFromRemainingArguments)]
@@ -333,7 +333,7 @@ function in
     }
 }
 
-function un
+function uinst
 {
     param(
         [Parameter(ValueFromRemainingArguments)]
@@ -821,8 +821,8 @@ function info
 
     _InfoGroup "󰈞" "Fuzzy (FZF)"
     _InfoCmd "ff"      "Find file and paste path"
-    _InfoCmd "in"      "Winget install menu"
-    _InfoCmd "un"      "Winget uninstall menu"
+    _InfoCmd "inst"      "Winget install menu"
+    _InfoCmd "uinst"      "Winget uninstall menu"
     _InfoCmd "up"      "Winget upgrade menu"
     _InfoCmd "Ctrl+H"  "Fuzzy history search"
     Write-Host ""
