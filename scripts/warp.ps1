@@ -38,6 +38,13 @@ function _PrintRow
     Write-Host ("│  {0} {1,-12} {2}" -f $Icon, $Label, $Value) -ForegroundColor $Color
 }
 
+function _PassThru
+{
+    process
+    { Write-Host "`e[38;2;118;138;161m│  $_`e[0m"
+    }
+}
+
 $trayPidFile = "$env:TEMP\warp-tray.pid"
 
 function _TrayStart
@@ -101,7 +108,7 @@ function _WarpOn
     }
 
     _PrintHeader "󰖂" "WireGuard WARP"
-    wireguard /installtunnelservice $warpConf
+    wireguard /installtunnelservice $warpConf 2>&1 | _PassThru
     _TrayStart
     _PrintRow "󰤨" "Status" "CONNECTED" "Green"
     _PrintFooter
@@ -113,7 +120,7 @@ function _WarpOff
     { _ElevateAction "off"; return
     }
     _PrintHeader "󰖂" "WireGuard WARP"
-    wireguard /uninstalltunnelservice $tunnel
+    wireguard /uninstalltunnelservice $tunnel 2>&1 | _PassThru
     _TrayStop
     _PrintRow "󰤭" "Status" "DISCONNECTED" "Red"
     _PrintFooter
@@ -133,7 +140,7 @@ function _WarpRotate
 
     _PrintHeader "󰖂" "Rotating WARP Credentials"
     if (!(Test-Path $warpDir))
-    { New-Item -ItemType Directory -Path $warpDir -Force | Out-Null
+    { New-Item -ItemType Directory -Path $warpDir -Force 2>&1 | _PassThru
     }
     Push-Location $warpDir
 
@@ -142,14 +149,14 @@ function _WarpRotate
         if (Test-Path "$warpDir\wgcf-account.toml")
         {
             _PrintRow "󰚰" "Account" "Updating existing..." "Cyan"
-            wgcf update
+            wgcf update 2>&1 | _PassThru
         } else
         {
             _PrintRow "󰀄" "Account" "Registering new..." "Cyan"
-            wgcf register --accept-tos
+            wgcf register --accept-tos 2>&1 | _PassThru
         }
 
-        wgcf generate
+        wgcf generate 2>&1 | _PassThru
         $generated = Get-ChildItem -Path $warpDir -Filter "wgcf-profile.conf" | Select-Object -First 1
         if ($generated)
         {

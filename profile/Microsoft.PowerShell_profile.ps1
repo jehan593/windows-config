@@ -63,16 +63,23 @@ function _PrintRow
     Write-Host ("│  {0} {1,-12} {2}" -f $Icon, $Label, $Value) -ForegroundColor $Color
 }
 
+function _PassThru
+{
+    process
+    { Write-Host "`e[38;2;118;138;161m│  $_`e[0m"
+    }
+}
+
 function _Run
 {
     param([string]$Label, [scriptblock]$Action)
     try
     {
-        & $Action | Out-Null
+        & $Action 2>&1 | _PassThru
         _PrintRow "󰄬" $Label "Done" "Green"
     } catch
     {
-        _PrintRow "󰅙" $Label "Failed" "Red"
+        _PrintRow "󰅙" $Label "$_" "Red"
     }
 }
 
@@ -377,7 +384,7 @@ function un
     }
 
     Write-Host "`n󰏔 Selected for removal:" -ForegroundColor Cyan
-    $names | ForEach-Object { Write-Host "   󱙃 $_" -ForegroundColor Red }
+    $names | ForEach-Object { Write-Host "   󱙃 $_" -ForegroundColor Gray }
     $confirm = Read-Host "`nUninstall $($ids.Count) package(s)? (Y/n)"
     if ($confirm -match '^[Nn]$')
     { Write-Host "󰅙 Aborted." -ForegroundColor Gray; return
@@ -600,7 +607,7 @@ function upf
 function upc
 {
     _PrintHeader "󰊢" "Dotfiles Repo Sync"
-    git -C $RepoPath pull --rebase --autostash
+    git -C $RepoPath pull --rebase --autostash 2>&1 | _PassThru
     if ($LASTEXITCODE -eq 0)
     {
         _PrintRow "󰄬" "Status" "Synchronized" "Green"
@@ -730,8 +737,8 @@ function wp
     if ($changes)
     {
         _PrintRow "󱓟" "Local" "Changes detected" "Yellow"
-        git -C $dir add -A 2>&1 | Out-Null
-        $result = git -C $dir commit -m "sync: local wallpaper changes" 2>&1
+        git -C $dir add -A 2>&1 | _PassThru
+        git -C $dir commit -m "sync: local wallpaper changes" 2>&1 | _PassThru
         if ($LASTEXITCODE -eq 0)
         { _PrintRow "󰄬" "Commit" "Success" "Green"
         } else
@@ -739,14 +746,14 @@ function wp
         }
     }
 
-    $result = git -C $dir pull --rebase --autostash 2>&1
+    git -C $dir pull --rebase --autostash 2>&1 | _PassThru
     if ($LASTEXITCODE -eq 0)
     { _PrintRow "󰄬" "Pull" "Up to date" "Green"
     } else
     { _PrintRow "󰅙" "Pull" "Failed" "Red"
     }
 
-    $result = git -C $dir push 2>&1
+    git -C $dir push 2>&1 | _PassThru
     if ($LASTEXITCODE -eq 0)
     { _PrintRow "󰄬" "Push" "Remote updated" "Green"
     } else
