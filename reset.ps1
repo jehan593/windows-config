@@ -298,16 +298,16 @@ _PrintFooter
 # 6. OPTIONAL - Uninstall Apps
 # ==============================================================================
 _PrintHeader "Optional: Package Removal"
-_Info "Targets: Starship, fzf, Git, zoxide, vim, pwsh, bat, fd, WireGuard, wgcf, mpv$(if ($removedTunnels) { ', Servy' })"
+_Info "Targets: Starship, fzf, zoxide, bat, fd, wgcf$(if ($removedTunnels) { ', Servy' })"
 Write-Host "│"
 $response = Read-Host "│  Remove these packages? (y/N)"
 
 if ($response -match '^[Yy]$')
 {
     $apps = @(
-        "Starship.Starship", "junegunn.fzf", "Git.Git", "ajeetdsouza.zoxide",
-        "vim.vim", "Microsoft.PowerShell", "sharkdp.bat", "sharkdp.fd",
-        "WireGuard.WireGuard", "ViRb3.wgcf"
+        "Starship.Starship", "junegunn.fzf", "ajeetdsouza.zoxide",
+        "sharkdp.bat", "sharkdp.fd",
+        "ViRb3.wgcf"
     )
     if ($removedTunnels)
     {
@@ -320,11 +320,6 @@ if ($response -match '^[Yy]$')
     {
         winget uninstall --id $app --exact --silent 2>&1 | _PassThru
         _Ok "Uninstalled: $app"
-    }
-    if (Get-Command choco -ErrorAction SilentlyContinue)
-    {
-        choco uninstall mpv -y 2>&1 | _PassThru
-        _Ok "Uninstalled: mpv"
     }
 } else
 {
