@@ -91,9 +91,8 @@ function _InstallSocks
     $content | Set-Content $confDest
 
     _PrintHeader "󱌣" "Installing Tunnel: $serviceName"
-    nssm install $serviceName $binaryPath "-c $confDest" 2>&1 | _PassThru
-    nssm set $serviceName Start SERVICE_AUTO_START 2>&1 | _PassThru
-    nssm start $serviceName 2>&1 | _PassThru
+    servy-cli install --name="$serviceName" --path="$binaryPath" --params="-c `"$confDest`"" --startupType=Automatic --enableHealth --heartbeatInterval=10 --maxFailedChecks=3 --recoveryAction=RestartProcess --maxRestartAttempts=10 --quiet 2>&1 | _PassThru
+    servy-cli start --name="$serviceName" --quiet 2>&1 | _PassThru
     _PrintRow "󰄬" "Status" "Active on port $Port" "Green"
     _PrintFooter
 }
@@ -172,8 +171,8 @@ function _UninstallSocks
             _PrintRow "󰄬" "Backup" "$($svc.Name) backed up to Desktop\wg-socks-backup" "Cyan"
         }
 
-        nssm stop $svc.Name 2>&1 | _PassThru
-        nssm remove $svc.Name confirm 2>&1 | _PassThru
+        servy-cli stop --name="$($svc.Name)" --quiet 2>&1 | _PassThru
+        servy-cli uninstall --name="$($svc.Name)" --quiet 2>&1 | _PassThru
         Remove-Item $confFile -ErrorAction SilentlyContinue
         _PrintRow "󰄬" "Removed" $svc.Name "Green"
     }
@@ -198,7 +197,7 @@ function _RefreshSocks
     _PrintHeader "󰒄" "Refresh Tunnels"
     foreach ($svc in $services)
     {
-        nssm restart $svc.Name 2>&1 | _PassThru
+        servy-cli restart --name="$($svc.Name)" --quiet 2>&1 | _PassThru
         _PrintRow "󰑐" $svc.Name "Restarted" "Green"
     }
     _PrintFooter

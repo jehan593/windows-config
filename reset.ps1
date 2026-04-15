@@ -222,7 +222,6 @@ _PrintFooter
 _PrintHeader "Removing wg-socks"
 $services = Get-Service -ErrorAction SilentlyContinue | Where-Object { $_.Name -like "*-wgsocks" }
 $configScriptsDir = "$env:USERPROFILE\windows-config-scripts"
-
 if ($services)
 {
     $stopTunnels = Read-Host "│  Remove existing tunnels and backup configs? (y/N)"
@@ -240,8 +239,8 @@ if ($services)
         }
         foreach ($svc in $services)
         {
-            nssm stop $svc.Name 2>&1 | _PassThru
-            nssm remove $svc.Name confirm 2>&1 | _PassThru
+            servy-cli stop --name="$($svc.Name)" --quiet 2>&1 | _PassThru
+            servy-cli uninstall --name="$($svc.Name)" --quiet 2>&1 | _PassThru
             _Ok "Removed service: $($svc.Name)"
         }
         if (Test-Path $configScriptsDir)

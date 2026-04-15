@@ -72,7 +72,7 @@ _PrintFooter
 _PrintHeader "Winget Apps"
 $apps = @(
     "Starship.Starship", "junegunn.fzf", "Git.Git", "ajeetdsouza.zoxide",
-    "vim.vim", "sharkdp.bat", "sharkdp.fd", "NSSM.NSSM",
+    "vim.vim", "sharkdp.bat", "sharkdp.fd", "aelassas.Servy",
     "WireGuard.WireGuard", "ViRb3.wgcf", "Microsoft.WindowsTerminal", "sylikc.JPEGView"
 )
 foreach ($app in $apps)
@@ -445,7 +445,7 @@ _Ok "Execution policy set."
 
 Write-Host ""
 Write-Host "┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓" -ForegroundColor Green
-Write-Host "┃           Setup Complete!                   ┃" -ForegroundColor Green
+Write-Host "┃           Setup Complete!                  ┃" -ForegroundColor Green
 Write-Host "┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛" -ForegroundColor Green
 Write-Host ""
 Write-Host "  Set wallpapers manually from:  Pictures\config-wallpapers" -ForegroundColor White
