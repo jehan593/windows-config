@@ -222,11 +222,13 @@ _PrintFooter
 _PrintHeader "Removing wg-socks"
 $services = Get-Service -ErrorAction SilentlyContinue | Where-Object { $_.Name -like "*-wgsocks" }
 $configScriptsDir = "$env:USERPROFILE\windows-config-scripts"
+$removedTunnels = $false
 if ($services)
 {
     $stopTunnels = Read-Host "│  Remove existing tunnels and backup configs? (y/N)"
     if ($stopTunnels -match '^[Yy]$')
     {
+        $removedTunnels = $true
         $wgsocksConf = "$configScriptsDir\wg-socks\configs"
         if (Test-Path $wgsocksConf)
         {
@@ -296,7 +298,7 @@ _PrintFooter
 # 6. OPTIONAL - Uninstall Apps
 # ==============================================================================
 _PrintHeader "Optional: Package Removal"
-_Info "Targets: Starship, fzf, Git, zoxide, vim, pwsh, bat, fd, Servy, WireGuard, wgcf, mpv"
+_Info "Targets: Starship, fzf, Git, zoxide, vim, pwsh, bat, fd, WireGuard, wgcf, mpv$(if ($removedTunnels) { ', Servy' })"
 Write-Host "│"
 $response = Read-Host "│  Remove these packages? (y/N)"
 
@@ -304,9 +306,16 @@ if ($response -match '^[Yy]$')
 {
     $apps = @(
         "Starship.Starship", "junegunn.fzf", "Git.Git", "ajeetdsouza.zoxide",
-        "vim.vim", "Microsoft.PowerShell", "sharkdp.bat", "sharkdp.fd", "aelassas.Servy",
+        "vim.vim", "Microsoft.PowerShell", "sharkdp.bat", "sharkdp.fd",
         "WireGuard.WireGuard", "ViRb3.wgcf"
     )
+    if ($removedTunnels)
+    {
+        $apps += "aelassas.Servy"
+    } else
+    {
+        _Info "Skipping Servy uninstall (tunnels still active)."
+    }
     foreach ($app in $apps)
     {
         winget uninstall --id $app --exact --silent 2>&1 | _PassThru
