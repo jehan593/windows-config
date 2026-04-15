@@ -73,7 +73,7 @@ _PrintHeader "Winget Apps"
 $apps = @(
     "Starship.Starship", "junegunn.fzf", "Git.Git", "ajeetdsouza.zoxide",
     "vim.vim", "sharkdp.bat", "sharkdp.fd", "aelassas.Servy",
-    "WireGuard.WireGuard", "ViRb3.wgcf", "Microsoft.WindowsTerminal", "sylikc.JPEGView"
+    "WireGuard.WireGuard", "ViRb3.wgcf", "sylikc.JPEGView"
 )
 foreach ($app in $apps)
 {
