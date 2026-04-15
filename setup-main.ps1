@@ -377,58 +377,61 @@ if (-not (Test-Path $wtDir))
     New-Item -ItemType Directory -Path $wtDir -Force | Out-Null
 }
 
+$customGuid = "{a3e97d4f-2b1c-4e8a-9f0d-6c5b3a7e1d2f}"
+$pwsh7Profile = [PSCustomObject]@{
+    guid             = $customGuid
+    name             = "PowerShell 7 (Custom)"
+    commandline      = "pwsh.exe"
+    colorScheme      = "Nord"
+    font             = [PSCustomObject]@{
+        face = "MartianMono Nerd Font Mono"
+        size = 9
+    }
+    startingDirectory = "%USERPROFILE%"
+    icon              = "ms-appx:///ProfileIcons/{574e775e-4f2a-5b96-ac1e-a2962a402336}.png"
+    hidden           = $false
+}
+
 if (-not (Test-Path $wtSettingsPath))
 {
-    # Generate a base settings.json for fresh systems so WT loads preferences on first launch
-    $barebonesSettings = @"
-{
-    "defaultProfile": "{574e775e-4f2a-5b96-ac1e-a2962a402336}",
-    "profiles": {
-        "defaults": {
-            "colorScheme": "Nord",
-            "font": {
-                "face": "MartianMono Nerd Font Mono",
-                "size": 9
-            }
-        },
-        "list": []
+    $barebonesSettings = [PSCustomObject]@{
+        defaultProfile = $customGuid
+        profiles       = [PSCustomObject]@{
+            defaults = [PSCustomObject]@{}
+            list     = @($pwsh7Profile)
+        }
     }
-}
-"@
-    Set-Content -Path $wtSettingsPath -Value $barebonesSettings -Encoding UTF8
-    _Ok "Created initial Windows Terminal settings (PWSH 7 as default, Nord, Font)."
+    $barebonesSettings | ConvertTo-Json -Depth 10 | Set-Content $wtSettingsPath -Encoding UTF8
+    _Ok "Created initial Windows Terminal settings (PowerShell 7 custom profile, Nord, MartianMono 9)."
 } else
 {
     $settings = Get-Content $wtSettingsPath -Raw | ConvertFrom-Json
 
-    $pwshProfile = $settings.profiles.list | Where-Object { $_.name -like "*PowerShell*" -and $_.name -notlike "*Windows*" } | Select-Object -First 1
-    if ($pwshProfile)
+    $list = [System.Collections.Generic.List[object]]($settings.profiles.list ?? @())
+
+    $existing = $list | Where-Object { $_.guid -eq $customGuid } | Select-Object -First 1
+    if ($existing)
     {
-        $settings | Add-Member -NotePropertyName "defaultProfile" -NotePropertyValue $pwshProfile.guid -Force
-        _Ok "Default profile set to PowerShell 7."
+        $existing | Add-Member -NotePropertyName "colorScheme" -NotePropertyValue "Nord" -Force
+        $existing | Add-Member -NotePropertyName "font" -NotePropertyValue ([PSCustomObject]@{
+                face = "MartianMono Nerd Font Mono"
+                size = 9
+            }) -Force
+        $existing | Add-Member -NotePropertyName "commandline" -NotePropertyValue "pwsh.exe" -Force
+        $existing | Add-Member -NotePropertyName "startingDirectory" -NotePropertyValue "%USERPROFILE%" -Force
+        $existing | Add-Member -NotePropertyName "icon" -NotePropertyValue "ms-appx:///ProfileIcons/{574e775e-4f2a-5b96-ac1e-a2962a402336}.png" -Force
+        _Ok "Updated PowerShell 7 custom profile."
     } else
     {
-        # Profile not in list because terminal hasn't run since PWSH installation, fallback to deterministic GUID
-        $settings | Add-Member -NotePropertyName "defaultProfile" -NotePropertyValue "{574e775e-4f2a-5b96-ac1e-a2962a402336}" -Force
-        _Ok "Default profile set to PowerShell 7 (fallback GUID)."
+        $list.Add($pwsh7Profile)
+        _Ok "Added PowerShell 7 custom profile."
     }
 
-    if (-not $settings.profiles.defaults)
-    {
-        $settings.profiles | Add-Member -NotePropertyName "defaults" -NotePropertyValue ([PSCustomObject]@{}) -Force
-    }
-
-    $settings.profiles.defaults | Add-Member -NotePropertyName "font" -NotePropertyValue ([PSCustomObject]@{
-            face = "MartianMono Nerd Font Mono"
-            size = 9
-        }) -Force
-    $settings.profiles.defaults | Add-Member -NotePropertyName "colorScheme" -NotePropertyValue "Nord" -Force
-
-    _Ok "Font set to MartianMono Nerd Font Mono size 9."
-    _Ok "Color scheme set to Nord."
+    $settings.profiles | Add-Member -NotePropertyName "list" -NotePropertyValue $list.ToArray() -Force
+    $settings | Add-Member -NotePropertyName "defaultProfile" -NotePropertyValue $customGuid -Force
 
     $settings | ConvertTo-Json -Depth 20 | Set-Content $wtSettingsPath -Encoding UTF8
-    _Ok "Windows Terminal settings saved."
+    _Ok "Default profile set to PowerShell 7 custom profile (Nord, MartianMono Nerd Font Mono 9)."
 }
 _PrintFooter
 

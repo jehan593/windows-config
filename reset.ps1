@@ -296,7 +296,7 @@ _PrintFooter
 # 6. OPTIONAL - Uninstall Apps
 # ==============================================================================
 _PrintHeader "Optional: Package Removal"
-_Info "Targets: Starship, fzf, Git, zoxide, vim, pwsh, bat, fd, NSSM, WireGuard, wgcf, mpv"
+_Info "Targets: Starship, fzf, Git, zoxide, vim, pwsh, bat, fd, Servy, WireGuard, wgcf, mpv"
 Write-Host "│"
 $response = Read-Host "│  Remove these packages? (y/N)"
 
@@ -304,7 +304,7 @@ if ($response -match '^[Yy]$')
 {
     $apps = @(
         "Starship.Starship", "junegunn.fzf", "Git.Git", "ajeetdsouza.zoxide",
-        "vim.vim", "Microsoft.PowerShell", "sharkdp.bat", "sharkdp.fd", "NSSM.NSSM",
+        "vim.vim", "Microsoft.PowerShell", "sharkdp.bat", "sharkdp.fd", "aelassas.Servy",
         "WireGuard.WireGuard", "ViRb3.wgcf"
     )
     foreach ($app in $apps)
@@ -328,34 +328,37 @@ _PrintFooter
 # ==============================================================================
 _PrintHeader "Restoring Windows Terminal Configuration"
 $wtSettingsPath = "$env:LocalAppData\Packages\Microsoft.WindowsTerminal_8wekyb3d8bbwe\LocalState\settings.json"
+$customGuid = "{a3e97d4f-2b1c-4e8a-9f0d-6c5b3a7e1d2f}"
 
 if (Test-Path $wtSettingsPath)
 {
     $settings = Get-Content $wtSettingsPath -Raw | ConvertFrom-Json
 
-    $ps5Profile = $settings.profiles.list | Where-Object { $_.name -like "*Windows PowerShell*" } | Select-Object -First 1
+    # Remove custom profile from list
+    $list = [System.Collections.Generic.List[object]]($settings.profiles.list ?? @())
+    $before = $list.Count
+    $list = [System.Collections.Generic.List[object]]($list | Where-Object { $_.guid -ne $customGuid })
+    if ($list.Count -lt $before)
+    {
+        _Ok "Removed PowerShell 7 custom profile."
+    } else
+    {
+        _Info "Custom profile not found, skipping removal."
+    }
+    $settings.profiles | Add-Member -NotePropertyName "list" -NotePropertyValue $list.ToArray() -Force
+
+    # Restore default profile to Windows PowerShell
+    $ps5Profile = $list | Where-Object { $_.name -like "*Windows PowerShell*" } | Select-Object -First 1
     if ($ps5Profile)
     {
-        $settings.defaultProfile = $ps5Profile.guid
+        $settings | Add-Member -NotePropertyName "defaultProfile" -NotePropertyValue $ps5Profile.guid -Force
         _Ok "Default profile restored to Windows PowerShell."
     } else
     {
-        _Info "Windows PowerShell profile not found, skipping."
+        # Fallback to well-known Windows PowerShell GUID
+        $settings | Add-Member -NotePropertyName "defaultProfile" -NotePropertyValue "{61c54bbd-c2c6-5271-96e7-009a87ff44bf}" -Force
+        _Ok "Default profile restored to Windows PowerShell (fallback GUID)."
     }
-
-    if (-not $settings.profiles.defaults)
-    {
-        $settings.profiles | Add-Member -NotePropertyName "defaults" -NotePropertyValue ([PSCustomObject]@{}) -Force
-    }
-
-    $settings.profiles.defaults | Add-Member -NotePropertyName "font" -NotePropertyValue ([PSCustomObject]@{
-            face = "Cascadia Mono"
-            size = 12
-        }) -Force
-    $settings.profiles.defaults | Add-Member -NotePropertyName "colorScheme" -NotePropertyValue "Campbell" -Force
-
-    _Ok "Font restored to Cascadia Mono size 12."
-    _Ok "Color scheme restored to Campbell."
 
     $settings | ConvertTo-Json -Depth 20 | Set-Content $wtSettingsPath -Encoding UTF8
     _Ok "Windows Terminal settings saved."
