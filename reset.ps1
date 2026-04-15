@@ -12,7 +12,7 @@ if (-not $currentPrincipal.IsInRole([Security.Principal.WindowsBuiltInRole]::Adm
 {
     Write-Host "Requesting Administrative privileges..." -ForegroundColor Yellow
     $arguments = "-NoProfile -ExecutionPolicy Bypass -File `"$PSCommandPath`""
-    Start-Process pwsh -ArgumentList $arguments -Verb RunAs
+    Start-Process wt -ArgumentList $arguments -Verb RunAs
     exit
 }
 
