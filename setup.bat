@@ -17,4 +17,4 @@ if %errorlevel% neq 0 (
 )
 
 :: Launch setup script in Windows Terminal with PowerShell 7
-start "" wt pwsh -ExecutionPolicy Bypass -NoExit -File "%~dp0setup-main.ps1"
+wt new-tab --title "Setup" pwsh -ExecutionPolicy Bypass -File "%~dp0setup-main.ps1"

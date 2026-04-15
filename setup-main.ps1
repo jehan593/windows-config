@@ -6,13 +6,12 @@ if (-not $PSScriptRoot)
     Write-Host "Run this as a script file, not dot-sourced." -ForegroundColor Red
     exit
 }
-
 $currentPrincipal = New-Object Security.Principal.WindowsPrincipal([Security.Principal.WindowsIdentity]::GetCurrent())
 if (-not $currentPrincipal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator))
 {
     Write-Host "Requesting Administrative privileges..." -ForegroundColor Yellow
-    $arguments = "-NoProfile -ExecutionPolicy Bypass -File `"$PSCommandPath`""
-    Start-Process pwsh -ArgumentList $arguments -Verb RunAs
+    $arguments = "pwsh -NoProfile -ExecutionPolicy Bypass -NoExit -File `"$PSCommandPath`""
+    Start-Process wt -ArgumentList $arguments -Verb RunAs
     exit
 }
 
