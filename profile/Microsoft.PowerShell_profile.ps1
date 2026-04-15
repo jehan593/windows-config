@@ -482,11 +482,9 @@ function cup
     { Invoke-Elevated -Command $MyInvocation.MyCommand.Name; return
     }
     _PrintHeader "󰑢" "Update Checker"
-
     Write-Host ""
     Write-Host "󰏓 Winget Repositories" -ForegroundColor Magenta
     winget upgrade
-
     Write-Host ""
     Write-Host "󰶬 Microsoft Store" -ForegroundColor Magenta
     if (Get-Command store -ErrorAction SilentlyContinue)
@@ -496,7 +494,6 @@ function cup
     {
         _PrintRow "󱞣" "Store" "CLI tool not found." "Gray"
     }
-
     Write-Host ""
     Write-Host "󰖳 Windows Update" -ForegroundColor Magenta
     try
@@ -508,8 +505,14 @@ function cup
             _PrintRow "󰄬" "Windows" "Up to date" "Green"
         } else
         {
-            _PrintRow "󱎟" "Windows" "$($updates.Count) available" "Yellow"
-            $updates | ForEach-Object { Write-Host "    󱞩 $($_.Title)" -ForegroundColor Cyan }
+            $kbCount = ($updates | ForEach-Object {
+                    [regex]::Matches($_.Title, 'KB\d+').Count
+                } | Measure-Object -Sum).Sum
+            $displayCount = [Math]::Max($updates.Count, $kbCount)
+            _PrintRow "󱎟" "Windows" "$displayCount available" "Yellow"
+            $updates | ForEach-Object {
+                Write-Host "    󱞩 $($_.Title)" -ForegroundColor Cyan
+            }
         }
     } catch
     {
