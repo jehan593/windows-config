@@ -632,9 +632,6 @@ function upall
     { Invoke-Elevated -Command $MyInvocation.MyCommand.Name; return
     }
     upp
-    _PrintHeader "󰏓" "Chocolatey Upgrade"
-    choco upgrade all -y
-    _PrintFooter
     upf
     wp
     ups

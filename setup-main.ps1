@@ -53,26 +53,11 @@ Write-Host "┗━━━━━━━━━━━━━━━━━━━━━�
 # ==============================================================================
 # 3. PACKAGE MANAGERS & CORE TOOLS
 # ==============================================================================
-_PrintHeader "Chocolatey"
-if (-not (Get-Command choco -ErrorAction SilentlyContinue))
-{
-    _Info "Installing Chocolatey..."
-    Set-ExecutionPolicy Bypass -Scope Process -Force
-    [System.Net.ServicePointManager]::SecurityProtocol = [System.Net.ServicePointManager]::SecurityProtocol -bor 3072
-    Invoke-RestMethod https://community.chocolatey.org/install.ps1 | Invoke-Expression
-    $env:Path = [System.Environment]::GetEnvironmentVariable("Path", "Machine") + ";" + [System.Environment]::GetEnvironmentVariable("Path", "User")
-    _Ok "Chocolatey installed."
-} else
-{
-    _Ok "Chocolatey already installed."
-}
-_PrintFooter
-
 _PrintHeader "Winget Apps"
 $apps = @(
     "Starship.Starship", "junegunn.fzf", "Git.Git", "ajeetdsouza.zoxide",
     "vim.vim", "sharkdp.bat", "sharkdp.fd", "aelassas.Servy",
-    "WireGuard.WireGuard", "ViRb3.wgcf", "sylikc.JPEGView"
+    "WireGuard.WireGuard", "ViRb3.wgcf", "sylikc.JPEGView", "mpv.net"
 )
 foreach ($app in $apps)
 {
@@ -80,7 +65,7 @@ foreach ($app in $apps)
     if ($installed -notmatch $app)
     {
         _Info "Installing $app..."
-        winget install --id $app --source winget --silent --accept-package-agreements --accept-source-agreements
+        winget install --id $app --source winget --interactive
         _Ok "$app installed."
     } else
     {
@@ -119,18 +104,6 @@ if (-not (Get-Module -ListAvailable -Name PSWindowsUpdate))
 } else
 {
     _Ok "PSWindowsUpdate already installed."
-}
-_PrintFooter
-
-_PrintHeader "Chocolatey Apps"
-if (-not (Get-Command mpv -ErrorAction SilentlyContinue))
-{
-    _Info "Installing mpv..."
-    choco install mpv -y
-    _Ok "mpv installed."
-} else
-{
-    _Ok "mpv already installed."
 }
 _PrintFooter
 
@@ -190,7 +163,7 @@ try
 _PrintFooter
 
 _PrintHeader "mpv Configuration"
-$mpvConfigDir = "$env:APPDATA\mpv"
+$mpvConfigDir = "$env:APPDATA\mpv.net"
 $repoMpvDir = Join-Path $PSScriptRoot "configs\mpv"
 if (Test-Path $mpvConfigDir)
 { Remove-Item $mpvConfigDir -Recurse -Force
@@ -370,67 +343,47 @@ _PrintFooter
 _PrintHeader "Windows Terminal Configuration"
 $wtSettingsPath = "$env:LocalAppData\Packages\Microsoft.WindowsTerminal_8wekyb3d8bbwe\LocalState\settings.json"
 $wtDir = Split-Path $wtSettingsPath
-
 if (-not (Test-Path $wtDir))
 {
     New-Item -ItemType Directory -Path $wtDir -Force | Out-Null
 }
 
-$customGuid = "{a3e97d4f-2b1c-4e8a-9f0d-6c5b3a7e1d2f}"
-$pwsh7Profile = [PSCustomObject]@{
-    guid             = $customGuid
-    name             = "PowerShell 7 (Custom)"
-    commandline      = "pwsh.exe"
-    colorScheme      = "Nord"
-    font             = [PSCustomObject]@{
-        face = "MartianMono Nerd Font Mono"
-        size = 9
-    }
-    startingDirectory = "%USERPROFILE%"
-    icon              = "ms-appx:///ProfileIcons/{574e775e-4f2a-5b96-ac1e-a2962a402336}.png"
-    hidden           = $false
-}
+$pwsh7Guid = "{574e775e-4f2a-5b96-ac1e-a2962a402336}"
+$nordFont   = [PSCustomObject]@{ face = "MartianMono Nerd Font Mono"; size = 9 }
 
 if (-not (Test-Path $wtSettingsPath))
 {
     $barebonesSettings = [PSCustomObject]@{
-        defaultProfile = $customGuid
+        defaultProfile = $pwsh7Guid
         profiles       = [PSCustomObject]@{
-            defaults = [PSCustomObject]@{}
-            list     = @($pwsh7Profile)
+            defaults = [PSCustomObject]@{
+                colorScheme = "Nord"
+                font        = $nordFont
+            }
+            list = @()
         }
     }
     $barebonesSettings | ConvertTo-Json -Depth 10 | Set-Content $wtSettingsPath -Encoding UTF8
-    _Ok "Created initial Windows Terminal settings (PowerShell 7 custom profile, Nord, MartianMono 9)."
+    _Ok "Created initial Windows Terminal settings (Nord + MartianMono 9 as defaults, PowerShell 7 as default profile)."
 } else
 {
     $settings = Get-Content $wtSettingsPath -Raw | ConvertFrom-Json
 
-    $list = [System.Collections.Generic.List[object]]($settings.profiles.list ?? @())
+    # Apply font and theme globally via defaults
+    $settings.profiles | Add-Member -NotePropertyName "defaults" -NotePropertyValue (
+        [PSCustomObject]@{
+            colorScheme = "Nord"
+            font        = $nordFont
+        }
+    ) -Force
+    _Ok "Set Nord theme and MartianMono Nerd Font Mono 9 as defaults for all profiles."
 
-    $existing = $list | Where-Object { $_.guid -eq $customGuid } | Select-Object -First 1
-    if ($existing)
-    {
-        $existing | Add-Member -NotePropertyName "colorScheme" -NotePropertyValue "Nord" -Force
-        $existing | Add-Member -NotePropertyName "font" -NotePropertyValue ([PSCustomObject]@{
-                face = "MartianMono Nerd Font Mono"
-                size = 9
-            }) -Force
-        $existing | Add-Member -NotePropertyName "commandline" -NotePropertyValue "pwsh.exe" -Force
-        $existing | Add-Member -NotePropertyName "startingDirectory" -NotePropertyValue "%USERPROFILE%" -Force
-        $existing | Add-Member -NotePropertyName "icon" -NotePropertyValue "ms-appx:///ProfileIcons/{574e775e-4f2a-5b96-ac1e-a2962a402336}.png" -Force
-        _Ok "Updated PowerShell 7 custom profile."
-    } else
-    {
-        $list.Add($pwsh7Profile)
-        _Ok "Added PowerShell 7 custom profile."
-    }
-
-    $settings.profiles | Add-Member -NotePropertyName "list" -NotePropertyValue $list.ToArray() -Force
-    $settings | Add-Member -NotePropertyName "defaultProfile" -NotePropertyValue $customGuid -Force
+    # Set PowerShell 7 as default profile
+    $settings | Add-Member -NotePropertyName "defaultProfile" -NotePropertyValue $pwsh7Guid -Force
+    _Ok "Default profile set to PowerShell 7."
 
     $settings | ConvertTo-Json -Depth 20 | Set-Content $wtSettingsPath -Encoding UTF8
-    _Ok "Default profile set to PowerShell 7 custom profile (Nord, MartianMono Nerd Font Mono 9)."
+    _Ok "Windows Terminal settings saved."
 }
 _PrintFooter
 

@@ -133,7 +133,7 @@ if (Test-Path $undoDir)
 _PrintFooter
 
 _PrintHeader "Removing mpv Configuration"
-$mpvConfigDir = "$env:APPDATA\mpv"
+$mpvConfigDir = "$env:APPDATA\mpv.net"
 if (Test-Path $mpvConfigDir)
 {
     $item = Get-Item $mpvConfigDir -Force
@@ -332,37 +332,26 @@ _PrintFooter
 # ==============================================================================
 _PrintHeader "Restoring Windows Terminal Configuration"
 $wtSettingsPath = "$env:LocalAppData\Packages\Microsoft.WindowsTerminal_8wekyb3d8bbwe\LocalState\settings.json"
-$customGuid = "{a3e97d4f-2b1c-4e8a-9f0d-6c5b3a7e1d2f}"
+$ps5Guid = "{61c54bbd-c2c6-5271-96e7-009a87ff44bf}"
 
 if (Test-Path $wtSettingsPath)
 {
     $settings = Get-Content $wtSettingsPath -Raw | ConvertFrom-Json
 
-    # Remove custom profile from list
-    $list = [System.Collections.Generic.List[object]]($settings.profiles.list ?? @())
-    $before = $list.Count
-    $list = [System.Collections.Generic.List[object]]($list | Where-Object { $_.guid -ne $customGuid })
-    if ($list.Count -lt $before)
-    {
-        _Ok "Removed PowerShell 7 custom profile."
-    } else
-    {
-        _Info "Custom profile not found, skipping removal."
-    }
-    $settings.profiles | Add-Member -NotePropertyName "list" -NotePropertyValue $list.ToArray() -Force
+    # Clear global defaults
+    $settings.profiles | Add-Member -NotePropertyName "defaults" -NotePropertyValue ([PSCustomObject]@{}) -Force
+    _Ok "Cleared global profile defaults."
 
     # Restore default profile to Windows PowerShell
-    $ps5Profile = $list | Where-Object { $_.name -like "*Windows PowerShell*" } | Select-Object -First 1
-    if ($ps5Profile)
-    {
-        $settings | Add-Member -NotePropertyName "defaultProfile" -NotePropertyValue $ps5Profile.guid -Force
-        _Ok "Default profile restored to Windows PowerShell."
+    $ps5Profile = ([System.Collections.Generic.List[object]]($settings.profiles.list ?? @())) |
+        Where-Object { $_.name -like "*Windows PowerShell*" } | Select-Object -First 1
+    $restoreGuid = if ($ps5Profile)
+    { $ps5Profile.guid
     } else
-    {
-        # Fallback to well-known Windows PowerShell GUID
-        $settings | Add-Member -NotePropertyName "defaultProfile" -NotePropertyValue "{61c54bbd-c2c6-5271-96e7-009a87ff44bf}" -Force
-        _Ok "Default profile restored to Windows PowerShell (fallback GUID)."
+    { $ps5Guid
     }
+    $settings | Add-Member -NotePropertyName "defaultProfile" -NotePropertyValue $restoreGuid -Force
+    _Ok "Default profile restored to Windows PowerShell."
 
     $settings | ConvertTo-Json -Depth 20 | Set-Content $wtSettingsPath -Encoding UTF8
     _Ok "Windows Terminal settings saved."
