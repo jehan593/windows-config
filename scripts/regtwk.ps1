@@ -3,7 +3,13 @@
 # ==============================================================================
 if (-not (New-Object Security.Principal.WindowsPrincipal([Security.Principal.WindowsIdentity]::GetCurrent())).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator))
 {
-    Start-Process "wt" -ArgumentList "pwsh", "-NoExit", "-ExecutionPolicy", "Bypass", "-File", "`"$PSCommandPath`"" -Verb RunAs
+    $cwd = (Get-Location).Path
+    $encoded = [Convert]::ToBase64String(
+        [Text.Encoding]::Unicode.GetBytes(
+            "Set-Location '$cwd'; & '$PSCommandPath'"
+        )
+    )
+    Start-Process "wt" -ArgumentList "pwsh", "-NoExit", "-ExecutionPolicy", "Bypass", "-EncodedCommand", $encoded -Verb RunAs
     exit
 }
 

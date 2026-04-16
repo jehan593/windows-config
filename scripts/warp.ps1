@@ -15,7 +15,13 @@ function _ElevateAction
 {
     param([string]$Command)
     Write-Host " 󰮯 Elevating to Administrator..." -ForegroundColor Cyan
-    Start-Process "wt" -ArgumentList "pwsh", "-NoExit", "-ExecutionPolicy", "Bypass", "-File", "`"$PSCommandPath`"", "$Command" -Verb RunAs
+    $cwd = (Get-Location).Path
+    $encoded = [Convert]::ToBase64String(
+        [Text.Encoding]::Unicode.GetBytes(
+            "Set-Location '$cwd'; & '$PSCommandPath' '$Command'"
+        )
+    )
+    Start-Process "wt" -ArgumentList "pwsh", "-NoExit", "-ExecutionPolicy", "Bypass", "-EncodedCommand", $encoded -Verb RunAs
     exit
 }
 
