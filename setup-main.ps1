@@ -165,11 +165,20 @@ _PrintFooter
 _PrintHeader "mpv Configuration"
 $mpvConfigDir = "$env:APPDATA\mpv.net"
 $repoMpvDir = Join-Path $PSScriptRoot "configs\mpv"
-if (Test-Path $mpvConfigDir)
-{ Remove-Item $mpvConfigDir -Recurse -Force
+
+New-Item -ItemType Directory -Path $mpvConfigDir -Force | Out-Null
+
+foreach ($file in @("mpv.conf", "input.conf"))
+{
+    $target = Join-Path $mpvConfigDir $file
+    $source = Join-Path $repoMpvDir $file
+    if (Test-Path $target)
+    { Remove-Item $target -Force 
+    }
+    New-Item -ItemType SymbolicLink -Path $target -Value $source -Force | Out-Null
+    _Ok "Linked: $target"
 }
-New-Item -ItemType SymbolicLink -Path $mpvConfigDir -Value $repoMpvDir -Force | Out-Null
-_Ok "Linked: $mpvConfigDir"
+
 _PrintFooter
 
 _PrintHeader "Brave Policies"

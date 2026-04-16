@@ -134,20 +134,25 @@ _PrintFooter
 
 _PrintHeader "Removing mpv Configuration"
 $mpvConfigDir = "$env:APPDATA\mpv.net"
-if (Test-Path $mpvConfigDir)
+
+foreach ($file in @("mpv.conf", "input.conf"))
 {
-    $item = Get-Item $mpvConfigDir -Force
-    if ($item.LinkType -eq "SymbolicLink")
+    $target = Join-Path $mpvConfigDir $file
+    if (Test-Path $target)
     {
-        Remove-Item $mpvConfigDir -Force
-        _Ok "Removed symlink: $mpvConfigDir"
+        $item = Get-Item $target -Force
+        if ($item.LinkType -eq "SymbolicLink")
+        {
+            Remove-Item $target -Force
+            _Ok "Removed symlink: $target"
+        } else
+        {
+            _Info "Not a symlink, skipping: $target"
+        }
     } else
     {
-        _Info "Not a symlink, skipping: $mpvConfigDir"
+        _Info "Not found, skipping: $target"
     }
-} else
-{
-    _Info "Not found, skipping."
 }
 _PrintFooter
 
