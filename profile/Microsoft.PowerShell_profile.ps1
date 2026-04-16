@@ -505,8 +505,8 @@ function cup
             _PrintRow "󰄬" "Windows" "Up to date" "Green"
         } else
         {
-            _PrintRow "󱎟" "Windows" "$($updates.Count) available" "Yellow"
-            Get-WindowsUpdate | Format-Table -AutoSize
+            _PrintRow "󱎟" "Windows" "Updates available" "Yellow"
+            $updates | Format-Table -AutoSize
         }
     } catch
     {
