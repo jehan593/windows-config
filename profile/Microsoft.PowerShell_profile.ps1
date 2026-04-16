@@ -489,7 +489,7 @@ function cup
     Write-Host "󰶬 Microsoft Store" -ForegroundColor Magenta
     if (Get-Command store -ErrorAction SilentlyContinue)
     {
-        store updates
+        'n' | store updates
     } else
     {
         _PrintRow "󱞣" "Store" "CLI tool not found." "Gray"
@@ -505,14 +505,8 @@ function cup
             _PrintRow "󰄬" "Windows" "Up to date" "Green"
         } else
         {
-            $kbCount = ($updates | ForEach-Object {
-                    [regex]::Matches($_.Title, 'KB\d+').Count
-                } | Measure-Object -Sum).Sum
-            $displayCount = [Math]::Max($updates.Count, $kbCount)
-            _PrintRow "󱎟" "Windows" "$displayCount available" "Yellow"
-            $updates | ForEach-Object {
-                Write-Host "    󱞩 $($_.Title)" -ForegroundColor Cyan
-            }
+            _PrintRow "󱎟" "Windows" "$($updates.Count) available" "Yellow"
+            Get-WindowsUpdate | Format-Table -AutoSize
         }
     } catch
     {
@@ -549,16 +543,20 @@ function upw
         Import-Module PSWindowsUpdate -ErrorAction SilentlyContinue
         _PrintHeader "󰖳" "Windows Update Service"
         _PrintRow "󱎟" "Status" "Searching..." "Cyan"
-        $updates = @(Get-WindowsUpdate -ErrorAction SilentlyContinue)
-        if ($updates.Count -eq 0)
+        $result = @(Get-WindowsUpdate -Install -AcceptAll -AutoReboot:$false -ErrorAction SilentlyContinue)
+        if ($result.Count -eq 0)
         {
             _PrintRow "󰄬" "Status" "No updates found" "Green"
-            _PrintFooter; return
+        } else
+        {
+            if ((Get-WURebootStatus -Silent) -eq $true)
+            {
+                _PrintRow "󰜉" "Reboot" "Required to complete updates" "Yellow"
+            } else
+            {
+                _PrintRow "󰄬" "Status" "System is current" "Green"
+            }
         }
-        _PrintRow "󱎟" "Found"   "$($updates.Count) updates" "Yellow"
-        _PrintRow "󰏔" "Status" "Installing..." "Cyan"
-        Get-WindowsUpdate -Install -AcceptAll -AutoReboot:$false -ErrorAction SilentlyContinue
-        _PrintRow "󰄬" "Status" "System is current" "Green"
     } catch
     {
         _PrintRow "󰅙" "Error" "$_" "Red"
