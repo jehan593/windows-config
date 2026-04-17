@@ -94,16 +94,17 @@ if (-not (Get-Module -ListAvailable -Name PSWindowsUpdate))
 {
     _Ok "PSWindowsUpdate already installed."
 }
-_PrintFooter
 
-if (-not (Get-Module -ListAvailable -Name PSWindowsUpdate))
+if (-not (Get-Module -ListAvailable -Name Terminal-Icons))
 {
-    _Info "Installing PSWindowsUpdate..."
-    Install-Module -Name PSWindowsUpdate -Force -Scope CurrentUser
-    _Ok "PSWindowsUpdate installed."
+    _Info "Installing Terminal-Icons..."
+    Install-Module -Name Terminal-Icons -Force -Scope CurrentUser
+    Add-TerminalIconsColorTheme -Path "$RepoPath\configs\ps-modules\Terminal-Icons\nord.psd1" -Force
+    Set-TerminalIconsTheme -ColorTheme 'Nord'
+    _Ok "Terminal-Icons installed."
 } else
 {
-    _Ok "PSWindowsUpdate already installed."
+    _Ok "Terminal-Icons already installed."
 }
 _PrintFooter
 
@@ -173,7 +174,7 @@ foreach ($file in @("mpv.conf", "input.conf"))
     $target = Join-Path $mpvConfigDir $file
     $source = Join-Path $repoMpvDir $file
     if (Test-Path $target)
-    { Remove-Item $target -Force 
+    { Remove-Item $target -Force
     }
     New-Item -ItemType SymbolicLink -Path $target -Value $source -Force | Out-Null
     _Ok "Linked: $target"
