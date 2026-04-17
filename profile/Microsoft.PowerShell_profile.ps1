@@ -4,6 +4,7 @@
 $RepoPath = "$HOME\windows-config"
 $ENV:STARSHIP_CONFIG = "$RepoPath\configs\starship.toml"
 $env:BAT_THEME = "Nord"
+Import-Module Terminal-Icons
 
 $user    = [Security.Principal.WindowsIdentity]::GetCurrent()
 $IsAdmin = ([Security.Principal.WindowsPrincipal]$user).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
@@ -328,7 +329,7 @@ function inst
     {
         Write-Host "`n󰐕 Installing: $id" -ForegroundColor Cyan
         winget install --id $id --exact --source winget --interactive @extraArgs
-        $histEntry = "winget install --id $id --exact --source winget"
+        $histEntry = "winget install --id $id --exact --source winget --interactive"
         Add-Content -Path (Get-PSReadLineOption).HistorySavePath -Value $histEntry
         [Microsoft.PowerShell.PSConsoleReadLine]::AddToHistory($histEntry)
     }
@@ -395,7 +396,7 @@ function uinst
     {
         Write-Host "`n󰛌 Removing: $id" -ForegroundColor Cyan
         winget uninstall --id $id --exact --interactive
-        $histEntry = "winget uninstall --id $id --exact"
+        $histEntry = "winget uninstall --id $id --exact --interactive"
         Add-Content -Path (Get-PSReadLineOption).HistorySavePath -Value $histEntry
         [Microsoft.PowerShell.PSConsoleReadLine]::AddToHistory($histEntry)
     }
@@ -466,8 +467,8 @@ function up
     foreach ($id in $ids)
     {
         Write-Host "`n󰑢 Upgrading: $id" -ForegroundColor Yellow
-        winget upgrade --id $id --exact
-        $histEntry = "winget upgrade --id $id --exact"
+        winget upgrade --id $id --exact --interactive
+        $histEntry = "winget upgrade --id $id --exact --interactive"
         Add-Content -Path (Get-PSReadLineOption).HistorySavePath -Value $histEntry
         [Microsoft.PowerShell.PSConsoleReadLine]::AddToHistory($histEntry)
     }
@@ -518,7 +519,7 @@ function cup
 function upp
 {
     _PrintHeader "󰏓" "Winget: Global Update"
-    winget upgrade --all
+    winget upgrade --all --interactive
     _PrintFooter
 }
 
@@ -541,21 +542,15 @@ function upw
     try
     {
         Import-Module PSWindowsUpdate -ErrorAction SilentlyContinue
-        _PrintHeader "󰖳" "Windows Update Service"
+        _PrintHeader "󰖳" "Windows Update"
         _PrintRow "󱎟" "Status" "Searching..." "Cyan"
-        $result = @(Get-WindowsUpdate -Install -AcceptAll -AutoReboot:$false -ErrorAction SilentlyContinue)
-        if ($result.Count -eq 0)
+        Get-WindowsUpdate -Install -AcceptAll -AutoReboot:$false -ErrorAction SilentlyContinue
+        if ((Get-WURebootStatus -Silent) -eq $true)
         {
-            _PrintRow "󰄬" "Status" "No updates found" "Green"
+            _PrintRow "󰜉" "Reboot" "Required to complete updates" "Yellow"
         } else
         {
-            if ((Get-WURebootStatus -Silent) -eq $true)
-            {
-                _PrintRow "󰜉" "Reboot" "Required to complete updates" "Yellow"
-            } else
-            {
-                _PrintRow "󰄬" "Status" "System is current" "Green"
-            }
+            _PrintRow "󰄬" "Status" "System is up to date" "Green"
         }
     } catch
     {
@@ -847,3 +842,25 @@ function info
 Write-Host ""
 Write-Host "`e[38;2;235;203;139m󱈄 Type 'info' to see custom utilities`e[0m"
 Write-Host ""
+
+# ==============================================================================
+# 14. AUTOMATIC UPDATE PAUSE
+# ==============================================================================
+if ($IsAdmin)
+{
+    $base = 'HKLM:\SOFTWARE\Microsoft\WindowsUpdate\UX\Settings'
+    $reg = Get-ItemProperty -Path $base -Name PauseUpdatesExpiryTime -ErrorAction SilentlyContinue
+
+    # Check if updates are NOT paused (either key is missing or date is expired)
+    if (-not $reg.PauseUpdatesExpiryTime -or (Get-Date) -gt (Get-Date $reg.PauseUpdatesExpiryTime))
+    {
+        $start = (Get-Date).ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ssZ")
+        $expiry = (Get-Date).AddDays(35).ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ssZ")
+
+        Set-ItemProperty $base -Name 'PauseUpdatesExpiryTime'         -Value $expiry -ErrorAction SilentlyContinue
+        Set-ItemProperty $base -Name 'PauseFeatureUpdatesStartTime'   -Value $start  -ErrorAction SilentlyContinue
+        Set-ItemProperty $base -Name 'PauseFeatureUpdatesEndTime'     -Value $expiry -ErrorAction SilentlyContinue
+        Set-ItemProperty $base -Name 'PauseQualityUpdatesStartTime'   -Value $start  -ErrorAction SilentlyContinue
+        Set-ItemProperty $base -Name 'PauseQualityUpdatesEndTime'     -Value $expiry -ErrorAction SilentlyContinue
+    }
+}
