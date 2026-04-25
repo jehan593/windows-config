@@ -1,0 +1,398 @@
+# ==============================================================================
+# 1. SELF-ELEVATION BLOCK
+# ==============================================================================
+if (-not $PSScriptRoot)
+{
+    Write-Host "Run this as a script file, not dot-sourced." -ForegroundColor Red
+    exit
+}
+
+$currentPrincipal = New-Object Security.Principal.WindowsPrincipal([Security.Principal.WindowsIdentity]::GetCurrent())
+if (-not $currentPrincipal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator))
+{
+    Write-Host "Requesting Administrative privileges..." -ForegroundColor Yellow
+    $arguments = "pwsh -NoExit -NoProfile -ExecutionPolicy Bypass -File `"$PSCommandPath`""
+    Start-Process wt -ArgumentList $arguments -Verb RunAs
+    exit
+}
+
+# ==============================================================================
+# UI HELPERS
+# ==============================================================================
+function _PrintHeader
+{
+    param([string]$Title)
+    Write-Host ""
+    Write-Host "!!  $Title" -ForegroundColor Red
+    Write-Host "-----------------------------------------------------" -ForegroundColor DarkBlue
+}
+
+function _PrintFooter
+{
+    Write-Host "-----------------------------------------------------`n" -ForegroundColor DarkBlue
+}
+
+function _Ok
+{ param([string]$Msg) Write-Host ("    [OK]    {0}" -f $Msg) -ForegroundColor Green
+}
+function _Info
+{ param([string]$Msg) Write-Host ("    [..]    {0}" -f $Msg) -ForegroundColor Cyan
+}
+function _Err
+{ param([string]$Msg) Write-Host ("    [!!]    {0}" -f $Msg) -ForegroundColor Red
+}
+
+function _PassThru
+{
+    process
+    { Write-Host "    $_"
+    }
+}
+
+# ==============================================================================
+# 2. PRE-FLIGHT
+# ==============================================================================
+Clear-Host
+Write-Host ""
+Write-Host "+--------------------------------------------+" -ForegroundColor Red
+Write-Host "|         Windows Config Reset               |" -ForegroundColor Red
+Write-Host "|    This will UNDO everything setup did!    |" -ForegroundColor Yellow
+Write-Host "+--------------------------------------------+" -ForegroundColor Red
+
+_PrintHeader "Pre-flight"
+$confirm = Read-Host "    [WARN]  Are you sure you want to reset? (y/N)"
+if ($confirm -notmatch '^[Yy]$')
+{ _Info "Aborted."; _PrintFooter; exit
+}
+_PrintFooter
+
+# ==============================================================================
+# 3. DOTFILES & CONFIG LINKING
+# ==============================================================================
+_PrintHeader "Removing PowerShell Profile Symlinks"
+$Profiles = @(
+    "$HOME\Documents\PowerShell\Microsoft.PowerShell_profile.ps1"
+)
+foreach ($Path in $Profiles)
+{
+    if (Test-Path $Path)
+    {
+        $item = Get-Item $Path -Force
+        if ($item.LinkType -eq "SymbolicLink")
+        {
+            Remove-Item $Path -Force
+            _Ok "Removed symlink: $Path"
+        } else
+        {
+            _Info "Not a symlink, skipping: $Path"
+        }
+    } else
+    {
+        _Info "Not found, skipping: $Path"
+    }
+}
+_PrintFooter
+
+_PrintHeader "Removing Vim Configuration"
+$HomeVimrc = Join-Path $HOME "_vimrc"
+if (Test-Path $HomeVimrc)
+{
+    $item = Get-Item $HomeVimrc -Force
+    if ($item.LinkType -eq "SymbolicLink")
+    {
+        Remove-Item $HomeVimrc -Force
+        _Ok "Removed symlink: $HomeVimrc"
+    } else
+    {
+        _Info "Not a symlink, skipping: $HomeVimrc"
+    }
+} else
+{
+    _Info "Not found, skipping: $HomeVimrc"
+}
+
+$NordPath = Join-Path $HOME "vimfiles\colors\nord.vim"
+if (Test-Path $NordPath)
+{
+    Remove-Item $NordPath -Force
+    _Ok "Removed Nord vim theme."
+} else
+{
+    _Info "Nord vim theme not found, skipping."
+}
+
+$undoDir = Join-Path $HOME "vimfiles\undodir"
+if (Test-Path $undoDir)
+{
+    Remove-Item $undoDir -Recurse -Force
+    _Ok "Removed undo directory."
+} else
+{
+    _Info "Undo directory not found, skipping."
+}
+_PrintFooter
+
+_PrintHeader "Removing mpv Configuration"
+$mpvConfigDir = "$env:APPDATA\mpv.net"
+
+foreach ($file in @("mpv.conf", "input.conf"))
+{
+    $target = Join-Path $mpvConfigDir $file
+    if (Test-Path $target)
+    {
+        $item = Get-Item $target -Force
+        if ($item.LinkType -eq "SymbolicLink")
+        {
+            Remove-Item $target -Force
+            _Ok "Removed symlink: $target"
+        } else
+        {
+            _Info "Not a symlink, skipping: $target"
+        }
+    } else
+    {
+        _Info "Not found, skipping: $target"
+    }
+}
+_PrintFooter
+
+_PrintHeader "Removing Brave Policies"
+$regPath = "HKLM:\SOFTWARE\Policies\BraveSoftware\Brave"
+if (Test-Path $regPath)
+{
+    Remove-Item $regPath -Recurse -Force
+    _Ok "Removed Brave policies from registry."
+} else
+{
+    _Info "Not found, skipping."
+}
+_PrintFooter
+
+_PrintHeader "Removing JpegView Configuration"
+$jpegviewDst = "$env:APPDATA\JPEGView\JPEGView.ini"
+if (Test-Path $jpegviewDst)
+{
+    $item = Get-Item $jpegviewDst -Force
+    if ($item.LinkType -eq "SymbolicLink")
+    {
+        Remove-Item $jpegviewDst -Force
+        _Ok "Removed symlink: $jpegviewDst"
+    } else
+    {
+        _Info "Not a symlink, skipping."
+    }
+} else
+{
+    _Info "Not found, skipping."
+}
+_PrintFooter
+
+# ==============================================================================
+# 4. ASSETS & THEMING
+# ==============================================================================
+_PrintHeader "Removing Windows Terminal Nord Theme"
+$wtFragmentPath = "$Env:LocalAppData\Microsoft\Windows Terminal\Fragments\nord"
+if (Test-Path $wtFragmentPath)
+{
+    Remove-Item $wtFragmentPath -Recurse -Force
+    _Ok "Removed Nord theme fragment."
+} else
+{
+    _Info "Not found, skipping."
+}
+_PrintFooter
+
+_PrintHeader "Removing Wallpapers"
+$wallpaperDst = Join-Path ([Environment]::GetFolderPath("MyPictures")) "config-wallpapers"
+if (Test-Path $wallpaperDst)
+{
+    $removeWallpapers = Read-Host "    Remove wallpapers folder? (y/N)"
+    if ($removeWallpapers -match '^[Yy]$')
+    {
+        Remove-Item $wallpaperDst -Recurse -Force
+        _Ok "Removed wallpapers."
+    } else
+    {
+        _Info "Skipping wallpapers removal."
+    }
+} else
+{
+    _Info "Not found, skipping."
+}
+_PrintFooter
+
+# ==============================================================================
+# 5. TOOLS & SCRIPTS
+# ==============================================================================
+_PrintHeader "Removing WARP Tunnel"
+$warpSvc = Get-Service -Name "WireGuardTunnel`$warp" -ErrorAction SilentlyContinue
+$warpDir = "$env:USERPROFILE\windows-config-scripts\warp"
+if ($warpSvc)
+{
+    wireguard /uninstalltunnelservice warp 2>&1 | _PassThru
+    _Ok "Tunnel service removed."
+} else
+{
+    _Info "Tunnel not running, skipping."
+}
+if (Test-Path $warpDir)
+{
+    Remove-Item $warpDir -Recurse -Force
+    _Ok "Removed: $warpDir"
+} else
+{
+    _Info "WARP config dir not found, skipping."
+}
+_PrintFooter
+
+_PrintHeader "Removing wg-socks"
+$configScriptsDir = "$env:USERPROFILE\windows-config-scripts"
+$wgsocksDir       = "$configScriptsDir\wg-socks"
+$services         = Get-Service -ErrorAction SilentlyContinue | Where-Object { $_.Name -like "*-wgsocks" }
+$removedTunnels   = $false
+
+if ($services)
+{
+    $stopTunnels = Read-Host "    Remove existing tunnels and backup configs? (y/N)"
+    if ($stopTunnels -match '^[Yy]$')
+    {
+        $removedTunnels = $true
+        $wgsocksConf = "$wgsocksDir\configs"
+        if (Test-Path $wgsocksConf)
+        {
+            $backupDir = Join-Path ([Environment]::GetFolderPath("Desktop")) "wg-socks-backup"
+            if (!(Test-Path $backupDir))
+            { New-Item -ItemType Directory -Path $backupDir -Force | Out-Null
+            }
+            Copy-Item -Path "$wgsocksConf\*.conf" -Destination $backupDir -Force
+            _Ok "Configs backed up to: Desktop\wg-socks-backup"
+        }
+        foreach ($svc in $services)
+        {
+            servy-cli stop      --name="$($svc.Name)" --quiet 2>&1 | _PassThru
+            servy-cli uninstall --name="$($svc.Name)" --quiet 2>&1 | _PassThru
+            _Ok "Removed service: $($svc.Name)"
+        }
+        if (Test-Path $wgsocksDir)
+        {
+            Remove-Item $wgsocksDir -Recurse -Force
+            _Ok "Removed: $wgsocksDir"
+        }
+    } else
+    {
+        _Info "Skipping tunnel removal. wg-socks directory preserved."
+    }
+} else
+{
+    if (Test-Path $wgsocksDir)
+    {
+        Remove-Item $wgsocksDir -Recurse -Force
+        _Ok "Removed: $wgsocksDir"
+    } else
+    {
+        _Info "wg-socks dir not found, skipping."
+    }
+}
+
+# Clean up parent dir only if now empty
+if ((Test-Path $configScriptsDir) -and !(Get-ChildItem $configScriptsDir -Force))
+{
+    Remove-Item $configScriptsDir -Force
+    _Ok "Removed empty: $configScriptsDir"
+}
+_PrintFooter
+
+_PrintHeader "Removing Init Caches"
+@(
+    "$env:TEMP\starship_init.ps1"
+    "$env:TEMP\zoxide_init.ps1"
+    "$env:TEMP\winget_search_cache.txt"
+) | ForEach-Object {
+    if (Test-Path $_)
+    {
+        Remove-Item $_ -Force
+        _Ok "Removed: $_"
+    } else
+    {
+        _Info "Not found, skipping: $_"
+    }
+}
+_PrintFooter
+
+# ==============================================================================
+# 6. OPTIONAL - Uninstall Apps
+# ==============================================================================
+_PrintHeader "Optional: Package Removal"
+_Info "Targets: Starship, fzf, zoxide, bat, fd, wgcf$(if ($removedTunnels) { ', Servy' })"
+Write-Host ""
+$response = Read-Host "    Remove these packages? (y/N)"
+
+if ($response -match '^[Yy]$')
+{
+    $apps = @(
+        "Starship.Starship", "junegunn.fzf", "ajeetdsouza.zoxide",
+        "sharkdp.bat", "sharkdp.fd", "ViRb3.wgcf"
+    )
+    if ($removedTunnels)
+    { $apps += "aelassas.Servy"
+    } else
+    { _Info "Skipping Servy uninstall (tunnels still active)."
+    }
+    foreach ($app in $apps)
+    {
+        winget uninstall --id $app --exact --silent 2>&1 | _PassThru
+        if ($LASTEXITCODE -eq 0)
+        { _Ok "Uninstalled: $app"
+        } else
+        { _Err "Failed or not found: $app"
+        }
+    }
+} else
+{
+    _Info "Skipping package removal."
+}
+_PrintFooter
+
+# ==============================================================================
+# 7. WINDOWS TERMINAL RESTORE
+# ==============================================================================
+_PrintHeader "Restoring Windows Terminal Configuration"
+$wtSettingsPath = "$env:LocalAppData\Packages\Microsoft.WindowsTerminal_8wekyb3d8bbwe\LocalState\settings.json"
+$ps5Guid        = "{61c54bbd-c2c6-5271-96e7-009a87ff44bf}"
+
+if (Test-Path $wtSettingsPath)
+{
+    $settings = Get-Content $wtSettingsPath -Raw | ConvertFrom-Json
+
+    $settings.profiles | Add-Member -NotePropertyName "defaults" -NotePropertyValue ([PSCustomObject]@{}) -Force
+    _Ok "Cleared global profile defaults."
+
+    $ps5Profile = ([System.Collections.Generic.List[object]]($settings.profiles.list ?? @())) |
+        Where-Object { $_.name -like "*Windows PowerShell*" } | Select-Object -First 1
+    $restoreGuid = if ($ps5Profile)
+    { $ps5Profile.guid
+    } else
+    { $ps5Guid
+    }
+    $settings | Add-Member -NotePropertyName "defaultProfile" -NotePropertyValue $restoreGuid -Force
+    _Ok "Default profile restored to Windows PowerShell."
+
+    $settings | ConvertTo-Json -Depth 20 | Set-Content $wtSettingsPath -Encoding UTF8
+    _Ok "Windows Terminal settings saved."
+} else
+{
+    _Info "Windows Terminal settings not found, skipping."
+}
+_PrintFooter
+
+# ==============================================================================
+# 8. FINALIZATION
+# ==============================================================================
+Write-Host ""
+Write-Host "+--------------------------------------------+" -ForegroundColor Green
+Write-Host "|           Reset Complete!                  |" -ForegroundColor Green
+Write-Host "+--------------------------------------------+" -ForegroundColor Green
+Write-Host ""
+Write-Host "  Set a different wallpaper manually if previous one was from config-wallpapers." -ForegroundColor White
+Write-Host ""
+Pause
