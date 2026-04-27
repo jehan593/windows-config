@@ -59,7 +59,7 @@ _PrintHeader "Winget Apps"
 $apps = @(
     "Starship.Starship", "junegunn.fzf", "Git.Git", "ajeetdsouza.zoxide",
     "vim.vim", "sharkdp.bat", "sharkdp.fd", "aelassas.Servy",
-    "WireGuard.WireGuard", "ViRb3.wgcf", "sylikc.JPEGView", "mpv.net"
+    "WireGuard.WireGuard", "ViRb3.wgcf", "", "nomacs.nomacs", "mpv.net"
 )
 foreach ($app in $apps)
 {
@@ -208,27 +208,6 @@ if (Test-Path $bravePolicySrc)
 } else
 {
     _Info "Brave policies file not found in repo, skipping."
-}
-_PrintFooter
-
-_PrintHeader "JpegView Configuration"
-$jpegviewSrc = Join-Path $PSScriptRoot "configs\jpegview\JPEGView.ini"
-$jpegviewDst = "$env:APPDATA\JPEGView\JPEGView.ini"
-$jpegviewDir = Split-Path $jpegviewDst
-
-if (Test-Path $jpegviewSrc)
-{
-    if (!(Test-Path $jpegviewDir))
-    { New-Item -ItemType Directory -Path $jpegviewDir -Force | Out-Null
-    }
-    if (Test-Path $jpegviewDst)
-    { Remove-Item $jpegviewDst -Force
-    }
-    New-Item -ItemType SymbolicLink -Path $jpegviewDst -Value $jpegviewSrc -Force | Out-Null
-    _Ok "Linked: $jpegviewDst"
-} else
-{
-    _Info "JPEGView config not found in repo, skipping."
 }
 _PrintFooter
 

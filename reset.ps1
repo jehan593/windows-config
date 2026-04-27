@@ -168,25 +168,6 @@ if (Test-Path $regPath)
 }
 _PrintFooter
 
-_PrintHeader "Removing JpegView Configuration"
-$jpegviewDst = "$env:APPDATA\JPEGView\JPEGView.ini"
-if (Test-Path $jpegviewDst)
-{
-    $item = Get-Item $jpegviewDst -Force
-    if ($item.LinkType -eq "SymbolicLink")
-    {
-        Remove-Item $jpegviewDst -Force
-        _Ok "Removed symlink: $jpegviewDst"
-    } else
-    {
-        _Info "Not a symlink, skipping."
-    }
-} else
-{
-    _Info "Not found, skipping."
-}
-_PrintFooter
-
 # ==============================================================================
 # 4. ASSETS & THEMING
 # ==============================================================================
