@@ -1,7 +1,6 @@
 ﻿param([string]$Action, [string]$Arg1, [string]$Arg2)
 
-$binaryPath = "$env:USERPROFILE\windows-config-scripts\wg-socks\wireproxy.exe"
-$confDir    = "$env:USERPROFILE\windows-config-scripts\wg-socks\configs"
+$confDir = "$env:USERPROFILE\windows-config-scripts\wg-socks\configs"
 
 function _IsAdmin
 {
@@ -106,8 +105,15 @@ function _InstallSocks
     }
     $content | Set-Content $confDest -NoNewline
 
+    $wireproxyPath = (Get-Command wireproxy -ErrorAction SilentlyContinue)?.Source
+    if (-not $wireproxyPath)
+    {
+        Write-Host "󰅙 wireproxy not found in PATH. Run setup-main.ps1 first." -ForegroundColor Red
+        return
+    }
+
     _PrintHeader "󱌣" "Installing Tunnel: $serviceName"
-    servy-cli install --name="$serviceName" --path="$binaryPath" --params="-c `"$confDest`"" --startupType=Automatic --enableHealth --heartbeatInterval=10 --maxFailedChecks=3 --recoveryAction=RestartProcess --maxRestartAttempts=10 --quiet 2>&1 | _PassThru
+    servy-cli install --name="$serviceName" --path="$wireproxyPath" --params="-c `"$confDest`"" --startupType=Automatic --enableHealth --heartbeatInterval=10 --maxFailedChecks=3 --recoveryAction=RestartProcess --maxRestartAttempts=10 --quiet 2>&1 | _PassThru
 
     if ($LASTEXITCODE -ne 0)
     {
@@ -262,9 +268,41 @@ function _RefreshSocks
     _PrintFooter
 }
 
-if (-not (Test-Path $binaryPath))
+function _UpdateWireproxy
 {
-    Write-Host "󰅙 wireproxy.exe not found at: $binaryPath" -ForegroundColor Red
+    if (-not (_IsAdmin))
+    { _ElevateAction "update"; return
+    }
+
+    _PrintHeader "󰚰" "Update wireproxy"
+
+    $services = Get-Service -ErrorAction SilentlyContinue | Where-Object { $_.Name -like "*-wgsocks" }
+    foreach ($svc in $services)
+    {
+        servy-cli stop --name="$($svc.Name)" --quiet 2>&1 | _PassThru
+        _PrintRow "󰄾" "Stopped" $svc.Name "Yellow"
+    }
+
+    go install github.com/windtf/wireproxy/cmd/wireproxy@latest
+    if ($LASTEXITCODE -ne 0)
+    {
+        _PrintRow "󰅙" "Update" "go install failed" "Red"
+        _PrintFooter
+        return
+    }
+    _PrintRow "󰄬" "wireproxy" "Updated" "Green"
+
+    foreach ($svc in $services)
+    {
+        servy-cli start --name="$($svc.Name)" --quiet 2>&1 | _PassThru
+        _PrintRow "󰑐" "Restarted" $svc.Name "Green"
+    }
+    _PrintFooter
+}
+
+if (-not (Get-Command wireproxy -ErrorAction SilentlyContinue))
+{
+    Write-Host "󰅙 wireproxy not found in PATH. Run setup-main.ps1 first." -ForegroundColor Red
     exit
 }
 
@@ -282,6 +320,9 @@ switch ($Action)
     "refresh"
     { _RefreshSocks
     }
+    "update"
+    { _UpdateWireproxy
+    }
     default
     {
         _PrintHeader "󰒄" "WireGuard SOCKS5 Manager"
@@ -289,6 +330,7 @@ switch ($Action)
         _PrintRow "󰒄" "list"      "List all tunnels"
         _PrintRow "󰑐" "refresh"   "Restart all tunnels"
         _PrintRow "󰗨" "uninstall" "Remove tunnel(s)"
+        _PrintRow "󰚰" "update"    "Update wireproxy binary"
         _PrintFooter
     }
 }

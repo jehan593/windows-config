@@ -629,6 +629,7 @@ function upall
     wp
     ups
     upw
+    wgsocks update
     upc
 }
 
@@ -843,7 +844,7 @@ Write-Host ""
 # ==============================================================================
 # 14. AUTOMATIC UPDATE PAUSE
 # ==============================================================================
-if ($IsAdmin)
+<#if ($IsAdmin)
 {
     $base = 'HKLM:\SOFTWARE\Microsoft\WindowsUpdate\UX\Settings'
     $reg = Get-ItemProperty -Path $base -Name PauseUpdatesExpiryTime -ErrorAction SilentlyContinue
@@ -860,4 +861,4 @@ if ($IsAdmin)
         Set-ItemProperty $base -Name 'PauseQualityUpdatesStartTime'   -Value $start  -ErrorAction SilentlyContinue
         Set-ItemProperty $base -Name 'PauseQualityUpdatesEndTime'     -Value $expiry -ErrorAction SilentlyContinue
     }
-}
+    }#>

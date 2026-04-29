@@ -59,7 +59,8 @@ _PrintHeader "Winget Apps"
 $apps = @(
     "Starship.Starship", "junegunn.fzf", "Git.Git", "ajeetdsouza.zoxide",
     "vim.vim", "sharkdp.bat", "sharkdp.fd", "aelassas.Servy",
-    "WireGuard.WireGuard", "ViRb3.wgcf", "", "nomacs.nomacs", "mpv.net"
+    "WireGuard.WireGuard", "ViRb3.wgcf", "GoLang.Go",
+    "nomacs.nomacs", "mpv.net"
 )
 foreach ($app in $apps)
 {
@@ -215,43 +216,17 @@ _PrintFooter
 # 5. ASSETS & THEMING
 # ==============================================================================
 _PrintHeader "Martian Mono Nerd Font"
-if (!(Get-ChildItem "C:\Windows\Fonts" | Where-Object { $_.Name -like "*Martian*Nerd*" }))
+if (!(Get-Module -ListAvailable -Name NerdFonts))
 {
-    $tempZip    = "$env:TEMP\fonts.zip"
-    $tempFolder = "$env:TEMP\MartianMonoFont"
-    try
-    {
-        _Info "Downloading font..."
-        Invoke-WebRequest -Uri "https://github.com/ryanoasis/nerd-fonts/releases/latest/download/MartianMono.zip" -OutFile $tempZip -UseBasicParsing -ErrorAction Stop
-        if (!(Test-Path $tempFolder))
-        { New-Item -ItemType Directory -Path $tempFolder | Out-Null
-        }
-        Expand-Archive -Path $tempZip -DestinationPath $tempFolder -Force
-        foreach ($file in (Get-ChildItem -Path $tempFolder -Include "*.ttf", "*.otf" -Recurse))
-        {
-            $targetPath = Join-Path "C:\Windows\Fonts" $file.Name
-            try
-            {
-                if (!(Test-Path $targetPath))
-                {
-                    Copy-Item $file.FullName $targetPath -Force
-                    New-ItemProperty -Path "HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Fonts" -Name $file.Name -Value $file.Name -PropertyType String -Force | Out-Null
-                }
-            } catch
-            { _Err "Could not install $($file.Name)"
-            }
-        }
-        _Ok "Martian Mono Nerd Font installed."
-    } catch
-    {
-        _Err "Failed to download/install font: $_"
-    } finally
-    {
-        Remove-Item $tempZip, $tempFolder -Recurse -ErrorAction SilentlyContinue
-    }
+    _Info "Installing NerdFonts module..."
+    Install-PSResource -Name NerdFonts -Quiet -TrustRepository
+}
+Import-Module -Name NerdFonts
+Install-NerdFont -Name 'MartianMono'
+if ($LASTEXITCODE -eq 0)
+{ _Ok "Martian Mono Nerd Font installed."
 } else
-{
-    _Ok "Martian Mono Nerd Font already installed."
+{ _Err "Font install failed."
 }
 _PrintFooter
 
@@ -291,11 +266,9 @@ _PrintFooter
 # ==============================================================================
 _PrintHeader "wg-socks Setup"
 $configScriptsDir = "$env:USERPROFILE\windows-config-scripts"
-$wgsocksDir       = "$configScriptsDir\wg-socks"
-$wgsocksConf      = "$wgsocksDir\configs"
-$wireproxyExe     = "$wgsocksDir\wireproxy.exe"
+$wgsocksConf      = "$configScriptsDir\wg-socks\configs"
 
-foreach ($dir in @($configScriptsDir, $wgsocksDir, $wgsocksConf))
+foreach ($dir in @($configScriptsDir, $wgsocksConf))
 {
     if (!(Test-Path $dir))
     { New-Item -ItemType Directory -Path $dir -Force | Out-Null
@@ -303,47 +276,22 @@ foreach ($dir in @($configScriptsDir, $wgsocksDir, $wgsocksConf))
 }
 _Ok "Folder structure created."
 
-if (-not (Test-Path $wireproxyExe))
+# Refresh PATH so go is available if it was just installed above
+$env:PATH = [System.Environment]::GetEnvironmentVariable("PATH", "Machine") + ";" +
+            [System.Environment]::GetEnvironmentVariable("PATH", "User")
+
+if (Get-Command go -ErrorAction SilentlyContinue)
 {
-    $tempFile   = "$env:TEMP\wireproxy.tar.gz"
-    $tempFolder = "$env:TEMP\wireproxy"
-    try
-    {
-        _Info "Fetching latest wireproxy release..."
-        $release     = Invoke-RestMethod -Uri "https://api.github.com/repos/whyvl/wireproxy/releases/latest" -ErrorAction Stop
-        $asset       = $release.assets | Where-Object { $_.name -like "*windows_amd64*" } | Select-Object -First 1
-        if (-not $asset)
-        { throw "Could not find windows_amd64 asset in latest release."
-        }
-        _Info "Downloading wireproxy $($release.tag_name)..."
-        Invoke-WebRequest -Uri $asset.browser_download_url -OutFile $tempFile -UseBasicParsing -ErrorAction Stop
-        if (!(Test-Path $tempFolder))
-        { New-Item -ItemType Directory -Path $tempFolder -Force | Out-Null
-        }
-        tar -xzf $tempFile -C $tempFolder
-        $innerArchive = Get-ChildItem -Path $tempFolder -Recurse | Where-Object { $_.Extension -match "\.gz|\.tar" } | Select-Object -First 1
-        if ($innerArchive)
-        { tar -xzf $innerArchive.FullName -C $tempFolder
-        }
-        $wireproxyBin = Get-ChildItem -Path $tempFolder -Recurse -Filter "wireproxy.exe" | Select-Object -First 1
-        if ($wireproxyBin)
-        {
-            Copy-Item $wireproxyBin.FullName $wireproxyExe -Force
-            _Ok "wireproxy $($release.tag_name) installed."
-        } else
-        {
-            _Err "Could not find wireproxy.exe after extraction."
-        }
-    } catch
-    {
-        _Err "Failed to install wireproxy: $_"
-    } finally
-    {
-        Remove-Item $tempFile, $tempFolder -Recurse -ErrorAction SilentlyContinue
+    _Info "Installing wireproxy via go install..."
+    go install github.com/windtf/wireproxy/cmd/wireproxy@latest
+    if ($LASTEXITCODE -eq 0)
+    { _Ok "wireproxy installed globally via go."
+    } else
+    { _Err "go install failed. Check Go installation."
     }
 } else
 {
-    _Ok "wireproxy already installed."
+    _Err "go not found in PATH. Restart terminal and re-run, or install Go manually."
 }
 _PrintFooter
 
