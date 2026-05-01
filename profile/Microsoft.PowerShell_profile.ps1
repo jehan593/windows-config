@@ -39,10 +39,14 @@ Import-CachedCommand -Command "zoxide"   -CacheName "zoxide_init"
 function Invoke-Elevated
 {
     param([string]$Command)
-    Write-Host "󰌋 Elevating to Administrator..." -ForegroundColor Cyan
-    $full    = "Set-Location '$($PWD.Path)'; $Command"
-    $encoded = [Convert]::ToBase64String([Text.Encoding]::Unicode.GetBytes($full))
-    Start-Process wt -Verb RunAs -ArgumentList "pwsh", "-NoExit", "-EncodedCommand", $encoded
+
+    if (Get-Command gsudo -ErrorAction SilentlyContinue) {
+        Write-Host "󰌋 Elevating with gsudo..." -ForegroundColor Cyan
+        gsudo pwsh -Command "$Command"
+    }
+    else {
+        Write-Warning "gsudo not found. Please install it (e.g., 'winget install gsudo')."
+    }
 }
 
 function _PrintHeader
@@ -152,21 +156,21 @@ function la
     Get-ChildItem -Force @args
 }
 
+Set-Alias sudo gsudo
+
 # ==============================================================================
 # 5. CORE UTILITIES
 # ==============================================================================
-function sw
-{
-    if ($IsAdmin) { Write-Host "󰌋 Already running as Administrator." -ForegroundColor Red; return }
-    Invoke-Elevated ""
-}
-
 function rr
 {
-    $cmd = (Get-History -Count 1).CommandLine
-    if (!$cmd) { Write-Host "󱞣 No history found." -ForegroundColor Red; return }
-    Write-Host "󰁯 Elevating: $cmd" -ForegroundColor Cyan
-    Invoke-Elevated -Command $cmd
+    $lastCommand = (Get-History -Count 1).CommandLine
+    
+    if (!$lastCommand) { 
+        Write-Host "󱞣 No history found." -ForegroundColor Red; return 
+    }
+
+    Write-Host "󰁯 Elevating: $lastCommand" -ForegroundColor Cyan
+    gsudo pwsh -Command "$lastCommand"
 }
 
 function exp
@@ -727,9 +731,9 @@ function info
     _InfoGroup "󱰦" "Configuration"
     _InfoCmd "conf"    "Open workspace in Zed"
     _InfoCmd "reload"  "Restart shell session"
-    _InfoCmd "sw"      "Launch Admin terminal"
+    _InfoCmd "sudo"    "Elevate current shell or command" 
     Write-Host ""
-
+    
     _InfoGroup "󰉋" "System & Files"
     _InfoCmd "z"       "Zoxide jump + ls"
     _InfoCmd "la"      "List all files"
@@ -774,7 +778,9 @@ function info
 # ==============================================================================
 # 13. STARTUP MESSAGE
 # ==============================================================================
-Write-Host ""
-Write-Host "`e[38;2;235;203;139m󱈄 Type 'info' to see custom utilities`e[0m"
-Write-Host ""
+if (-not $IsAdmin) {
+    Write-Host ""
+    Write-Host "`e[38;2;235;203;139m󱈄 Type 'info' to see custom utilities`e[0m"
+    Write-Host ""
+}
 

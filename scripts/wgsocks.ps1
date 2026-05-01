@@ -1,6 +1,10 @@
 ﻿param([string]$Action, [string]$Arg1, [string]$Arg2)
 
-$confDir = "$env:USERPROFILE\windows-config-scripts\wg-socks\configs"
+$confDir = "$env:APPDATA\windows-config\wg-socks\configs"
+
+# ==============================================================================
+# HELPERS
+# ==============================================================================
 
 function _IsAdmin
 {
@@ -10,18 +14,18 @@ function _IsAdmin
 
 function _ElevateAction
 {
-    param([string]$Command)
-    Write-Host "󰮯 Elevating to Administrator..." -ForegroundColor Cyan
-    $cwd         = (Get-Location).Path
-    $cwdSafe     = $cwd     -replace "'", "''"
-    $commandSafe = $Command -replace "'", "''"
-    $encoded = [Convert]::ToBase64String(
-        [Text.Encoding]::Unicode.GetBytes(
-            "Set-Location '$cwdSafe'; & '$PSCommandPath' $commandSafe"
-        )
-    )
-    Start-Process "wt" -ArgumentList "pwsh", "-NoExit", "-ExecutionPolicy", "Bypass", "-EncodedCommand", $encoded -Verb RunAs
-    exit
+    if (Get-Command gsudo -ErrorAction SilentlyContinue) {
+        Write-Host "󰮯 Elevating to Administrator..." -ForegroundColor Cyan
+        
+        # Explicitly name the parameters for the elevated call
+        gsudo pwsh -File "$PSCommandPath" -Action "$Action" -Arg1 "$Arg1" -Arg2 "$Arg2"
+        exit
+    }
+    else {
+        Write-Error "gsudo is required for elevation. Install with 'winget install gsudo'."
+        pause
+        exit
+    }
 }
 
 function _PrintHeader
@@ -42,6 +46,10 @@ function _PrintRow
     param([string]$Icon, [string]$Label, [string]$Value, [string]$Color = "White")
     Write-Host ("│  {0} {1,-12} {2}" -f $Icon, $Label, $Value) -ForegroundColor $Color
 }
+
+# ==============================================================================
+# ACTIONS
+# ==============================================================================
 
 function _InstallSocks
 {
@@ -67,7 +75,9 @@ function _InstallSocks
             Write-Host "󰅙  File not found: $ConfigPath" -ForegroundColor Red
             return
         }
-        _ElevateAction "install `"$($fullPath.Path)`" $Port"
+        # Update Arg1 to full path so the elevated process finds it
+        $script:Arg1 = $fullPath.Path
+        _ElevateAction
         return
     }
 
@@ -126,7 +136,7 @@ function _ListSocks
 
     if (-not $services)
     {
-        Write-Host "   No tunnels found." -ForegroundColor Gray
+        Write-Host "    No tunnels found." -ForegroundColor Gray
         _PrintFooter
         return
     }
@@ -149,7 +159,7 @@ function _ListSocks
 
 function _UninstallSocks
 {
-    if (-not (_IsAdmin)) { _ElevateAction "uninstall"; return }
+    if (-not (_IsAdmin)) { _ElevateAction; return }
 
     $services = @(Get-Service -ErrorAction SilentlyContinue | Where-Object { $_.Name -like "*-wgsocks" })
     if (-not $services)
@@ -212,7 +222,7 @@ function _UninstallSocks
 
 function _RefreshSocks
 {
-    if (-not (_IsAdmin)) { _ElevateAction "refresh"; return }
+    if (-not (_IsAdmin)) { _ElevateAction; return }
 
     $services = Get-Service -ErrorAction SilentlyContinue | Where-Object { $_.Name -like "*-wgsocks" }
 
@@ -220,7 +230,7 @@ function _RefreshSocks
 
     if (-not $services)
     {
-        Write-Host "   No tunnels found." -ForegroundColor Gray
+        Write-Host "    No tunnels found." -ForegroundColor Gray
         _PrintFooter
         return
     }
@@ -238,7 +248,7 @@ function _RefreshSocks
 
 function _UpdateWireproxy
 {
-    if (-not (_IsAdmin)) { _ElevateAction "update"; return }
+    if (-not (_IsAdmin)) { _ElevateAction; return }
 
     _PrintHeader "󰚰" "Update wireproxy"
 
@@ -266,6 +276,10 @@ function _UpdateWireproxy
     }
     _PrintFooter
 }
+
+# ==============================================================================
+# MAIN ENTRY
+# ==============================================================================
 
 if (-not (Get-Command wireproxy -ErrorAction SilentlyContinue))
 {

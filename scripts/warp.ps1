@@ -1,7 +1,7 @@
 ﻿param([string]$Action)
 
-$warpConf = "$env:USERPROFILE\windows-config-scripts\warp\warp.conf"
-$warpDir  = "$env:USERPROFILE\windows-config-scripts\warp"
+$warpConf = "$env:APPDATA\windows-config\warp\warp.conf"
+$warpDir  = "$env:APPDATA\windows-config\warp"
 $tunnel   = "warp"
 
 function _IsAdmin
@@ -13,16 +13,17 @@ function _IsAdmin
 function _ElevateAction
 {
     param([string]$Command)
-    Write-Host "󰮯 Elevating to Administrator..." -ForegroundColor Cyan
-    $cwd     = (Get-Location).Path
-    $cwdSafe = $cwd -replace "'", "''"
-    $encoded = [Convert]::ToBase64String(
-        [Text.Encoding]::Unicode.GetBytes(
-            "Set-Location '$cwdSafe'; & '$PSCommandPath' $Command"
-        )
-    )
-    Start-Process "wt" -ArgumentList "pwsh", "-NoExit", "-ExecutionPolicy", "Bypass", "-EncodedCommand", $encoded -Verb RunAs
-    exit
+    
+    if (Get-Command gsudo -ErrorAction SilentlyContinue) {
+        Write-Host "󰮯 Elevating to Administrator..." -ForegroundColor Cyan
+        gsudo pwsh -File "$PSCommandPath" -- $Command
+        exit
+    }
+    else {
+        Write-Error "gsudo is required for elevation. Install with 'winget install gsudo'."
+        Pause
+        exit
+    }
 }
 
 function _PrintHeader

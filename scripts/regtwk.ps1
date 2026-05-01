@@ -29,14 +29,8 @@ function _PrintRow
 
 if (-not (_IsAdmin))
 {
-    $cwd     = (Get-Location).Path
-    $cwdSafe = $cwd -replace "'", "''"
-    $encoded = [Convert]::ToBase64String(
-        [Text.Encoding]::Unicode.GetBytes(
-            "Set-Location '$cwdSafe'; & '$PSCommandPath'"
-        )
-    )
-    Start-Process "wt" -ArgumentList "pwsh", "-NoExit", "-ExecutionPolicy", "Bypass", "-EncodedCommand", $encoded -Verb RunAs
+    Write-Host "󰌋 Elevating with gsudo..." -ForegroundColor Cyan
+    gsudo pwsh -File "$PSCommandPath"
     exit
 }
 
@@ -48,9 +42,6 @@ function _Tweak_TextFileContextMenu
 {
     _PrintHeader "󰒓" "01. Add Text Document to New Context Menu (Notepad++)"
 
-    # Use HKLM:\SOFTWARE\Classes instead of HKCR: — the PSDrive shim has
-    # broken parameter support. HKLM\SOFTWARE\Classes is the actual backing
-    # store and supports -Type natively like all built-in registry drives.
     $base = "HKLM:\SOFTWARE\Classes"
 
     if (!(Test-Path "$base\.txt"))

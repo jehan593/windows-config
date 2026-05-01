@@ -11,7 +11,7 @@ $currentPrincipal = New-Object Security.Principal.WindowsPrincipal([Security.Pri
 if (-not $currentPrincipal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator))
 {
     Write-Host "Requesting Administrative privileges..." -ForegroundColor Yellow
-    $arguments = "pwsh -NoExit -NoProfile -ExecutionPolicy Bypass -File `"$PSCommandPath`""
+    $arguments = "pwsh -NoProfile -ExecutionPolicy Bypass -File `"$PSCommandPath`""
     Start-Process wt -ArgumentList $arguments -Verb RunAs
     exit
 }
@@ -152,7 +152,7 @@ _PrintFooter
 # ==============================================================================
 _PrintHeader "Removing WARP Tunnel"
 $warpSvc = Get-Service -Name "WireGuardTunnel`$warp" -ErrorAction SilentlyContinue
-$warpDir = "$env:USERPROFILE\windows-config-scripts\warp"
+$warpDir = "$env:APPDATA\windows-config\warp"
 if ($warpSvc)
 {
     wireguard /uninstalltunnelservice warp
@@ -169,7 +169,7 @@ else
 _PrintFooter
 
 _PrintHeader "Removing wg-socks"
-$configScriptsDir = "$env:USERPROFILE\windows-config-scripts"
+$configScriptsDir = "$env:APPDATA\windows-config"
 $wgsocksDir       = "$configScriptsDir\wg-socks"
 $services         = Get-Service -ErrorAction SilentlyContinue | Where-Object { $_.Name -like "*-wgsocks" }
 $removedTunnels   = $false
@@ -288,6 +288,6 @@ Write-Host "+--------------------------------------------+" -ForegroundColor Gre
 Write-Host "|           Reset Complete!                  |" -ForegroundColor Green
 Write-Host "+--------------------------------------------+" -ForegroundColor Green
 Write-Host ""
-Write-Host "  Set a different wallpaper manually if previous one was from config-wallpapers." -ForegroundColor White
+Write-Host "Set a different wallpaper manually if previous one was from config-wallpapers." -ForegroundColor White
 Write-Host ""
 Pause

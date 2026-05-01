@@ -10,7 +10,7 @@ $currentPrincipal = New-Object Security.Principal.WindowsPrincipal([Security.Pri
 if (-not $currentPrincipal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator))
 {
     Write-Host "Requesting Administrative privileges..." -ForegroundColor Yellow
-    $arguments = "pwsh -NoExit -NoProfile -ExecutionPolicy Bypass -File `"$PSCommandPath`""
+    $arguments = "pwsh -NoProfile -ExecutionPolicy Bypass -File `"$PSCommandPath`""
     Start-Process wt -ArgumentList $arguments -Verb RunAs
     exit
 }
@@ -53,7 +53,7 @@ _PrintHeader "Winget Apps"
 $apps = @(
     "Starship.Starship", "junegunn.fzf", "Git.Git", "ajeetdsouza.zoxide",
     "vim.vim", "sharkdp.bat", "sharkdp.fd", "aelassas.Servy",
-    "WireGuard.WireGuard", "ViRb3.wgcf", "GoLang.Go",
+    "WireGuard.WireGuard", "ViRb3.wgcf", "GoLang.Go", "gerardog.gsudo"
     "nomacs.nomacs", "mpv.net"
 )
 foreach ($app in $apps)
@@ -259,7 +259,7 @@ _PrintFooter
 # 6. TOOLS & SCRIPTS
 # ==============================================================================
 _PrintHeader "wg-socks Setup"
-$configScriptsDir = "$env:USERPROFILE\windows-config-scripts"
+$configScriptsDir = "$env:APPDATA\windows-config"
 $wgsocksConf      = "$configScriptsDir\wg-socks\configs"
 foreach ($dir in @($configScriptsDir, $wgsocksConf))
 {
@@ -331,6 +331,6 @@ Write-Host "+--------------------------------------------+" -ForegroundColor Gre
 Write-Host "|           Setup Complete!                  |" -ForegroundColor Green
 Write-Host "+--------------------------------------------+" -ForegroundColor Green
 Write-Host ""
-Write-Host "  Set wallpapers manually from:  Pictures\config-wallpapers" -ForegroundColor White
+Write-Host "Set wallpapers manually from:  Pictures\config-wallpapers" -ForegroundColor White
 Write-Host ""
 Pause
