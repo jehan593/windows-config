@@ -11,7 +11,7 @@ function _IsAdmin
 function _ElevateAction
 {
     param([string]$Command)
-    Write-Host " 󰮯 Elevating to Administrator..." -ForegroundColor Cyan
+    Write-Host "󰮯 Elevating to Administrator..." -ForegroundColor Cyan
     $cwd         = (Get-Location).Path
     $cwdSafe     = $cwd     -replace "'", "''"
     $commandSafe = $Command -replace "'", "''"
@@ -43,13 +43,6 @@ function _PrintRow
     Write-Host ("│  {0} {1,-12} {2}" -f $Icon, $Label, $Value) -ForegroundColor $Color
 }
 
-function _PassThru
-{
-    process
-    { Write-Host "`e[38;2;118;138;161m│  $_`e[0m"
-    }
-}
-
 function _InstallSocks
 {
     param([string]$ConfigPath, [string]$Port)
@@ -62,7 +55,7 @@ function _InstallSocks
 
     if ($Port -notmatch '^\d+$' -or [int]$Port -lt 1 -or [int]$Port -gt 65535)
     {
-        Write-Host "󰅙 Error: Invalid port '$Port'. Must be between 1 and 65535." -ForegroundColor Red
+        Write-Host "󰅙  Invalid port '$Port'. Must be between 1 and 65535." -ForegroundColor Red
         return
     }
 
@@ -71,7 +64,7 @@ function _InstallSocks
         $fullPath = Resolve-Path $ConfigPath -ErrorAction SilentlyContinue
         if (-not $fullPath)
         {
-            Write-Host "󰅙 Error: File not found: $ConfigPath" -ForegroundColor Red
+            Write-Host "󰅙  File not found: $ConfigPath" -ForegroundColor Red
             return
         }
         _ElevateAction "install `"$($fullPath.Path)`" $Port"
@@ -80,7 +73,7 @@ function _InstallSocks
 
     if (-not (Test-Path $ConfigPath))
     {
-        Write-Host "󰅙 Error: File not found: $ConfigPath" -ForegroundColor Red
+        Write-Host "󰅙  File not found: $ConfigPath" -ForegroundColor Red
         return
     }
 
@@ -90,88 +83,65 @@ function _InstallSocks
 
     if (!(Test-Path $confDir))
     {
-        New-Item -ItemType Directory -Path $confDir -Force 2>&1 | _PassThru
+        New-Item -ItemType Directory -Path $confDir -Force | Out-Null
     }
     Copy-Item $ConfigPath $confDest -Force
 
-    $content = Get-Content $confDest -Raw
+    $content      = Get-Content $confDest -Raw
     $socksPattern = '(?ms)(\[Socks5\][^\[]*?BindAddress\s*=\s*)[^\r\n]+'
     if ($content -match $socksPattern)
-    {
-        $content = $content -replace $socksPattern, "`${1}0.0.0.0:$Port"
-    } else
-    {
-        $content = $content.TrimEnd() + "`n`n[Socks5]`nBindAddress = 0.0.0.0:$Port`n"
-    }
+    { $content = $content -replace $socksPattern, "`${1}0.0.0.0:$Port" }
+    else
+    { $content = $content.TrimEnd() + "`n`n[Socks5]`nBindAddress = 0.0.0.0:$Port`n" }
     $content | Set-Content $confDest -NoNewline
 
     $wireproxyPath = (Get-Command wireproxy -ErrorAction SilentlyContinue)?.Source
     if (-not $wireproxyPath)
     {
-        Write-Host "󰅙 wireproxy not found in PATH. Run setup-main.ps1 first." -ForegroundColor Red
+        Write-Host "󰅙  wireproxy not found in PATH. Run setup-main.ps1 first." -ForegroundColor Red
         return
     }
 
     _PrintHeader "󱌣" "Installing Tunnel: $serviceName"
-    servy-cli install --name="$serviceName" --path="$wireproxyPath" --params="-c `"$confDest`"" --startupType=Automatic --enableHealth --heartbeatInterval=10 --maxFailedChecks=3 --recoveryAction=RestartProcess --maxRestartAttempts=10 --quiet 2>&1 | _PassThru
+
+    servy-cli install --name="$serviceName" --path="$wireproxyPath" --params="-c `"$confDest`"" --startupType=Automatic --enableHealth --heartbeatInterval=10 --maxFailedChecks=3 --recoveryAction=RestartProcess --maxRestartAttempts=10 --quiet
 
     if ($LASTEXITCODE -ne 0)
-    {
-        _PrintRow "󰅙" "Install" "FAILED (exit $LASTEXITCODE)" "Red"
-        _PrintFooter
-        return
-    }
+    { Write-Host "󰅙  Install FAILED (exit $LASTEXITCODE)" -ForegroundColor Red; _PrintFooter; return }
 
-    servy-cli start --name="$serviceName" --quiet 2>&1 | _PassThru
+    servy-cli start --name="$serviceName" --quiet
 
     if ($LASTEXITCODE -ne 0)
-    {
-        _PrintRow "󰅙" "Start" "FAILED (exit $LASTEXITCODE)" "Red"
-        _PrintFooter
-        return
-    }
+    { Write-Host "󰅙  Start FAILED (exit $LASTEXITCODE)" -ForegroundColor Red; _PrintFooter; return }
 
-    _PrintRow "󰄬" "Status" "Active on port $Port" "Green"
+    Write-Host "󰄬  Active on port $Port" -ForegroundColor Green
     _PrintFooter
 }
 
 function _ListSocks
 {
     $services = Get-Service -ErrorAction SilentlyContinue | Where-Object { $_.Name -like "*-wgsocks" }
+
+    _PrintHeader "󰒄" "WireGuard SOCKS5 Tunnels"
+
     if (-not $services)
     {
-        _PrintHeader "󰒄" "WireGuard SOCKS5 Tunnels"
-        _PrintRow "󰋼" "Status" "No tunnels found" "Gray"
+        Write-Host "   No tunnels found." -ForegroundColor Gray
         _PrintFooter
         return
     }
 
-    _PrintHeader "󰒄" "WireGuard SOCKS5 Tunnels"
     Write-Host ("│  {0,-35} {1,-12} {2}" -f "SERVICE NAME", "STATUS", "PORT") -ForegroundColor White
     foreach ($svc in $services)
     {
         $confFile = "$confDir\$($svc.Name -replace '-wgsocks','').conf"
-
-        if (Test-Path $confFile)
+        $port = if (Test-Path $confFile)
         {
-            $bindLine = Get-Content $confFile |
-                Where-Object { $_ -match "BindAddress" } |
-                Select-Object -First 1
-            $port = if ($bindLine)
-            { ($bindLine -split ':')[-1].Trim()
-            } else
-            { "unknown"
-            }
-        } else
-        {
-            $port = "missing conf"
-        }
+            $bindLine = Get-Content $confFile | Where-Object { $_ -match "BindAddress" } | Select-Object -First 1
+            if ($bindLine) { ($bindLine -split ':')[-1].Trim() } else { "unknown" }
+        } else { "missing conf" }
 
-        $color = if ($svc.Status -eq "Running")
-        { "Green"
-        } else
-        { "Red"
-        }
+        $color = if ($svc.Status -eq "Running") { "Green" } else { "Red" }
         Write-Host ("│  {0,-35} {1,-12} {2}" -f $svc.Name, $svc.Status, $port) -ForegroundColor $color
     }
     _PrintFooter
@@ -179,14 +149,12 @@ function _ListSocks
 
 function _UninstallSocks
 {
-    if (-not (_IsAdmin))
-    { _ElevateAction "uninstall"; return
-    }
+    if (-not (_IsAdmin)) { _ElevateAction "uninstall"; return }
 
     $services = @(Get-Service -ErrorAction SilentlyContinue | Where-Object { $_.Name -like "*-wgsocks" })
     if (-not $services)
     {
-        Write-Host "󰋼 No tunnels found." -ForegroundColor Gray
+        Write-Host "󰋼  No tunnels found." -ForegroundColor Gray
         return
     }
 
@@ -198,24 +166,20 @@ function _UninstallSocks
         if (Test-Path $confFile)
         {
             $bindLine = Get-Content $confFile -ErrorAction SilentlyContinue |
-                Where-Object { $_ -match "BindAddress" } |
-                Select-Object -First 1
-            if ($bindLine)
-            { $port = ($bindLine -split ':')[-1].Trim()
-            }
+                Where-Object { $_ -match "BindAddress" } | Select-Object -First 1
+            if ($bindLine) { $port = ($bindLine -split ':')[-1].Trim() }
         }
         Write-Host ("│  {0,-4} {1,-35} {2}" -f "[$($i+1)]", $services[$i].Name, $port) -ForegroundColor White
     }
+
     Write-Host "│"
     $inputs = Read-Host "│  Enter numbers to uninstall (comma separated)"
-    if (-not $inputs)
-    { _PrintFooter; return
-    }
+    if (-not $inputs) { _PrintFooter; return }
 
     $backupDir = Join-Path ([Environment]::GetFolderPath("Desktop")) "wg-socks-backup"
     if (!(Test-Path $backupDir))
     {
-        New-Item -ItemType Directory -Path $backupDir -Force 2>&1 | _PassThru
+        New-Item -ItemType Directory -Path $backupDir -Force | Out-Null
     }
 
     $selected = $inputs -split ',' | ForEach-Object { $_.Trim() } | Where-Object { $_ -match '^\d+$' }
@@ -224,105 +188,98 @@ function _UninstallSocks
         $idx = [int]$num - 1
         if ($idx -lt 0 -or $idx -ge $services.Count)
         {
-            Write-Host "│  󰅙 Invalid number: $num" -ForegroundColor Red
+            Write-Host "󰅙  Invalid number: $num" -ForegroundColor Red
             continue
         }
+
         $svc      = $services[$idx]
         $confFile = "$confDir\$($svc.Name -replace '-wgsocks','').conf"
 
         if (Test-Path $confFile)
         {
             Copy-Item $confFile $backupDir -Force
-            _PrintRow "󰄬" "Backup" "$($svc.Name) → Desktop\wg-socks-backup" "Cyan"
+            Write-Host "󰄬  Backed up $($svc.Name) → Desktop\wg-socks-backup" -ForegroundColor Cyan
         }
 
-        servy-cli stop      --name="$($svc.Name)" --quiet 2>&1 | _PassThru
-        servy-cli uninstall --name="$($svc.Name)" --quiet 2>&1 | _PassThru
+        servy-cli stop      --name="$($svc.Name)" --quiet
+        servy-cli uninstall --name="$($svc.Name)" --quiet
         Remove-Item $confFile -ErrorAction SilentlyContinue
-        _PrintRow "󰄬" "Removed" $svc.Name "Green"
+
+        Write-Host "󰄬  Removed $($svc.Name)" -ForegroundColor Green
     }
     _PrintFooter
 }
 
 function _RefreshSocks
 {
-    if (-not (_IsAdmin))
-    { _ElevateAction "refresh"; return
-    }
+    if (-not (_IsAdmin)) { _ElevateAction "refresh"; return }
 
     $services = Get-Service -ErrorAction SilentlyContinue | Where-Object { $_.Name -like "*-wgsocks" }
+
+    _PrintHeader "󰒄" "Refresh Tunnels"
+
     if (-not $services)
     {
-        _PrintHeader "󰒄" "Refresh Tunnels"
-        _PrintRow "󰋼" "Status" "No tunnels found" "Gray"
+        Write-Host "   No tunnels found." -ForegroundColor Gray
         _PrintFooter
         return
     }
 
-    _PrintHeader "󰒄" "Refresh Tunnels"
     foreach ($svc in $services)
     {
-        servy-cli restart --name="$($svc.Name)" --quiet 2>&1 | _PassThru
-        _PrintRow "󰑐" $svc.Name "Restarted" "Green"
+        servy-cli restart --name="$($svc.Name)" --quiet
+        if ($LASTEXITCODE -eq 0)
+        { Write-Host "󰑐  $($svc.Name)" -ForegroundColor Green }
+        else
+        { Write-Host "󰅙  $($svc.Name)" -ForegroundColor Red }
     }
     _PrintFooter
 }
 
 function _UpdateWireproxy
 {
-    if (-not (_IsAdmin))
-    { _ElevateAction "update"; return
-    }
+    if (-not (_IsAdmin)) { _ElevateAction "update"; return }
 
     _PrintHeader "󰚰" "Update wireproxy"
 
     $services = Get-Service -ErrorAction SilentlyContinue | Where-Object { $_.Name -like "*-wgsocks" }
     foreach ($svc in $services)
     {
-        servy-cli stop --name="$($svc.Name)" --quiet 2>&1 | _PassThru
-        _PrintRow "󰄾" "Stopped" $svc.Name "Yellow"
+        servy-cli stop --name="$($svc.Name)" --quiet
+        Write-Host "󰄾  Stopped $($svc.Name)" -ForegroundColor Yellow
     }
 
     go install github.com/windtf/wireproxy/cmd/wireproxy@latest
+
     if ($LASTEXITCODE -ne 0)
-    {
-        _PrintRow "󰅙" "Update" "go install failed" "Red"
-        _PrintFooter
-        return
-    }
-    _PrintRow "󰄬" "wireproxy" "Updated" "Green"
+    { Write-Host "󰅙  go install failed" -ForegroundColor Red; _PrintFooter; return }
+
+    Write-Host "󰄬  wireproxy updated" -ForegroundColor Green
 
     foreach ($svc in $services)
     {
-        servy-cli start --name="$($svc.Name)" --quiet 2>&1 | _PassThru
-        _PrintRow "󰑐" "Restarted" $svc.Name "Green"
+        servy-cli start --name="$($svc.Name)" --quiet
+        if ($LASTEXITCODE -eq 0)
+        { Write-Host "󰑐  $($svc.Name)" -ForegroundColor Green }
+        else
+        { Write-Host "󰅙  $($svc.Name)" -ForegroundColor Red }
     }
     _PrintFooter
 }
 
 if (-not (Get-Command wireproxy -ErrorAction SilentlyContinue))
 {
-    Write-Host "󰅙 wireproxy not found in PATH. Run setup-main.ps1 first." -ForegroundColor Red
+    Write-Host "󰅙  wireproxy not found in PATH. Run setup-main.ps1 first." -ForegroundColor Red
     exit
 }
 
 switch ($Action)
 {
-    "install"
-    { _InstallSocks $Arg1 $Arg2
-    }
-    "list"
-    { _ListSocks
-    }
-    "uninstall"
-    { _UninstallSocks
-    }
-    "refresh"
-    { _RefreshSocks
-    }
-    "update"
-    { _UpdateWireproxy
-    }
+    "install"   { _InstallSocks $Arg1 $Arg2 }
+    "list"      { _ListSocks }
+    "uninstall" { _UninstallSocks }
+    "refresh"   { _RefreshSocks }
+    "update"    { _UpdateWireproxy }
     default
     {
         _PrintHeader "󰒄" "WireGuard SOCKS5 Manager"

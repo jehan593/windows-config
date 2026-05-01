@@ -33,15 +33,9 @@ function _PrintFooter
     Write-Host "-----------------------------------------------------`n" -ForegroundColor DarkBlue
 }
 
-function _Ok
-{ param([string]$Msg) Write-Host ("    [OK]    {0}" -f $Msg) -ForegroundColor Green
-}
-function _Info
-{ param([string]$Msg) Write-Host ("    [..]    {0}" -f $Msg) -ForegroundColor Cyan
-}
-function _Err
-{ param([string]$Msg) Write-Host ("    [!!]    {0}" -f $Msg) -ForegroundColor Red
-}
+function _Ok  { param([string]$Msg) Write-Host ("    [ok] {0}" -f $Msg) -ForegroundColor Green }
+function _Info { param([string]$Msg) Write-Host ("    [..] {0}" -f $Msg) -ForegroundColor Cyan }
+function _Err  { param([string]$Msg) Write-Host ("    [!!] {0}" -f $Msg) -ForegroundColor Red }
 
 # ==============================================================================
 # 2. PRE-FLIGHT
@@ -69,10 +63,13 @@ foreach ($app in $apps)
     {
         _Info "Installing $app..."
         winget install --id $app --source winget --interactive
-        _Ok "$app installed."
+        if ($LASTEXITCODE -eq 0)
+        { _Ok "$app" }
+        else
+        { _Err "$app install failed" }
     } else
     {
-        _Ok "$app already installed."
+        _Ok "$app already installed"
     }
 }
 _PrintFooter
@@ -82,40 +79,39 @@ if (-not (Get-Module -ListAvailable -Name Microsoft.WinGet.Client))
 {
     _Info "Installing Microsoft.WinGet.Client..."
     Install-Module -Name Microsoft.WinGet.Client -Force -Scope CurrentUser
-    _Ok "Microsoft.WinGet.Client installed."
+    _Ok "Microsoft.WinGet.Client"
 } else
 {
-    _Ok "Microsoft.WinGet.Client already installed."
+    _Ok "Microsoft.WinGet.Client already installed"
 }
 
 if (-not (Get-Module -ListAvailable -Name PSWindowsUpdate))
 {
     _Info "Installing PSWindowsUpdate..."
     Install-Module -Name PSWindowsUpdate -Force -Scope CurrentUser
-    _Ok "PSWindowsUpdate installed."
+    _Ok "PSWindowsUpdate"
 } else
 {
-    _Ok "PSWindowsUpdate already installed."
+    _Ok "PSWindowsUpdate already installed"
 }
 
 if (-not (Get-Module -ListAvailable -Name Terminal-Icons))
 {
     _Info "Installing Terminal-Icons..."
     Install-Module -Name Terminal-Icons -Force -Scope CurrentUser
-
     $nordThemePath = "$RepoPath\configs\ps-modules\Terminal-Icons\nord.psd1"
     if (Test-Path $nordThemePath)
     {
         Add-TerminalIconsColorTheme -Path $nordThemePath -Force
         Set-TerminalIconsTheme -ColorTheme 'Nord'
-        _Ok "Terminal-Icons installed with Nord theme."
+        _Ok "Terminal-Icons with Nord theme"
     } else
     {
-        _Ok "Terminal-Icons installed (Nord theme file not found in repo, skipped)."
+        _Ok "Terminal-Icons installed (Nord theme not found in repo, skipped)"
     }
 } else
 {
-    _Ok "Terminal-Icons already installed."
+    _Ok "Terminal-Icons already installed"
 }
 _PrintFooter
 
@@ -131,8 +127,7 @@ foreach ($Path in $Profiles)
 {
     $Dir = Split-Path $Path
     if (!(Test-Path $Dir))
-    { New-Item -ItemType Directory -Path $Dir -Force | Out-Null
-    }
+    { New-Item -ItemType Directory -Path $Dir -Force | Out-Null }
     if (Test-Path $Path)
     {
         $existing = Get-Item $Path -Force
@@ -154,20 +149,19 @@ $HomeVimrc = Join-Path $HOME "_vimrc"
 if (Test-Path $RepoVimrc)
 {
     if (Test-Path $HomeVimrc)
-    { Remove-Item $HomeVimrc -Force
-    }
+    { Remove-Item $HomeVimrc -Force }
     New-Item -ItemType SymbolicLink -Path $HomeVimrc -Value $RepoVimrc -Force | Out-Null
     _Ok "Linked: $HomeVimrc"
 }
 
 $VimColorsDir = Join-Path $HOME "vimfiles\colors"
 if (!(Test-Path $VimColorsDir))
-{ New-Item -ItemType Directory -Path $VimColorsDir -Force | Out-Null
-}
+{ New-Item -ItemType Directory -Path $VimColorsDir -Force | Out-Null }
 try
 {
-    Invoke-WebRequest -Uri "https://raw.githubusercontent.com/nordtheme/vim/main/colors/nord.vim" -OutFile (Join-Path $VimColorsDir "nord.vim") -UseBasicParsing -ErrorAction Stop
-    _Ok "Nord vim theme downloaded."
+    Invoke-WebRequest -Uri "https://raw.githubusercontent.com/nordtheme/vim/main/colors/nord.vim" `
+        -OutFile (Join-Path $VimColorsDir "nord.vim") -UseBasicParsing -ErrorAction Stop
+    _Ok "Nord vim theme downloaded"
 } catch
 {
     _Err "Failed to download Nord theme: $_"
@@ -177,16 +171,13 @@ _PrintFooter
 _PrintHeader "mpv Configuration"
 $mpvConfigDir = "$env:APPDATA\mpv.net"
 $repoMpvDir   = Join-Path $PSScriptRoot "configs\mpv"
-
 New-Item -ItemType Directory -Path $mpvConfigDir -Force | Out-Null
-
 foreach ($file in @("mpv.conf", "input.conf"))
 {
     $target = Join-Path $mpvConfigDir $file
     $source = Join-Path $repoMpvDir $file
     if (Test-Path $target)
-    { Remove-Item $target -Force
-    }
+    { Remove-Item $target -Force }
     New-Item -ItemType SymbolicLink -Path $target -Value $source -Force | Out-Null
     _Ok "Linked: $target"
 }
@@ -199,16 +190,15 @@ if (Test-Path $bravePolicySrc)
     $policies = Get-Content $bravePolicySrc | ConvertFrom-Json
     $regPath  = "HKLM:\SOFTWARE\Policies\BraveSoftware\Brave"
     if (!(Test-Path $regPath))
-    { New-Item -Path $regPath -Force | Out-Null
-    }
+    { New-Item -Path $regPath -Force | Out-Null }
     foreach ($key in $policies.PSObject.Properties)
     {
         New-ItemProperty -Path $regPath -Name $key.Name -Value $key.Value -PropertyType DWORD -Force | Out-Null
     }
-    _Ok "Brave policies applied via registry."
+    _Ok "Brave policies applied via registry"
 } else
 {
-    _Info "Brave policies file not found in repo, skipping."
+    _Info "Brave policies file not found in repo, skipping"
 }
 _PrintFooter
 
@@ -224,10 +214,9 @@ if (!(Get-Module -ListAvailable -Name NerdFonts))
 Import-Module -Name NerdFonts
 Install-NerdFont -Name 'MartianMono'
 if ($LASTEXITCODE -eq 0)
-{ _Ok "Martian Mono Nerd Font installed."
-} else
-{ _Err "Font install failed."
-}
+{ _Ok "Martian Mono Nerd Font installed" }
+else
+{ _Err "Font install failed" }
 _PrintFooter
 
 _PrintHeader "Windows Terminal Nord Theme"
@@ -236,13 +225,12 @@ if (Test-Path $nordJson)
 {
     $wtFragmentPath = "$Env:LocalAppData\Microsoft\Windows Terminal\Fragments\nord"
     if (!(Test-Path $wtFragmentPath))
-    { New-Item -ItemType Directory -Path $wtFragmentPath -Force | Out-Null
-    }
+    { New-Item -ItemType Directory -Path $wtFragmentPath -Force | Out-Null }
     Copy-Item -Path $nordJson -Destination $wtFragmentPath -Force
-    _Ok "Nord theme installed."
+    _Ok "Nord theme installed"
 } else
 {
-    _Info "Nord theme JSON not found in repo, skipping."
+    _Info "Nord theme JSON not found in repo, skipping"
 }
 _PrintFooter
 
@@ -252,12 +240,18 @@ if (-not (Test-Path $wallpaperDst))
 {
     _Info "Cloning wallpapers..."
     git clone --depth 1 https://github.com/jehan593/my-wallpapers.git $wallpaperDst
-    _Ok "Wallpapers cloned to: $wallpaperDst"
+    if ($LASTEXITCODE -eq 0)
+    { _Ok "Cloned to: $wallpaperDst" }
+    else
+    { _Err "Clone failed" }
 } else
 {
-    _Info "Wallpapers already exist, pulling latest..."
+    _Info "Wallpapers exist, pulling latest..."
     git -C $wallpaperDst pull --rebase --autostash
-    _Ok "Wallpapers updated."
+    if ($LASTEXITCODE -eq 0)
+    { _Ok "Wallpapers updated" }
+    else
+    { _Err "Pull failed" }
 }
 _PrintFooter
 
@@ -267,28 +261,24 @@ _PrintFooter
 _PrintHeader "wg-socks Setup"
 $configScriptsDir = "$env:USERPROFILE\windows-config-scripts"
 $wgsocksConf      = "$configScriptsDir\wg-socks\configs"
-
 foreach ($dir in @($configScriptsDir, $wgsocksConf))
 {
     if (!(Test-Path $dir))
-    { New-Item -ItemType Directory -Path $dir -Force | Out-Null
-    }
+    { New-Item -ItemType Directory -Path $dir -Force | Out-Null }
 }
-_Ok "Folder structure created."
+_Ok "Folder structure created"
 
-# Refresh PATH so go is available if it was just installed above
 $env:PATH = [System.Environment]::GetEnvironmentVariable("PATH", "Machine") + ";" +
             [System.Environment]::GetEnvironmentVariable("PATH", "User")
 
 if (Get-Command go -ErrorAction SilentlyContinue)
 {
-    _Info "Installing wireproxy via go install..."
+    _Info "Installing wireproxy..."
     go install github.com/windtf/wireproxy/cmd/wireproxy@latest
     if ($LASTEXITCODE -eq 0)
-    { _Ok "wireproxy installed globally via go."
-    } else
-    { _Err "go install failed. Check Go installation."
-    }
+    { _Ok "wireproxy installed" }
+    else
+    { _Err "go install failed. Check Go installation." }
 } else
 {
     _Err "go not found in PATH. Restart terminal and re-run, or install Go manually."
@@ -299,9 +289,7 @@ _PrintHeader "Windows Terminal Configuration"
 $wtSettingsPath = "$env:LocalAppData\Packages\Microsoft.WindowsTerminal_8wekyb3d8bbwe\LocalState\settings.json"
 $wtDir          = Split-Path $wtSettingsPath
 if (-not (Test-Path $wtDir))
-{
-    New-Item -ItemType Directory -Path $wtDir -Force | Out-Null
-}
+{ New-Item -ItemType Directory -Path $wtDir -Force | Out-Null }
 
 $pwsh7Guid = "{574e775e-4f2a-5b96-ac1e-a2962a402336}"
 $nordFont  = [PSCustomObject]@{ face = "MartianMono Nerd Font Mono"; size = 9 }
@@ -311,27 +299,21 @@ if (-not (Test-Path $wtSettingsPath))
     $barebonesSettings = [PSCustomObject]@{
         defaultProfile = $pwsh7Guid
         profiles       = [PSCustomObject]@{
-            defaults = [PSCustomObject]@{
-                colorScheme = "Nord"
-                font        = $nordFont
-            }
-            list = @()
+            defaults = [PSCustomObject]@{ colorScheme = "Nord"; font = $nordFont }
+            list     = @()
         }
     }
     $barebonesSettings | ConvertTo-Json -Depth 10 | Set-Content $wtSettingsPath -Encoding UTF8
-    _Ok "Created initial settings (Nord + MartianMono 9, PowerShell 7 as default)."
+    _Ok "Created initial settings (Nord + MartianMono 9, PowerShell 7 default)"
 } else
 {
     $settings = Get-Content $wtSettingsPath -Raw | ConvertFrom-Json
     $settings.profiles | Add-Member -NotePropertyName "defaults" -NotePropertyValue (
-        [PSCustomObject]@{
-            colorScheme = "Nord"
-            font        = $nordFont
-        }
+        [PSCustomObject]@{ colorScheme = "Nord"; font = $nordFont }
     ) -Force
     $settings | Add-Member -NotePropertyName "defaultProfile" -NotePropertyValue $pwsh7Guid -Force
     $settings | ConvertTo-Json -Depth 20 | Set-Content $wtSettingsPath -Encoding UTF8
-    _Ok "Nord theme, MartianMono 9, and PowerShell 7 applied to existing settings."
+    _Ok "Applied Nord, MartianMono 9, and PowerShell 7 to existing settings"
 }
 _PrintFooter
 
@@ -341,10 +323,8 @@ _PrintFooter
 try
 {
     Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope LocalMachine -Force -ErrorAction Stop
-} catch
-{
-}
-_Ok "Execution policy set."
+} catch {}
+_Ok "Execution policy set"
 
 Write-Host ""
 Write-Host "+--------------------------------------------+" -ForegroundColor Green

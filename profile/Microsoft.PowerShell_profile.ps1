@@ -64,23 +64,16 @@ function _PrintRow
     Write-Host ("│  {0} {1,-12} {2}" -f $Icon, $Label, $Value) -ForegroundColor $Color
 }
 
-function _PassThru
-{
-    process
-    { Write-Host "`e[38;2;118;138;161m│  $_`e[0m"
-    }
-}
-
 function _Run
 {
     param([string]$Label, [scriptblock]$Action)
     try
     {
-        & $Action 2>&1 | _PassThru
-        _PrintRow "󰄬" $Label "Done" "Green"
+        & $Action
+        Write-Host "󰄬  $Label" -ForegroundColor Green
     } catch
     {
-        _PrintRow "󰅙" $Label "$_" "Red"
+        Write-Host "󰅙  $Label — $_" -ForegroundColor Red
     }
 }
 
@@ -98,17 +91,11 @@ function _InfoCmd([string]$Cmd, [string]$Desc)
 
 function _FormatSize($bytes)
 {
-    if     ($bytes -ge 1TB)
-    { "{0:N2} TB" -f ($bytes / 1TB)
-    } elseif ($bytes -ge 1GB)
-    { "{0:N2} GB" -f ($bytes / 1GB)
-    } elseif ($bytes -ge 1MB)
-    { "{0:N2} MB" -f ($bytes / 1MB)
-    } elseif ($bytes -ge 1KB)
-    { "{0:N2} KB" -f ($bytes / 1KB)
-    } else
-    { "$bytes B"
-    }
+    if     ($bytes -ge 1TB) { "{0:N2} TB" -f ($bytes / 1TB) }
+    elseif ($bytes -ge 1GB) { "{0:N2} GB" -f ($bytes / 1GB) }
+    elseif ($bytes -ge 1MB) { "{0:N2} MB" -f ($bytes / 1MB) }
+    elseif ($bytes -ge 1KB) { "{0:N2} KB" -f ($bytes / 1KB) }
+    else                    { "$bytes B" }
 }
 
 # ==============================================================================
@@ -142,16 +129,11 @@ if (Get-Command bat -ErrorAction SilentlyContinue)
 function cd
 {
     if ($args.Count -eq 0)
-    { Set-Location ~; Get-ChildItem -Force; return
-    }
+    { Set-Location ~; Get-ChildItem -Force; return }
 
     if (!(Test-Path $args[0] -PathType Container))
     {
-        $msg = if (Test-Path $args[0])
-        { "󱤈 Not a directory"
-        } else
-        { "󱞣 Path not found"
-        }
+        $msg = if (Test-Path $args[0]) { "󱤈 Not a directory" } else { "󱞣 Path not found" }
         Write-Host "$msg`: $($args[0])" -ForegroundColor Red; return
     }
     Set-Location $args[0]
@@ -162,9 +144,7 @@ function z
 {
     $before = $PWD.Path
     __zoxide_z @args
-    if ($PWD.Path -ne $before)
-    { Get-ChildItem -Force
-    }
+    if ($PWD.Path -ne $before) { Get-ChildItem -Force }
 }
 
 function la
@@ -177,18 +157,14 @@ function la
 # ==============================================================================
 function sw
 {
-    if ($IsAdmin)
-    { Write-Host "󰌋 Already running as Administrator." -ForegroundColor Red; return
-    }
+    if ($IsAdmin) { Write-Host "󰌋 Already running as Administrator." -ForegroundColor Red; return }
     Invoke-Elevated ""
 }
 
 function rr
 {
     $cmd = (Get-History -Count 1).CommandLine
-    if (!$cmd)
-    { Write-Host "󱞣 No history found." -ForegroundColor Red; return
-    }
+    if (!$cmd) { Write-Host "󱞣 No history found." -ForegroundColor Red; return }
     Write-Host "󰁯 Elevating: $cmd" -ForegroundColor Cyan
     Invoke-Elevated -Command $cmd
 }
@@ -203,9 +179,7 @@ function sz
 {
     param([Parameter(Mandatory)][string]$Path)
     $target = (Resolve-Path $Path -ErrorAction SilentlyContinue).Path
-    if (!$target)
-    { Write-Host "󱞣 Path not found: $Path" -ForegroundColor Red; return
-    }
+    if (!$target) { Write-Host "󱞣 Path not found: $Path" -ForegroundColor Red; return }
 
     _PrintHeader "󰗮" "Storage Analysis"
     if (Test-Path $target -PathType Leaf)
@@ -219,8 +193,8 @@ function sz
         $files   = $items | Where-Object { !$_.PSIsContainer }
         $folders = $items | Where-Object { $_.PSIsContainer }
         $size    = ($files | Measure-Object -Property Length -Sum).Sum
-        _PrintRow "󰈔" "Files"   $files.Count "White"
-        _PrintRow "󰉋" "Folders" $folders.Count "White"
+        _PrintRow "󰈔" "Files"      $files.Count   "White"
+        _PrintRow "󰉋" "Folders"   $folders.Count "White"
         _PrintRow "󰋊" "Total Size" (_FormatSize $size) "Cyan"
     }
     _PrintFooter
@@ -228,9 +202,7 @@ function sz
 
 function cleanup
 {
-    if (!$IsAdmin)
-    { Invoke-Elevated -Command $MyInvocation.MyCommand.Name; return
-    }
+    if (!$IsAdmin) { Invoke-Elevated -Command $MyInvocation.MyCommand.Name; return }
     _PrintHeader "󰃢" "System Cleanup"
     _Run "Win Update Store" { dism.exe /online /Cleanup-Image /StartComponentCleanup }
     _Run "Disk Cleanup"     { cleanmgr.exe /d C: /VERYLOWDISK }
@@ -276,11 +248,7 @@ function inst
     }
 
     $cacheIds  = Get-Content $cacheFile
-    $extraArgs = if ($IgnoreHash)
-    { @('--ignore-security-hash')
-    } else
-    { @()
-    }
+    $extraArgs = if ($IgnoreHash) { @('--ignore-security-hash') } else { @() }
 
     $ids = if ($Id)
     {
@@ -290,13 +258,11 @@ function inst
         {
             $m = @($cacheIds | Where-Object { $_ -like "*$i*" })
             if (!$m)
-            { $notFound += $i; continue
-            }
+            { $notFound += $i; continue }
             if ($m.Count -eq 1)
-            { $m[0].Trim()
-            } else
-            { $m | fzf --prompt "󰍉 '$i' > " --reverse --height 40%
-            }
+            { $m[0].Trim() }
+            else
+            { $m | fzf --prompt "󰍉 '$i' > " --reverse --height 40% }
         }
         if ($notFound)
         {
@@ -314,21 +280,21 @@ function inst
     }
 
     $ids = @($ids | Where-Object { $_ })
-    if (!$ids.Count)
-    { return
-    }
+    if (!$ids.Count) { return }
 
     Write-Host "`n󰏓 Selected for installation:" -ForegroundColor Cyan
     $ids | ForEach-Object { Write-Host "   󰐕 $_" -ForegroundColor Green }
     $confirm = Read-Host "`nInstall $($ids.Count) package(s)? (Y/n)"
-    if ($confirm -match '^[Nn]$')
-    { Write-Host "󰅙 Aborted." -ForegroundColor Gray; return
-    }
+    if ($confirm -match '^[Nn]$') { Write-Host "󰅙 Aborted." -ForegroundColor Gray; return }
 
     foreach ($id in $ids)
     {
         Write-Host "`n󰐕 Installing: $id" -ForegroundColor Cyan
         winget install --id $id --exact --source winget --interactive @extraArgs
+        if ($LASTEXITCODE -eq 0)
+        { Write-Host "󰄬  $id" -ForegroundColor Green }
+        else
+        { Write-Host "󰅙  $id" -ForegroundColor Red }
         $histEntry = "winget install --id $id --exact --source winget --interactive"
         Add-Content -Path (Get-PSReadLineOption).HistorySavePath -Value $histEntry
         [Microsoft.PowerShell.PSConsoleReadLine]::AddToHistory($histEntry)
@@ -355,10 +321,9 @@ function uinst
         {
             $pkg = $installed | Where-Object { $_.Id -match $i -or $_.Name -match $i } | Select-Object -First 1
             if ($pkg)
-            { $ids += $pkg.Id; $names += "$($pkg.Name) [$($pkg.Id)]"
-            } else
-            { $notFound += $i
-            }
+            { $ids += $pkg.Id; $names += "$($pkg.Name) [$($pkg.Id)]" }
+            else
+            { $notFound += $i }
         }
 
         if ($notFound.Count)
@@ -366,9 +331,7 @@ function uinst
             Write-Host "`n󱞣 Could not find installed packages for:" -ForegroundColor Red
             $notFound | ForEach-Object { Write-Host "   - $_" -ForegroundColor Gray }
         }
-        if (!$ids.Count)
-        { Write-Host "`n󰅙 No valid packages to uninstall. Aborted." -ForegroundColor Gray; return
-        }
+        if (!$ids.Count) { Write-Host "`n󰅙 No valid packages to uninstall. Aborted." -ForegroundColor Gray; return }
     } else
     {
         $ids = @(Get-WinGetPackage |
@@ -380,22 +343,22 @@ function uinst
                     --bind "ctrl-p:toggle-preview" |
                 ForEach-Object { $_.Trim() } | Where-Object { $_ })
         $names = $ids
-        if (!$ids.Count)
-        { return
-        }
+        if (!$ids.Count) { return }
     }
 
     Write-Host "`n󰏔 Selected for removal:" -ForegroundColor Cyan
     $names | ForEach-Object { Write-Host "   󱙃 $_" -ForegroundColor Gray }
     $confirm = Read-Host "`nUninstall $($ids.Count) package(s)? (Y/n)"
-    if ($confirm -match '^[Nn]$')
-    { Write-Host "󰅙 Aborted." -ForegroundColor Gray; return
-    }
+    if ($confirm -match '^[Nn]$') { Write-Host "󰅙 Aborted." -ForegroundColor Gray; return }
 
     foreach ($id in $ids)
     {
         Write-Host "`n󰛌 Removing: $id" -ForegroundColor Cyan
         winget uninstall --id $id --exact --interactive
+        if ($LASTEXITCODE -eq 0)
+        { Write-Host "󰄬  $id" -ForegroundColor Green }
+        else
+        { Write-Host "󰅙  $id" -ForegroundColor Red }
         $histEntry = "winget uninstall --id $id --exact --interactive"
         Add-Content -Path (Get-PSReadLineOption).HistorySavePath -Value $histEntry
         [Microsoft.PowerShell.PSConsoleReadLine]::AddToHistory($histEntry)
@@ -422,10 +385,9 @@ function up
         {
             $pkg = $installed | Where-Object { $_.Id -match $i -or $_.Name -match $i } | Select-Object -First 1
             if ($pkg)
-            { $ids += $pkg.Id; $names += "$($pkg.Name) [$($pkg.Id)]"
-            } else
-            { $notFound += $i
-            }
+            { $ids += $pkg.Id; $names += "$($pkg.Name) [$($pkg.Id)]" }
+            else
+            { $notFound += $i }
         }
 
         if ($notFound.Count)
@@ -433,15 +395,11 @@ function up
             Write-Host "`n󱞣 Could not find installed packages for:" -ForegroundColor Red
             $notFound | ForEach-Object { Write-Host "   - $_" -ForegroundColor Gray }
         }
-        if (!$ids.Count)
-        { Write-Host "`n󰅙 No valid packages found. Aborted." -ForegroundColor Gray; return
-        }
+        if (!$ids.Count) { Write-Host "`n󰅙 No valid packages found. Aborted." -ForegroundColor Gray; return }
     } else
     {
         $updates = @(Get-WinGetPackage | Where-Object { $_.IsUpdateAvailable })
-        if (!$updates.Count)
-        { Write-Host "󰄬 Everything is up to date!" -ForegroundColor Green; return
-        }
+        if (!$updates.Count) { Write-Host "󰄬 Everything is up to date!" -ForegroundColor Green; return }
 
         $ids = @($updates |
                 Select-Object -ExpandProperty Id |
@@ -452,22 +410,22 @@ function up
                     --bind "ctrl-p:toggle-preview" |
                 ForEach-Object { $_.Trim() } | Where-Object { $_ })
         $names = $ids
-        if (!$ids.Count)
-        { return
-        }
+        if (!$ids.Count) { return }
     }
 
     Write-Host "`n󰚰 Selected for upgrade:" -ForegroundColor Cyan
     $names | ForEach-Object { Write-Host "   󰑢 $_" -ForegroundColor Yellow }
     $confirm = Read-Host "`nUpgrade $($ids.Count) package(s)? (Y/n)"
-    if ($confirm -match '^[Nn]$')
-    { Write-Host "󰅙 Aborted." -ForegroundColor Gray; return
-    }
+    if ($confirm -match '^[Nn]$') { Write-Host "󰅙 Aborted." -ForegroundColor Gray; return }
 
     foreach ($id in $ids)
     {
         Write-Host "`n󰑢 Upgrading: $id" -ForegroundColor Yellow
         winget upgrade --id $id --exact --interactive
+        if ($LASTEXITCODE -eq 0)
+        { Write-Host "󰄬  $id" -ForegroundColor Green }
+        else
+        { Write-Host "󰅙  $id" -ForegroundColor Red }
         $histEntry = "winget upgrade --id $id --exact --interactive"
         Add-Content -Path (Get-PSReadLineOption).HistorySavePath -Value $histEntry
         [Microsoft.PowerShell.PSConsoleReadLine]::AddToHistory($histEntry)
@@ -479,13 +437,13 @@ function up
 # ==============================================================================
 function cup
 {
-    if (!$IsAdmin)
-    { Invoke-Elevated -Command $MyInvocation.MyCommand.Name; return
-    }
+    if (!$IsAdmin) { Invoke-Elevated -Command $MyInvocation.MyCommand.Name; return }
     _PrintHeader "󰑢" "Update Checker"
+
     Write-Host ""
     Write-Host "󰏓 Winget Repositories" -ForegroundColor Magenta
     winget upgrade
+
     Write-Host ""
     Write-Host "󰶬 Microsoft Store" -ForegroundColor Magenta
     if (Get-Command store -ErrorAction SilentlyContinue)
@@ -493,8 +451,9 @@ function cup
         'n' | store updates
     } else
     {
-        _PrintRow "󱞣" "Store" "CLI tool not found." "Gray"
+        Write-Host "   store CLI not found." -ForegroundColor Gray
     }
+
     Write-Host ""
     Write-Host "󰖳 Windows Update" -ForegroundColor Magenta
     try
@@ -503,16 +462,17 @@ function cup
         $updates = @(Get-WindowsUpdate -ErrorAction SilentlyContinue)
         if ($updates.Count -eq 0)
         {
-            _PrintRow "󰄬" "Windows" "Up to date" "Green"
+            Write-Host "󰄬  Windows — Up to date" -ForegroundColor Green
         } else
         {
-            _PrintRow "󱎟" "Windows" "Updates available" "Yellow"
+            Write-Host "󱎟  Windows — $($updates.Count) update(s) available" -ForegroundColor Yellow
             $updates | Format-Table -AutoSize
         }
     } catch
     {
-        _PrintRow "󰅙" "Windows" "Query failed" "Red"
+        Write-Host "󰅙  Windows — Query failed" -ForegroundColor Red
     }
+
     _PrintFooter
 }
 
@@ -520,6 +480,10 @@ function upp
 {
     _PrintHeader "󰏓" "Winget: Global Update"
     winget upgrade --all --interactive
+    if ($LASTEXITCODE -eq 0)
+    { Write-Host "󰄬  All packages upgraded" -ForegroundColor Green }
+    else
+    { Write-Host "󰅙  One or more upgrades failed" -ForegroundColor Red }
     _PrintFooter
 }
 
@@ -527,34 +491,32 @@ function ups
 {
     if (!(Get-Command store -ErrorAction SilentlyContinue))
     {
-        _PrintRow "󰅙" "Store" "CLI tool not found." "Gray"; return
+        Write-Host "󰅙  store CLI not found." -ForegroundColor Gray; return
     }
     _PrintHeader "󰶬" "Store: App Updates"
     store updates --apply
+    if ($LASTEXITCODE -eq 0)
+    { Write-Host "󰄬  Store apps updated" -ForegroundColor Green }
+    else
+    { Write-Host "󰅙  Store update failed" -ForegroundColor Red }
     _PrintFooter
 }
 
 function upw
 {
-    if (!$IsAdmin)
-    { Invoke-Elevated -Command $MyInvocation.MyCommand.Name; return
-    }
+    if (!$IsAdmin) { Invoke-Elevated -Command $MyInvocation.MyCommand.Name; return }
+    _PrintHeader "󰖳" "Windows Update"
     try
     {
         Import-Module PSWindowsUpdate -ErrorAction SilentlyContinue
-        _PrintHeader "󰖳" "Windows Update"
-        _PrintRow "󱎟" "Status" "Searching..." "Cyan"
         Get-WindowsUpdate -Install -AcceptAll -AutoReboot:$false -ErrorAction SilentlyContinue
         if ((Get-WURebootStatus -Silent) -eq $true)
-        {
-            _PrintRow "󰜉" "Reboot" "Required to complete updates" "Yellow"
-        } else
-        {
-            _PrintRow "󰄬" "Status" "System is up to date" "Green"
-        }
+        { Write-Host "󰜉  Reboot required to complete updates" -ForegroundColor Yellow }
+        else
+        { Write-Host "󰄬  System is up to date" -ForegroundColor Green }
     } catch
     {
-        _PrintRow "󰅙" "Error" "$_" "Red"
+        Write-Host "󰅙  $_" -ForegroundColor Red
     }
     _PrintFooter
 }
@@ -568,14 +530,11 @@ function upf
     _PrintHeader "󰈹" "Firefox: Betterfox Sync"
 
     if (!(Test-Path $profilesPath))
-    {
-        _PrintRow "󰅙" "Error" "Mozilla path missing" "Red"; _PrintFooter; return
-    }
+    { Write-Host "󰅙  Mozilla path missing" -ForegroundColor Red; _PrintFooter; return }
+
     $profiles = Get-ChildItem $profilesPath -Directory
     if ($profiles.Count -eq 0)
-    {
-        _PrintRow "󰅙" "Error" "No profiles detected" "Red"; _PrintFooter; return
-    }
+    { Write-Host "󰅙  No profiles detected" -ForegroundColor Red; _PrintFooter; return }
 
     try
     {
@@ -586,7 +545,7 @@ function upf
         }
     } catch
     {
-        _PrintRow "󰅙" "Error" "Download failed" "Red"; _PrintFooter; return
+        Write-Host "󰅙  Download failed" -ForegroundColor Red; _PrintFooter; return
     }
 
     foreach ($prof in $profiles)
@@ -594,10 +553,10 @@ function upf
         try
         {
             Set-Content -Path (Join-Path $prof.FullName "user.js") -Value $baseContent -ErrorAction Stop
-            _PrintRow "󰄬" "Synced" $prof.Name "Green"
+            Write-Host "󰄬  $($prof.Name)" -ForegroundColor Green
         } catch
         {
-            _PrintRow "󰅙" "Failed" $prof.Name "Red"
+            Write-Host "󰅙  $($prof.Name)" -ForegroundColor Red
         }
     }
     _PrintFooter
@@ -606,24 +565,22 @@ function upf
 function upc
 {
     _PrintHeader "󰊢" "Dotfiles Repo Sync"
-    git -C $RepoPath pull --rebase --autostash 2>&1 | _PassThru
+    git -C $RepoPath pull --rebase --autostash
     if ($LASTEXITCODE -eq 0)
     {
-        _PrintRow "󰄬" "Status" "Synchronized" "Green"
+        Write-Host "󰄬  Synchronized" -ForegroundColor Green
         _PrintFooter
         reload
     } else
     {
-        _PrintRow "󰅙" "Status" "Merge Conflict / Error" "Red"
+        Write-Host "󰅙  Merge conflict or error" -ForegroundColor Red
         _PrintFooter
     }
 }
 
 function upall
 {
-    if (!$IsAdmin)
-    { Invoke-Elevated -Command $MyInvocation.MyCommand.Name; return
-    }
+    if (!$IsAdmin) { Invoke-Elevated -Command $MyInvocation.MyCommand.Name; return }
     upp
     upf
     wp
@@ -643,16 +600,12 @@ function ff
         [string]$Path = "C:\"
     )
     $search = (Resolve-Path $Path -ErrorAction SilentlyContinue).Path
-    if (!$search)
-    { Write-Host "󱞣 Path not found: $Path" -ForegroundColor Red; return
-    }
+    if (!$search) { Write-Host "󱞣 Path not found: $Path" -ForegroundColor Red; return }
 
     $selection = fd . $search --hidden --color never --exclude "Windows" |
         fzf --no-multi --layout=reverse --height=40% --header "󰈞 Searching: $search"
 
-    if (!$selection)
-    { return
-    }
+    if (!$selection) { return }
 
     "`"$($selection.Trim())`"" | Set-Clipboard
     Write-Host "󰆒 Copied to clipboard: `"$($selection.Trim())`"" -ForegroundColor Green
@@ -660,9 +613,7 @@ function ff
 
 Set-PSReadLineKeyHandler -Key "Ctrl+h" -ScriptBlock {
     $historyFile = (Get-PSReadLineOption).HistorySavePath
-    if (!(Test-Path $historyFile))
-    { Write-Host "󱞣 No history file found." -ForegroundColor Red; return
-    }
+    if (!(Test-Path $historyFile)) { Write-Host "󱞣 No history file found." -ForegroundColor Red; return }
 
     $content = Get-Content $historyFile
     [Array]::Reverse($content)
@@ -673,9 +624,7 @@ Set-PSReadLineKeyHandler -Key "Ctrl+h" -ScriptBlock {
                 --header "󱋚 History (Enter: Use | Tab: Select | Ctrl+D: Delete)" `
                 --expect=ctrl-d)
 
-    if (!$result.Count)
-    { return
-    }
+    if (!$result.Count) { return }
 
     $key      = $result[0]
     $selected = @($result | Select-Object -Skip 1)
@@ -693,12 +642,9 @@ Set-PSReadLineKeyHandler -Key "Ctrl+h" -ScriptBlock {
     }
 
     if ($selected.Count -eq 1)
-    {
-        [Microsoft.PowerShell.PSConsoleReadLine]::Insert($selected[0].Trim())
-    } else
-    {
-        [Microsoft.PowerShell.PSConsoleReadLine]::Insert(($selected | ForEach-Object { $_.Trim() }) -join " & ")
-    }
+    { [Microsoft.PowerShell.PSConsoleReadLine]::Insert($selected[0].Trim()) }
+    else
+    { [Microsoft.PowerShell.PSConsoleReadLine]::Insert(($selected | ForEach-Object { $_.Trim() }) -join " & ") }
 }
 
 # ==============================================================================
@@ -723,36 +669,31 @@ function wp
     _PrintHeader "󰹧" "Wallpaper Git Sync"
 
     if (!(Test-Path $dir))
-    {
-        _PrintRow "󰅙" "Error" "Directory missing" "Red"; _PrintFooter; return
-    }
+    { Write-Host "󰅙  Directory missing" -ForegroundColor Red; _PrintFooter; return }
 
     $changes = git -C $dir status --porcelain 2>$null
     if ($changes)
     {
-        _PrintRow "󱓟" "Local" "Changes detected" "Yellow"
-        git -C $dir add -A 2>&1 | _PassThru
-        git -C $dir commit -m "sync: local wallpaper changes" 2>&1 | _PassThru
+        Write-Host "󱓟  Local changes detected" -ForegroundColor Yellow
+        git -C $dir add -A
+        git -C $dir commit -m "sync: local wallpaper changes"
         if ($LASTEXITCODE -eq 0)
-        { _PrintRow "󰄬" "Commit" "Success" "Green"
-        } else
-        { _PrintRow "󰅙" "Commit" "Failed" "Red"
-        }
+        { Write-Host "󰄬  Committed" -ForegroundColor Green }
+        else
+        { Write-Host "󰅙  Commit failed" -ForegroundColor Red }
     }
 
-    git -C $dir pull --rebase --autostash 2>&1 | _PassThru
+    git -C $dir pull --rebase --autostash
     if ($LASTEXITCODE -eq 0)
-    { _PrintRow "󰄬" "Pull" "Up to date" "Green"
-    } else
-    { _PrintRow "󰅙" "Pull" "Failed" "Red"
-    }
+    { Write-Host "󰄬  Pull up to date" -ForegroundColor Green }
+    else
+    { Write-Host "󰅙  Pull failed" -ForegroundColor Red }
 
-    git -C $dir push 2>&1 | _PassThru
+    git -C $dir push
     if ($LASTEXITCODE -eq 0)
-    { _PrintRow "󰄬" "Push" "Remote updated" "Green"
-    } else
-    { _PrintRow "󰅙" "Push" "Check remote" "Gray"
-    }
+    { Write-Host "󰄬  Remote updated" -ForegroundColor Green }
+    else
+    { Write-Host "󰅙  Push failed (check remote)" -ForegroundColor Gray }
 
     _PrintFooter
 }
@@ -762,18 +703,14 @@ function wp
 # ==============================================================================
 function ctt
 {
-    if (-not ($IsAdmin))
-    { Invoke-Elevated -Command "ctt"; return
-    }
+    if (-not ($IsAdmin)) { Invoke-Elevated -Command "ctt"; return }
     _PrintHeader "󱓞" "Chris Titus Tech Toolbox"
     Invoke-RestMethod https://christitus.com/win | Invoke-Expression
 }
 
 function massgrave
 {
-    if (-not ($IsAdmin))
-    { Invoke-Elevated -Command "massgrave"; return
-    }
+    if (-not ($IsAdmin)) { Invoke-Elevated -Command "massgrave"; return }
     _PrintHeader "󰄲" "Massgrave Activation"
     Invoke-RestMethod https://get.activated.win | Invoke-Expression
 }
@@ -815,8 +752,8 @@ function info
 
     _InfoGroup "󰈞" "Fuzzy (FZF)"
     _InfoCmd "ff"      "Find file and paste path"
-    _InfoCmd "inst"      "Winget install menu"
-    _InfoCmd "uinst"      "Winget uninstall menu"
+    _InfoCmd "inst"    "Winget install menu"
+    _InfoCmd "uinst"   "Winget uninstall menu"
     _InfoCmd "up"      "Winget upgrade menu"
     _InfoCmd "Ctrl+H"  "Fuzzy history search"
     Write-Host ""
@@ -841,24 +778,3 @@ Write-Host ""
 Write-Host "`e[38;2;235;203;139m󱈄 Type 'info' to see custom utilities`e[0m"
 Write-Host ""
 
-# ==============================================================================
-# 14. AUTOMATIC UPDATE PAUSE
-# ==============================================================================
-<#if ($IsAdmin)
-{
-    $base = 'HKLM:\SOFTWARE\Microsoft\WindowsUpdate\UX\Settings'
-    $reg = Get-ItemProperty -Path $base -Name PauseUpdatesExpiryTime -ErrorAction SilentlyContinue
-
-    # Check if updates are NOT paused (either key is missing or date is expired)
-    if (-not $reg.PauseUpdatesExpiryTime -or (Get-Date) -gt (Get-Date $reg.PauseUpdatesExpiryTime))
-    {
-        $start = (Get-Date).ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ssZ")
-        $expiry = (Get-Date).AddDays(35).ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ssZ")
-
-        Set-ItemProperty $base -Name 'PauseUpdatesExpiryTime'         -Value $expiry -ErrorAction SilentlyContinue
-        Set-ItemProperty $base -Name 'PauseFeatureUpdatesStartTime'   -Value $start  -ErrorAction SilentlyContinue
-        Set-ItemProperty $base -Name 'PauseFeatureUpdatesEndTime'     -Value $expiry -ErrorAction SilentlyContinue
-        Set-ItemProperty $base -Name 'PauseQualityUpdatesStartTime'   -Value $start  -ErrorAction SilentlyContinue
-        Set-ItemProperty $base -Name 'PauseQualityUpdatesEndTime'     -Value $expiry -ErrorAction SilentlyContinue
-    }
-    }#>
