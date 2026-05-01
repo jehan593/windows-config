@@ -2,7 +2,6 @@
 
 $warpConf = "$env:USERPROFILE\windows-config-scripts\warp\warp.conf"
 $warpDir  = "$env:USERPROFILE\windows-config-scripts\warp"
-$warpIcon = "$env:USERPROFILE\windows-config\assets\warp\warp.ico"
 $tunnel   = "warp"
 
 function _IsAdmin
@@ -52,56 +51,6 @@ function _PassThru
     }
 }
 
-$trayPidFile    = "$env:TEMP\warp-tray.pid"
-$trayScriptFile = "$env:TEMP\warp-tray-icon.ps1"
-
-function _TrayStart
-{
-    $script = @"
-Add-Type -AssemblyName System.Windows.Forms
-Add-Type -AssemblyName System.Drawing
-
-`$icon = New-Object System.Drawing.Icon "$warpIcon"
-`$tray = New-Object System.Windows.Forms.NotifyIcon
-`$tray.Icon    = `$icon
-`$tray.Text    = "WARP Connected"
-`$tray.Visible = `$true
-
-[System.Windows.Forms.Application]::Run()
-`$tray.Visible = `$false
-"@
-
-    $script | Set-Content $trayScriptFile -Encoding UTF8
-
-    $si                 = New-Object System.Diagnostics.ProcessStartInfo
-    $si.FileName        = "pwsh.exe"
-    $si.Arguments       = "-NonInteractive -NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -File `"$trayScriptFile`""
-    $si.WindowStyle     = [System.Diagnostics.ProcessWindowStyle]::Hidden
-    $si.CreateNoWindow  = $true
-    $si.UseShellExecute = $false
-
-    $proc = [System.Diagnostics.Process]::Start($si)
-    $proc.Id | Set-Content $trayPidFile
-}
-
-function _TrayStop
-{
-    if (Test-Path $trayPidFile)
-    {
-        $trayPid = Get-Content $trayPidFile -ErrorAction SilentlyContinue
-        if ($trayPid)
-        {
-            $proc = Get-Process -Id $trayPid -ErrorAction SilentlyContinue
-            if ($proc -and $proc.ProcessName -eq "pwsh")
-            {
-                Stop-Process -Id $trayPid -Force -ErrorAction SilentlyContinue
-            }
-        }
-        Remove-Item $trayPidFile    -Force -ErrorAction SilentlyContinue
-        Remove-Item $trayScriptFile -Force -ErrorAction SilentlyContinue
-    }
-}
-
 function _WarpOn
 {
     if (-not (_IsAdmin))
@@ -129,7 +78,6 @@ function _WarpOn
         return
     }
 
-    _TrayStart
     _PrintRow "󰤨" "Status" "CONNECTED" "Green"
     _PrintFooter
 }
@@ -150,7 +98,6 @@ function _WarpOff
         return
     }
 
-    _TrayStop
     _PrintRow "󰤭" "Status" "DISCONNECTED" "Red"
     _PrintFooter
 }
