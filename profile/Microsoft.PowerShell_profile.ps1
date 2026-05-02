@@ -41,7 +41,7 @@ function Invoke-Elevated
     param([string]$Command)
 
     if (Get-Command gsudo -ErrorAction SilentlyContinue) {
-        Write-Host "󰌋 Elevating with gsudo..." -ForegroundColor Cyan
+        Write-Host "󰌋  Elevating with gsudo..." -ForegroundColor Cyan
         gsudo pwsh -Command "$Command"
     }
     else {
@@ -66,6 +66,13 @@ function _PrintRow
 {
     param([string]$Icon, [string]$Label, [string]$Value, [string]$Color = "White")
     Write-Host ("│  {0} {1,-12} {2}" -f $Icon, $Label, $Value) -ForegroundColor $Color
+}
+
+function _PrintSection
+{
+    param([string]$Icon, [string]$Title)
+    Write-Host ""
+    Write-Host "$Icon  $Title" -ForegroundColor Magenta
 }
 
 function _Run
@@ -107,14 +114,14 @@ function _FormatSize($bytes)
 # ==============================================================================
 function reload
 {
-    Write-Host "󰑓 Reloading PowerShell..." -ForegroundColor Cyan
+    Write-Host "󰑓  Reloading PowerShell..." -ForegroundColor Cyan
     pwsh -NoExit -Command "Set-Location '$($PWD.Path)'"
     exit
 }
 
 function conf
 {
-    Write-Host "󱰦 Opening Configs in Zed..." -ForegroundColor Cyan
+    Write-Host "󱰦  Opening configs in Zed..." -ForegroundColor Cyan
     zed $RepoPath
 }
 
@@ -137,7 +144,7 @@ function cd
 
     if (!(Test-Path $args[0] -PathType Container))
     {
-        $msg = if (Test-Path $args[0]) { "󱤈 Not a directory" } else { "󱞣 Path not found" }
+        $msg = if (Test-Path $args[0]) { "󱤈  Not a directory" } else { "󱞣  Path not found" }
         Write-Host "$msg`: $($args[0])" -ForegroundColor Red; return
     }
     Set-Location $args[0]
@@ -164,12 +171,12 @@ Set-Alias sudo gsudo
 function rr
 {
     $lastCommand = (Get-History -Count 1).CommandLine
-    
-    if (!$lastCommand) { 
-        Write-Host "󱞣 No history found." -ForegroundColor Red; return 
+
+    if (!$lastCommand) {
+        Write-Host "󱞣  No history found." -ForegroundColor Red; return
     }
 
-    Write-Host "󰁯 Elevating: $lastCommand" -ForegroundColor Cyan
+    Write-Host "󰁯  Elevating: $lastCommand" -ForegroundColor Cyan
     gsudo pwsh -Command "$lastCommand"
 }
 
@@ -183,7 +190,7 @@ function sz
 {
     param([Parameter(Mandatory)][string]$Path)
     $target = (Resolve-Path $Path -ErrorAction SilentlyContinue).Path
-    if (!$target) { Write-Host "󱞣 Path not found: $Path" -ForegroundColor Red; return }
+    if (!$target) { Write-Host "󱞣  Path not found: $Path" -ForegroundColor Red; return }
 
     _PrintHeader "󰗮" "Storage Analysis"
     if (Test-Path $target -PathType Leaf)
@@ -208,7 +215,7 @@ function cleanup
 {
     if (!$IsAdmin) { Invoke-Elevated -Command $MyInvocation.MyCommand.Name; return }
     _PrintHeader "󰃢" "System Cleanup"
-    _Run "Win Update Store" { dism.exe /online /Cleanup-Image /StartComponentCleanup }
+    _Run "Component Store"  { dism.exe /online /Cleanup-Image /StartComponentCleanup }
     _Run "Disk Cleanup"     { cleanmgr.exe /d C: /VERYLOWDISK }
     _Run "Temp Folders"     {
         foreach ($path in @($env:TEMP, "$env:SystemRoot\Temp"))
@@ -242,12 +249,12 @@ function inst
     if ($Refresh)
     {
         Remove-Item $cacheFile -ErrorAction SilentlyContinue
-        Write-Host "󰚰 Cache cleared." -ForegroundColor Cyan
+        Write-Host "󰚰  Cache cleared." -ForegroundColor Cyan
     }
 
     if (!(Test-Path $cacheFile) -or (Get-Item $cacheFile).LastWriteTime -lt (Get-Date).AddDays(-7))
     {
-        Write-Host "󱑤 Fetching package list..." -ForegroundColor Cyan
+        Write-Host "󱑤  Fetching package list..." -ForegroundColor Cyan
         Find-WinGetPackage -Source winget | ForEach-Object { $_.Id } | Set-Content $cacheFile
     }
 
@@ -256,7 +263,7 @@ function inst
 
     $ids = if ($Id)
     {
-        Write-Host "`n󰍉 Resolving package names..." -ForegroundColor Cyan
+        Write-Host "󰍉  Resolving package names..." -ForegroundColor Cyan
         $notFound = @()
         $resolved = foreach ($i in $Id)
         {
@@ -270,7 +277,7 @@ function inst
         }
         if ($notFound)
         {
-            Write-Host "`n󱞣 Could not find packages for:" -ForegroundColor Red
+            Write-Host "󱞣  Could not find packages for:" -ForegroundColor Red
             $notFound | ForEach-Object { Write-Host "   - $_" -ForegroundColor Gray }
         }
         $resolved | Where-Object { $_ }
@@ -286,14 +293,14 @@ function inst
     $ids = @($ids | Where-Object { $_ })
     if (!$ids.Count) { return }
 
-    Write-Host "`n󰏓 Selected for installation:" -ForegroundColor Cyan
+    Write-Host "󰏓  Selected for installation:" -ForegroundColor Cyan
     $ids | ForEach-Object { Write-Host "   󰐕 $_" -ForegroundColor Green }
     $confirm = Read-Host "`nInstall $($ids.Count) package(s)? (Y/n)"
-    if ($confirm -match '^[Nn]$') { Write-Host "󰅙 Aborted." -ForegroundColor Gray; return }
+    if ($confirm -match '^[Nn]$') { Write-Host "󰅙  Aborted." -ForegroundColor Gray; return }
 
     foreach ($id in $ids)
     {
-        Write-Host "`n󰐕 Installing: $id" -ForegroundColor Cyan
+        Write-Host "󰐕  Installing: $id" -ForegroundColor Cyan
         winget install --id $id --exact --source winget --interactive @extraArgs
         if ($LASTEXITCODE -eq 0)
         { Write-Host "󰄬  $id" -ForegroundColor Green }
@@ -317,7 +324,7 @@ function uinst
 
     if ($Id)
     {
-        Write-Host "`n󰍉 Resolving package names..." -ForegroundColor Cyan
+        Write-Host "󰍉  Resolving package names..." -ForegroundColor Cyan
         $notFound  = @()
         $installed = Get-WinGetPackage -ErrorAction SilentlyContinue
 
@@ -332,10 +339,10 @@ function uinst
 
         if ($notFound.Count)
         {
-            Write-Host "`n󱞣 Could not find installed packages for:" -ForegroundColor Red
+            Write-Host "󱞣  Could not find installed packages for:" -ForegroundColor Red
             $notFound | ForEach-Object { Write-Host "   - $_" -ForegroundColor Gray }
         }
-        if (!$ids.Count) { Write-Host "`n󰅙 No valid packages to uninstall. Aborted." -ForegroundColor Gray; return }
+        if (!$ids.Count) { Write-Host "󰅙  No valid packages to uninstall. Aborted." -ForegroundColor Gray; return }
     } else
     {
         $ids = @(Get-WinGetPackage |
@@ -350,14 +357,14 @@ function uinst
         if (!$ids.Count) { return }
     }
 
-    Write-Host "`n󰏔 Selected for removal:" -ForegroundColor Cyan
+    Write-Host "󰏔  Selected for removal:" -ForegroundColor Cyan
     $names | ForEach-Object { Write-Host "   󱙃 $_" -ForegroundColor Gray }
     $confirm = Read-Host "`nUninstall $($ids.Count) package(s)? (Y/n)"
-    if ($confirm -match '^[Nn]$') { Write-Host "󰅙 Aborted." -ForegroundColor Gray; return }
+    if ($confirm -match '^[Nn]$') { Write-Host "󰅙  Aborted." -ForegroundColor Gray; return }
 
     foreach ($id in $ids)
     {
-        Write-Host "`n󰛌 Removing: $id" -ForegroundColor Cyan
+        Write-Host "󰛌  Removing: $id" -ForegroundColor Cyan
         winget uninstall --id $id --exact --interactive
         if ($LASTEXITCODE -eq 0)
         { Write-Host "󰄬  $id" -ForegroundColor Green }
@@ -381,7 +388,7 @@ function up
 
     if ($Id)
     {
-        Write-Host "`n󰍉 Resolving installed packages..." -ForegroundColor Cyan
+        Write-Host "󰍉  Resolving installed packages..." -ForegroundColor Cyan
         $notFound  = @()
         $installed = Get-WinGetPackage -ErrorAction SilentlyContinue
 
@@ -396,14 +403,14 @@ function up
 
         if ($notFound.Count)
         {
-            Write-Host "`n󱞣 Could not find installed packages for:" -ForegroundColor Red
+            Write-Host "󱞣  Could not find installed packages for:" -ForegroundColor Red
             $notFound | ForEach-Object { Write-Host "   - $_" -ForegroundColor Gray }
         }
-        if (!$ids.Count) { Write-Host "`n󰅙 No valid packages found. Aborted." -ForegroundColor Gray; return }
+        if (!$ids.Count) { Write-Host "󰅙  No valid packages found. Aborted." -ForegroundColor Gray; return }
     } else
     {
         $updates = @(Get-WinGetPackage | Where-Object { $_.IsUpdateAvailable })
-        if (!$updates.Count) { Write-Host "󰄬 Everything is up to date!" -ForegroundColor Green; return }
+        if (!$updates.Count) { Write-Host "󰄬  Everything is up to date!" -ForegroundColor Green; return }
 
         $ids = @($updates |
                 Select-Object -ExpandProperty Id |
@@ -417,14 +424,14 @@ function up
         if (!$ids.Count) { return }
     }
 
-    Write-Host "`n󰚰 Selected for upgrade:" -ForegroundColor Cyan
+    Write-Host "󰚰  Selected for upgrade:" -ForegroundColor Cyan
     $names | ForEach-Object { Write-Host "   󰑢 $_" -ForegroundColor Yellow }
     $confirm = Read-Host "`nUpgrade $($ids.Count) package(s)? (Y/n)"
-    if ($confirm -match '^[Nn]$') { Write-Host "󰅙 Aborted." -ForegroundColor Gray; return }
+    if ($confirm -match '^[Nn]$') { Write-Host "󰅙  Aborted." -ForegroundColor Gray; return }
 
     foreach ($id in $ids)
     {
-        Write-Host "`n󰑢 Upgrading: $id" -ForegroundColor Yellow
+        Write-Host "󰑢  Upgrading: $id" -ForegroundColor Yellow
         winget upgrade --id $id --exact --interactive
         if ($LASTEXITCODE -eq 0)
         { Write-Host "󰄬  $id" -ForegroundColor Green }
@@ -444,12 +451,10 @@ function cup
     if (!$IsAdmin) { Invoke-Elevated -Command $MyInvocation.MyCommand.Name; return }
     _PrintHeader "󰑢" "Update Checker"
 
-    Write-Host ""
-    Write-Host "󰏓 Winget Repositories" -ForegroundColor Magenta
+    _PrintSection "󰏓" "Winget"
     winget upgrade
 
-    Write-Host ""
-    Write-Host "󰶬 Microsoft Store" -ForegroundColor Magenta
+    _PrintSection "󰶬" "Microsoft Store"
     if (Get-Command store -ErrorAction SilentlyContinue)
     {
         'n' | store updates
@@ -458,8 +463,7 @@ function cup
         Write-Host "   store CLI not found." -ForegroundColor Gray
     }
 
-    Write-Host ""
-    Write-Host "󰖳 Windows Update" -ForegroundColor Magenta
+    _PrintSection "󰖳" "Windows Update"
     try
     {
         Import-Module PSWindowsUpdate -ErrorAction SilentlyContinue
@@ -604,7 +608,7 @@ function ff
         [string]$Path = "C:\"
     )
     $search = (Resolve-Path $Path -ErrorAction SilentlyContinue).Path
-    if (!$search) { Write-Host "󱞣 Path not found: $Path" -ForegroundColor Red; return }
+    if (!$search) { Write-Host "󱞣  Path not found: $Path" -ForegroundColor Red; return }
 
     $selection = fd . $search --hidden --color never --exclude "Windows" |
         fzf --no-multi --layout=reverse --height=40% --header "󰈞 Searching: $search"
@@ -612,12 +616,12 @@ function ff
     if (!$selection) { return }
 
     "`"$($selection.Trim())`"" | Set-Clipboard
-    Write-Host "󰆒 Copied to clipboard: `"$($selection.Trim())`"" -ForegroundColor Green
+    Write-Host "󰆒  Copied to clipboard: `"$($selection.Trim())`"" -ForegroundColor Green
 }
 
 Set-PSReadLineKeyHandler -Key "Ctrl+h" -ScriptBlock {
     $historyFile = (Get-PSReadLineOption).HistorySavePath
-    if (!(Test-Path $historyFile)) { Write-Host "󱞣 No history file found." -ForegroundColor Red; return }
+    if (!(Test-Path $historyFile)) { Write-Host "󱞣  No history file found." -ForegroundColor Red; return }
 
     $content = Get-Content $historyFile
     [Array]::Reverse($content)
@@ -731,9 +735,9 @@ function info
     _InfoGroup "󱰦" "Configuration"
     _InfoCmd "conf"    "Open workspace in Zed"
     _InfoCmd "reload"  "Restart shell session"
-    _InfoCmd "sudo"    "Elevate current shell or command" 
+    _InfoCmd "sudo"    "Elevate current shell or command"
     Write-Host ""
-    
+
     _InfoGroup "󰉋" "System & Files"
     _InfoCmd "z"       "Zoxide jump + ls"
     _InfoCmd "la"      "List all files"
@@ -779,8 +783,5 @@ function info
 # 13. STARTUP MESSAGE
 # ==============================================================================
 if (-not $IsAdmin) {
-    Write-Host ""
-    Write-Host "`e[38;2;235;203;139m󱈄 Type 'info' to see custom utilities`e[0m"
-    Write-Host ""
+    Write-Host "`n`e[38;2;235;203;139m󱈄  Type 'info' to see custom utilities`e[0m`n"
 }
-

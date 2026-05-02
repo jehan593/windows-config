@@ -3,14 +3,14 @@
 # ==============================================================================
 if (-not $PSScriptRoot)
 {
-    Write-Host "Run this as a script file, not dot-sourced." -ForegroundColor Red
+    Write-Host "[!!] Run this as a script file, not dot-sourced." -ForegroundColor Red
     exit
 }
 
 $currentPrincipal = New-Object Security.Principal.WindowsPrincipal([Security.Principal.WindowsIdentity]::GetCurrent())
 if (-not $currentPrincipal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator))
 {
-    Write-Host "Requesting Administrative privileges..." -ForegroundColor Yellow
+    Write-Host "[..] Requesting administrative privileges..." -ForegroundColor Cyan
     $arguments = "pwsh -NoProfile -ExecutionPolicy Bypass -File `"$PSCommandPath`""
     Start-Process wt -ArgumentList $arguments -Verb RunAs
     exit
@@ -32,9 +32,9 @@ function _PrintFooter
     Write-Host "-----------------------------------------------------`n" -ForegroundColor DarkBlue
 }
 
-function _Ok   { param([string]$Msg) Write-Host ("    [ok] {0}" -f $Msg) -ForegroundColor Green }
-function _Info { param([string]$Msg) Write-Host ("    [..] {0}" -f $Msg) -ForegroundColor Cyan }
-function _Err  { param([string]$Msg) Write-Host ("    [!!] {0}" -f $Msg) -ForegroundColor Red }
+function _Ok   { param([string]$Msg) Write-Host ("[ok] {0}" -f $Msg) -ForegroundColor Green }
+function _Info { param([string]$Msg) Write-Host ("[..] {0}" -f $Msg) -ForegroundColor Cyan }
+function _Err  { param([string]$Msg) Write-Host ("[!!] {0}" -f $Msg) -ForegroundColor Red }
 
 # ==============================================================================
 # 2. PRE-FLIGHT
@@ -47,7 +47,7 @@ Write-Host "|    This will UNDO everything setup did!    |" -ForegroundColor Yel
 Write-Host "+--------------------------------------------+" -ForegroundColor Red
 
 _PrintHeader "Pre-flight"
-$confirm = Read-Host "    [WARN]  Are you sure you want to reset? (y/N)"
+$confirm = Read-Host "[WARN] Are you sure you want to reset? (y/N)"
 if ($confirm -notmatch '^[Yy]$')
 { _Info "Aborted."; _PrintFooter; exit }
 _PrintFooter
@@ -138,7 +138,7 @@ _PrintHeader "Removing Wallpapers"
 $wallpaperDst = Join-Path ([Environment]::GetFolderPath("MyPictures")) "config-wallpapers"
 if (Test-Path $wallpaperDst)
 {
-    $removeWallpapers = Read-Host "    Remove wallpapers folder? (y/N)"
+    $removeWallpapers = Read-Host "Remove wallpapers folder? (y/N)"
     if ($removeWallpapers -match '^[Yy]$')
     { Remove-Item $wallpaperDst -Recurse -Force; _Ok "Removed wallpapers" }
     else
@@ -176,7 +176,7 @@ $removedTunnels   = $false
 
 if ($services)
 {
-    $stopTunnels = Read-Host "    Remove existing tunnels and backup configs? (y/N)"
+    $stopTunnels = Read-Host "Remove existing tunnels and backup configs? (y/N)"
     if ($stopTunnels -match '^[Yy]$')
     {
         $removedTunnels = $true
@@ -229,8 +229,7 @@ _PrintFooter
 # ==============================================================================
 _PrintHeader "Optional: Package Removal"
 _Info "Targets: Starship, fzf, zoxide, bat, fd, wgcf$(if ($removedTunnels) { ', Servy' })"
-Write-Host ""
-$response = Read-Host "    Remove these packages? (y/N)"
+$response = Read-Host "Remove these packages? (y/N)"
 
 if ($response -match '^[Yy]$')
 {
@@ -285,9 +284,9 @@ _PrintFooter
 # ==============================================================================
 Write-Host ""
 Write-Host "+--------------------------------------------+" -ForegroundColor Green
-Write-Host "|           Reset Complete!                  |" -ForegroundColor Green
+Write-Host "|           Reset complete                   |" -ForegroundColor Green
 Write-Host "+--------------------------------------------+" -ForegroundColor Green
 Write-Host ""
-Write-Host "Set a different wallpaper manually if previous one was from config-wallpapers." -ForegroundColor White
+Write-Host "[..] Set a different wallpaper manually if the previous one was from config-wallpapers." -ForegroundColor Cyan
 Write-Host ""
 Pause

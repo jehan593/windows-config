@@ -15,9 +15,7 @@ function _IsAdmin
 function _ElevateAction
 {
     if (Get-Command gsudo -ErrorAction SilentlyContinue) {
-        Write-Host "󰮯 Elevating to Administrator..." -ForegroundColor Cyan
-        
-        # Explicitly name the parameters for the elevated call
+        Write-Host "󰌋  Elevating with gsudo..." -ForegroundColor Cyan
         gsudo pwsh -File "$PSCommandPath" -Action "$Action" -Arg1 "$Arg1" -Arg2 "$Arg2"
         exit
     }
@@ -57,7 +55,7 @@ function _InstallSocks
 
     if (-not $ConfigPath -or -not $Port)
     {
-        Write-Host "󰋖 Usage: wgsocks install <config_path> <port>" -ForegroundColor Red
+        Write-Host "󰋖  Usage: wgsocks install <config_path> <port>" -ForegroundColor Red
         return
     }
 
@@ -75,7 +73,6 @@ function _InstallSocks
             Write-Host "󰅙  File not found: $ConfigPath" -ForegroundColor Red
             return
         }
-        # Update Arg1 to full path so the elevated process finds it
         $script:Arg1 = $fullPath.Path
         _ElevateAction
         return
@@ -117,12 +114,12 @@ function _InstallSocks
     servy-cli install --name="$serviceName" --path="$wireproxyPath" --params="-c `"$confDest`"" --startupType=Automatic --enableHealth --heartbeatInterval=10 --maxFailedChecks=3 --recoveryAction=RestartProcess --maxRestartAttempts=10 --quiet
 
     if ($LASTEXITCODE -ne 0)
-    { Write-Host "󰅙  Install FAILED (exit $LASTEXITCODE)" -ForegroundColor Red; _PrintFooter; return }
+    { Write-Host "󰅙  Install failed (exit $LASTEXITCODE)" -ForegroundColor Red; _PrintFooter; return }
 
     servy-cli start --name="$serviceName" --quiet
 
     if ($LASTEXITCODE -ne 0)
-    { Write-Host "󰅙  Start FAILED (exit $LASTEXITCODE)" -ForegroundColor Red; _PrintFooter; return }
+    { Write-Host "󰅙  Start failed (exit $LASTEXITCODE)" -ForegroundColor Red; _PrintFooter; return }
 
     Write-Host "󰄬  Active on port $Port" -ForegroundColor Green
     _PrintFooter
@@ -141,7 +138,7 @@ function _ListSocks
         return
     }
 
-    Write-Host ("│  {0,-35} {1,-12} {2}" -f "SERVICE NAME", "STATUS", "PORT") -ForegroundColor White
+    Write-Host ("│  {0,-35} {1,-12} {2}" -f "SERVICE NAME", "STATUS", "PORT") -ForegroundColor DarkGray
     foreach ($svc in $services)
     {
         $confFile = "$confDir\$($svc.Name -replace '-wgsocks','').conf"
@@ -226,7 +223,7 @@ function _RefreshSocks
 
     $services = Get-Service -ErrorAction SilentlyContinue | Where-Object { $_.Name -like "*-wgsocks" }
 
-    _PrintHeader "󰒄" "Refresh Tunnels"
+    _PrintHeader "󰑐" "Refresh Tunnels"
 
     if (-not $services)
     {

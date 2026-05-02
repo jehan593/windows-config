@@ -29,7 +29,7 @@ function _PrintRow
 
 if (-not (_IsAdmin))
 {
-    Write-Host "󰌋 Elevating with gsudo..." -ForegroundColor Cyan
+    Write-Host "󰌋  Elevating with gsudo..." -ForegroundColor Cyan
     gsudo pwsh -File "$PSCommandPath"
     exit
 }
@@ -45,28 +45,24 @@ function _Tweak_TextFileContextMenu
     $base = "HKLM:\SOFTWARE\Classes"
 
     if (!(Test-Path "$base\.txt"))
-    { New-Item -Path "$base\.txt" -Force | Out-Null
-    }
+    { New-Item -Path "$base\.txt" -Force | Out-Null }
     Set-ItemProperty -Path "$base\.txt" -Name "(Default)"     -Value "txtfile"    -Type String -Force
     Set-ItemProperty -Path "$base\.txt" -Name "Content Type"  -Value "text/plain" -Type String -Force
     Set-ItemProperty -Path "$base\.txt" -Name "PerceivedType" -Value "text"       -Type String -Force
     _PrintRow "󰄬" "Association" ".txt set to txtfile" "Green"
 
     if (!(Test-Path "$base\.txt\ShellNew"))
-    { New-Item -Path "$base\.txt\ShellNew" -Force | Out-Null
-    }
+    { New-Item -Path "$base\.txt\ShellNew" -Force | Out-Null }
     Set-ItemProperty -Path "$base\.txt\ShellNew" -Name "NullFile" -Value "" -Type String -Force
     _PrintRow "󰄬" "ShellNew" "Entry added" "Green"
 
     if (!(Test-Path "$base\txtfile"))
-    { New-Item -Path "$base\txtfile" -Force | Out-Null
-    }
+    { New-Item -Path "$base\txtfile" -Force | Out-Null }
     Set-ItemProperty -Path "$base\txtfile" -Name "(Default)" -Value "Text Document" -Type String -Force
     _PrintRow "󰄬" "Class" "txtfile set" "Green"
 
     if (!(Test-Path "$base\txtfile\shell\open\command"))
-    { New-Item -Path "$base\txtfile\shell\open\command" -Force | Out-Null
-    }
+    { New-Item -Path "$base\txtfile\shell\open\command" -Force | Out-Null }
     Set-ItemProperty -Path "$base\txtfile\shell\open\command" -Name "(Default)" -Value "`"C:\Program Files\Notepad++\notepad++.exe`" `"%1`"" -Type String -Force
     _PrintRow "󰄬" "Open With" "Notepad++ set" "Green"
 
@@ -105,16 +101,12 @@ function _Tweak_DisableGameBar
     _PrintHeader "󰒓" "03. Disable Microsoft Game Bar / Gaming Overlay"
 
     if (!(Test-Path "HKCU:\Software\Microsoft\Windows\CurrentVersion\GameDVR"))
-    {
-        New-Item -Path "HKCU:\Software\Microsoft\Windows\CurrentVersion\GameDVR" -Force | Out-Null
-    }
+    { New-Item -Path "HKCU:\Software\Microsoft\Windows\CurrentVersion\GameDVR" -Force | Out-Null }
     Set-ItemProperty -Path "HKCU:\Software\Microsoft\Windows\CurrentVersion\GameDVR" -Name "AppCaptureEnabled" -Value 0 -Type DWord -Force
     _PrintRow "󰄬" "GameDVR" "Capture disabled" "Green"
 
     if (!(Test-Path "HKCU:\System\GameConfigStore"))
-    {
-        New-Item -Path "HKCU:\System\GameConfigStore" -Force | Out-Null
-    }
+    { New-Item -Path "HKCU:\System\GameConfigStore" -Force | Out-Null }
     Set-ItemProperty -Path "HKCU:\System\GameConfigStore" -Name "GameDVR_Enabled" -Value 0 -Type DWord -Force
     _PrintRow "󰄬" "Overlay" "Game Bar disabled" "Green"
 
@@ -126,9 +118,7 @@ function _Tweak_WindowsUpdateRecommended
     _PrintHeader "󰒓" "04. Set Windows Update to Recommended Settings"
 
     if (!(Test-Path "HKLM:\SOFTWARE\Microsoft\WindowsUpdate\UX\Settings"))
-    {
-        New-Item -Path "HKLM:\SOFTWARE\Microsoft\WindowsUpdate\UX\Settings" -Force | Out-Null
-    }
+    { New-Item -Path "HKLM:\SOFTWARE\Microsoft\WindowsUpdate\UX\Settings" -Force | Out-Null }
     Set-ItemProperty -Path "HKLM:\SOFTWARE\Microsoft\WindowsUpdate\UX\Settings" -Name "BranchReadinessLevel"            -Value 20  -Type DWord -Force
     Set-ItemProperty -Path "HKLM:\SOFTWARE\Microsoft\WindowsUpdate\UX\Settings" -Name "DeferFeatureUpdatesPeriodInDays" -Value 365 -Type DWord -Force
     Set-ItemProperty -Path "HKLM:\SOFTWARE\Microsoft\WindowsUpdate\UX\Settings" -Name "DeferQualityUpdatesPeriodInDays" -Value 4   -Type DWord -Force
@@ -136,9 +126,7 @@ function _Tweak_WindowsUpdateRecommended
     _PrintRow "󰄬" "Quality" "Deferred 4 days" "Green"
 
     if (!(Test-Path "HKLM:\SOFTWARE\Policies\Microsoft\Windows\WindowsUpdate\AU"))
-    {
-        New-Item -Path "HKLM:\SOFTWARE\Policies\Microsoft\Windows\WindowsUpdate\AU" -Force | Out-Null
-    }
+    { New-Item -Path "HKLM:\SOFTWARE\Policies\Microsoft\Windows\WindowsUpdate\AU" -Force | Out-Null }
     Set-ItemProperty -Path "HKLM:\SOFTWARE\Policies\Microsoft\Windows\WindowsUpdate\AU" -Name "NoAutoRebootWithLoggedOnUsers" -Value 1 -Type DWord -Force
     Set-ItemProperty -Path "HKLM:\SOFTWARE\Policies\Microsoft\Windows\WindowsUpdate\AU" -Name "AUPowerManagement"             -Value 0 -Type DWord -Force
     _PrintRow "󰄬" "Auto-Reboot" "Disabled" "Green"
@@ -159,25 +147,15 @@ $tweaks = @(
 $selected = $tweaks | fzf --exact --multi --reverse `
     --header "󰒓 Registry Tweaks (Tab: multi-select, Enter: apply)"
 
-if (-not $selected)
-{ return
-}
+if (-not $selected) { return }
 
 foreach ($item in $selected)
 {
     switch -Regex ($item)
     {
-        "^01"
-        { _Tweak_TextFileContextMenu
-        }
-        "^02"
-        { _Tweak_RemoveGitContextMenu
-        }
-        "^03"
-        { _Tweak_DisableGameBar
-        }
-        "^04"
-        { _Tweak_WindowsUpdateRecommended
-        }
+        "^01" { _Tweak_TextFileContextMenu }
+        "^02" { _Tweak_RemoveGitContextMenu }
+        "^03" { _Tweak_DisableGameBar }
+        "^04" { _Tweak_WindowsUpdateRecommended }
     }
 }

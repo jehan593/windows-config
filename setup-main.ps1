@@ -3,13 +3,13 @@
 # ==============================================================================
 if (-not $PSScriptRoot)
 {
-    Write-Host "Run this as a script file, not dot-sourced." -ForegroundColor Red
+    Write-Host "[!!] Run this as a script file, not dot-sourced." -ForegroundColor Red
     exit
 }
 $currentPrincipal = New-Object Security.Principal.WindowsPrincipal([Security.Principal.WindowsIdentity]::GetCurrent())
 if (-not $currentPrincipal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator))
 {
-    Write-Host "Requesting Administrative privileges..." -ForegroundColor Yellow
+    Write-Host "[..] Requesting administrative privileges..." -ForegroundColor Yellow
     $arguments = "pwsh -NoProfile -ExecutionPolicy Bypass -File `"$PSCommandPath`""
     Start-Process wt -ArgumentList $arguments -Verb RunAs
     exit
@@ -33,9 +33,9 @@ function _PrintFooter
     Write-Host "-----------------------------------------------------`n" -ForegroundColor DarkBlue
 }
 
-function _Ok  { param([string]$Msg) Write-Host ("    [ok] {0}" -f $Msg) -ForegroundColor Green }
-function _Info { param([string]$Msg) Write-Host ("    [..] {0}" -f $Msg) -ForegroundColor Cyan }
-function _Err  { param([string]$Msg) Write-Host ("    [!!] {0}" -f $Msg) -ForegroundColor Red }
+function _Ok   { param([string]$Msg) Write-Host ("[ok] {0}" -f $Msg) -ForegroundColor Green }
+function _Info { param([string]$Msg) Write-Host ("[..] {0}" -f $Msg) -ForegroundColor Cyan }
+function _Err  { param([string]$Msg) Write-Host ("[!!] {0}" -f $Msg) -ForegroundColor Red }
 
 # ==============================================================================
 # 2. PRE-FLIGHT
@@ -328,9 +328,9 @@ _Ok "Execution policy set"
 
 Write-Host ""
 Write-Host "+--------------------------------------------+" -ForegroundColor Green
-Write-Host "|           Setup Complete!                  |" -ForegroundColor Green
+Write-Host "|           Setup complete                   |" -ForegroundColor Green
 Write-Host "+--------------------------------------------+" -ForegroundColor Green
 Write-Host ""
-Write-Host "Set wallpapers manually from:  Pictures\config-wallpapers" -ForegroundColor White
+Write-Host "[..] Set wallpapers manually from: Pictures\config-wallpapers" -ForegroundColor Cyan
 Write-Host ""
 Pause

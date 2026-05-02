@@ -13,9 +13,9 @@ function _IsAdmin
 function _ElevateAction
 {
     param([string]$Command)
-    
+
     if (Get-Command gsudo -ErrorAction SilentlyContinue) {
-        Write-Host "󰮯 Elevating to Administrator..." -ForegroundColor Cyan
+        Write-Host "󰌋  Elevating with gsudo..." -ForegroundColor Cyan
         gsudo pwsh -File "$PSCommandPath" -- $Command
         exit
     }
@@ -51,11 +51,11 @@ function _WarpOn
 
     if (-not (Test-Path $warpConf))
     {
-        Write-Host "󰅍 Config not found. Auto-rotating credentials..." -ForegroundColor Cyan
+        Write-Host "󰅍  Config not found. Auto-rotating credentials..." -ForegroundColor Cyan
         _WarpRotate
         if (-not (Test-Path $warpConf))
         {
-            Write-Host "󰅙  Failed to generate config. Aborting connection." -ForegroundColor Red
+            Write-Host "󰅙  Failed to generate config. Aborting." -ForegroundColor Red
             return
         }
     }
@@ -64,9 +64,9 @@ function _WarpOn
     wireguard /installtunnelservice $warpConf
 
     if ($LASTEXITCODE -ne 0)
-    { Write-Host "󰅙  FAILED (exit $LASTEXITCODE)" -ForegroundColor Red }
+    { Write-Host "󰅙  Connection failed (exit $LASTEXITCODE)" -ForegroundColor Red }
     else
-    { Write-Host "󰤨  CONNECTED" -ForegroundColor Green }
+    { Write-Host "󰤨  Connected" -ForegroundColor Green }
 
     _PrintFooter
 }
@@ -79,9 +79,9 @@ function _WarpOff
     wireguard /uninstalltunnelservice $tunnel
 
     if ($LASTEXITCODE -ne 0)
-    { Write-Host "󰅙  FAILED (exit $LASTEXITCODE)" -ForegroundColor Red }
+    { Write-Host "󰅙  Disconnect failed (exit $LASTEXITCODE)" -ForegroundColor Red }
     else
-    { Write-Host "󰤭  DISCONNECTED" -ForegroundColor Gray }
+    { Write-Host "󰤭  Disconnected" -ForegroundColor Gray }
 
     _PrintFooter
 }
@@ -93,7 +93,7 @@ function _WarpRotate
     $svc = Get-Service -Name "WireGuardTunnel`$warp" -ErrorAction SilentlyContinue
     if ($svc -and $svc.Status -eq "Running")
     {
-        Write-Host "󰅙  Tunnel is active. Run: warp off first." -ForegroundColor Red
+        Write-Host "󰅙  Tunnel is active. Run 'warp off' first." -ForegroundColor Red
         return
     }
 
@@ -146,9 +146,9 @@ function _WarpStatus
     $svc = Get-Service -Name "WireGuardTunnel`$warp" -ErrorAction SilentlyContinue
     _PrintHeader "󰖂" "WireGuard WARP"
     if ($svc -and $svc.Status -eq "Running")
-    { Write-Host "󰤨  CONNECTED" -ForegroundColor Green }
+    { Write-Host "󰤨  Connected" -ForegroundColor Green }
     else
-    { Write-Host "󰤭  DISCONNECTED" -ForegroundColor Gray }
+    { Write-Host "󰤭  Disconnected" -ForegroundColor Gray }
     if (Test-Path $warpConf)
     { Write-Host "󱁤  $warpConf" -ForegroundColor Blue }
     _PrintFooter
