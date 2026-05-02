@@ -9,5 +9,11 @@
   "BraveWaybackMachineEnabled": false,
   "BraveP3AEnabled": false,
   "BraveStatsPingEnabled": false,
-  "BraveWebDiscoveryEnabled": false
+  "BraveWebDiscoveryEnabled": false,
+  "BravePlaylistEnabled": false,
+  "ShoppingListEnabled": false,
+  "MetricsReportingEnabled": false,
+  "SafeBrowsingExtendedReportingEnabled": false,
+  "UrlKeyedAnonymizedDataCollectionEnabled": false,
+  "IPFSEnabled": false
 }
