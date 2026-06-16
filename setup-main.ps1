@@ -111,15 +111,22 @@ $bravePolicySrc = Join-Path $PSScriptRoot "configs\brave\policies.json"
 if (Test-Path $bravePolicySrc)
 {
     $policies = Get-Content $bravePolicySrc | ConvertFrom-Json
-    $regPath  = "HKLM:\SOFTWARE\Policies\BraveSoftware\Brave"
-    if (!(Test-Path $regPath))
-    { New-Item -Path $regPath -Force | Out-Null }
+    $regBase  = "HKLM:\SOFTWARE\Policies\BraveSoftware"
+    $regPath  = "$regBase\Brave"
+
+    New-Item -Path $regBase -Force | Out-Null
+    New-Item -Path $regPath -Force | Out-Null
+
     foreach ($key in $policies.PSObject.Properties)
     {
-        $type = if ($key.Value -is [int]) { 'DWORD' } else { 'String' }
-        New-ItemProperty -Path $regPath -Name $key.Name -Value $key.Value -PropertyType $type -Force | Out-Null
+        $isDword = $key.Value -is [bool] -or $key.Value -is [int] -or $key.Value -is [long]
+        $type    = if ($isDword) { 'DWORD' } else { 'String' }
+        $value   = if ($isDword) { [int]$key.Value } else { [string]$key.Value }
+
+        New-ItemProperty -Path $regPath -Name $key.Name -Value $value -PropertyType $type -Force | Out-Null
     }
     _Ok "Brave policies applied via registry"
+    _Info "Restart Brave to apply — verify at brave://policy"
 } else
 {
     _Info "Brave policies file not found in repo, skipping"

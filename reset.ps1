@@ -90,10 +90,18 @@ foreach ($file in @("mpv.conf", "input.conf"))
 _PrintFooter
 
 _PrintHeader "Removing Brave Policies"
-$regPath = "HKLM:\SOFTWARE\Policies\BraveSoftware\Brave"
+$regBase = "HKLM:\SOFTWARE\Policies\BraveSoftware"
+$regPath = "$regBase\Brave"
 if (Test-Path $regPath)
-{ Remove-Item $regPath -Recurse -Force; _Ok "Removed Brave policies from registry" }
-else
+{
+    Remove-Item $regPath -Recurse -Force
+    if (Test-Path $regBase)
+    {
+        $remaining = Get-ChildItem $regBase
+        if (-not $remaining) { Remove-Item $regBase -Recurse -Force }
+    }
+    _Ok "Removed Brave policies from registry"
+} else
 { _Info "Not found, skipping" }
 _PrintFooter
 
