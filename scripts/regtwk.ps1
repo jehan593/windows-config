@@ -1,0 +1,143 @@
+# ==============================================================================
+# REGISTRY TWEAKS
+# ==============================================================================
+if (-not (_IsAdmin))
+{
+    if (-not (_AssertGsudo)) { exit 1 }
+    gsudo pwsh -File "$PSCommandPath"
+    exit
+}
+
+# ==============================================================================
+# TWEAKS
+# ==============================================================================
+
+function _Tweak_TextFileContextMenu
+{
+    _PrintHeader "󰒓" "01. Add Text Document to New Context Menu (Notepad++)"
+
+    $base = "HKLM:\SOFTWARE\Classes"
+
+    if (!(Test-Path "$base\.txt"))
+    { New-Item -Path "$base\.txt" -Force | Out-Null }
+    Set-ItemProperty -Path "$base\.txt" -Name "(Default)"     -Value "txtfile"    -Type String -Force
+    Set-ItemProperty -Path "$base\.txt" -Name "Content Type"  -Value "text/plain" -Type String -Force
+    Set-ItemProperty -Path "$base\.txt" -Name "PerceivedType" -Value "text"       -Type String -Force
+    _PrintRow "󰄬" "Association" ".txt set to txtfile" "Green"
+
+    if (!(Test-Path "$base\.txt\ShellNew"))
+    { New-Item -Path "$base\.txt\ShellNew" -Force | Out-Null }
+    Set-ItemProperty -Path "$base\.txt\ShellNew" -Name "NullFile" -Value "" -Type String -Force
+    _PrintRow "󰄬" "ShellNew" "Entry added" "Green"
+
+    if (!(Test-Path "$base\txtfile"))
+    { New-Item -Path "$base\txtfile" -Force | Out-Null }
+    Set-ItemProperty -Path "$base\txtfile" -Name "(Default)" -Value "Text Document" -Type String -Force
+    _PrintRow "󰄬" "Class" "txtfile set" "Green"
+
+    if (!(Test-Path "$base\txtfile\shell\open\command"))
+    { New-Item -Path "$base\txtfile\shell\open\command" -Force | Out-Null }
+    Set-ItemProperty -Path "$base\txtfile\shell\open\command" -Name "(Default)" -Value "`"C:\Program Files\Notepad++\notepad++.exe`" `"%1`"" -Type String -Force
+    _PrintRow "󰄬" "Open With" "Notepad++ set" "Green"
+
+    _PrintRow "󰋼" "Note" "Restart Explorer to apply" "Blue"
+    _PrintFooter
+}
+
+function _Tweak_RemoveGitContextMenu
+{
+    _PrintHeader "󰒓" "02. Remove Git GUI & Bash Here from Context Menu"
+
+    $paths = @(
+        "HKLM:\SOFTWARE\Classes\Directory\shell\git_gui"
+        "HKLM:\SOFTWARE\Classes\Directory\shell\git_shell"
+        "HKLM:\SOFTWARE\Classes\Directory\Background\shell\git_gui"
+        "HKLM:\SOFTWARE\Classes\Directory\Background\shell\git_shell"
+    )
+
+    foreach ($path in $paths)
+    {
+        if (Test-Path $path)
+        {
+            Remove-Item -Path $path -Recurse -Force
+            _PrintRow "󰄬" "Removed" ($path -split '\\' | Select-Object -Last 1) "Green"
+        } else
+        {
+            _PrintRow "󰋼" "Skipped" ($path -split '\\' | Select-Object -Last 1) "Blue"
+        }
+    }
+
+    _PrintFooter
+}
+
+function _Tweak_WindowsUpdateRecommended
+{
+    _PrintHeader "󰒓" "03. Set Windows Update to Recommended Settings"
+
+    if (!(Test-Path "HKLM:\SOFTWARE\Microsoft\WindowsUpdate\UX\Settings"))
+    { New-Item -Path "HKLM:\SOFTWARE\Microsoft\WindowsUpdate\UX\Settings" -Force | Out-Null }
+    Set-ItemProperty -Path "HKLM:\SOFTWARE\Microsoft\WindowsUpdate\UX\Settings" -Name "BranchReadinessLevel"            -Value 20  -Type DWord -Force
+    Set-ItemProperty -Path "HKLM:\SOFTWARE\Microsoft\WindowsUpdate\UX\Settings" -Name "DeferFeatureUpdatesPeriodInDays" -Value 365 -Type DWord -Force
+    Set-ItemProperty -Path "HKLM:\SOFTWARE\Microsoft\WindowsUpdate\UX\Settings" -Name "DeferQualityUpdatesPeriodInDays" -Value 4   -Type DWord -Force
+    _PrintRow "󰄬" "Feature" "Deferred 365 days" "Green"
+    _PrintRow "󰄬" "Quality" "Deferred 4 days" "Green"
+
+    if (!(Test-Path "HKLM:\SOFTWARE\Policies\Microsoft\Windows\WindowsUpdate\AU"))
+    { New-Item -Path "HKLM:\SOFTWARE\Policies\Microsoft\Windows\WindowsUpdate\AU" -Force | Out-Null }
+    Set-ItemProperty -Path "HKLM:\SOFTWARE\Policies\Microsoft\Windows\WindowsUpdate\AU" -Name "NoAutoRebootWithLoggedOnUsers" -Value 1 -Type DWord -Force
+    Set-ItemProperty -Path "HKLM:\SOFTWARE\Policies\Microsoft\Windows\WindowsUpdate\AU" -Name "AUPowerManagement"             -Value 0 -Type DWord -Force
+    _PrintRow "󰄬" "Auto-Reboot" "Disabled" "Green"
+
+    _PrintFooter
+}
+
+function _Tweak_EditWithNeovim
+{
+    _PrintHeader "󰒓" "04. Add 'Edit with Neovim' to File Context Menu"
+
+    $nvimPath = "C:\Program Files\Neovim\bin\nvim.exe"
+    $wtCmd    = "wt.exe nvim `"%1`""
+
+    if (-not (Test-Path $nvimPath))
+    { _PrintRow "󰋼" "Warning" "nvim.exe not found at default path" "Yellow" }
+
+    # Note: Set-ItemProperty cannot be used here — PowerShell's registry PSDrive
+    # treats '*' as a wildcard and hangs. The .NET API addresses it as a literal key.
+    $hklm  = [Microsoft.Win32.Registry]::LocalMachine
+    $shell = $hklm.CreateSubKey("SOFTWARE\Classes\*\shell\EditWithNeovim")
+    $shell.SetValue("", "Edit with Neovim")
+    $shell.SetValue("Icon", "$nvimPath,0")
+    $cmd = $shell.CreateSubKey("command")
+    $cmd.SetValue("", $wtCmd)
+    $cmd.Close(); $shell.Close()
+    _PrintRow "󰄬" "Files (*)" "Context entry added" "Green"
+
+    _PrintRow "󰋼" "Note" "Restart Explorer to apply" "Blue"
+    _PrintFooter
+}
+
+# ==============================================================================
+# MENU
+# ==============================================================================
+$tweaks = @(
+    "01  Add Text Document to New Context Menu (Notepad++)"
+    "02  Remove Git GUI & Bash Here from Context Menu"
+    "03  Set Windows Update to Recommended Settings"
+    "04  Add 'Edit with Neovim' to File Context Menu"
+)
+
+$selected = $tweaks | fzf --exact --multi --reverse `
+    --header "󰒓 Registry Tweaks (Tab: multi-select, Enter: apply)"
+
+if (-not $selected) { exit }
+
+foreach ($item in $selected)
+{
+    switch -Regex ($item)
+    {
+        "^01" { _Tweak_TextFileContextMenu }
+        "^02" { _Tweak_RemoveGitContextMenu }
+        "^03" { _Tweak_WindowsUpdateRecommended }
+        "^04" { _Tweak_EditWithNeovim }
+    }
+}
