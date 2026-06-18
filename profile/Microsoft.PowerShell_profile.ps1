@@ -460,27 +460,6 @@ function cup
         Write-Host "   store CLI missing." -ForegroundColor Gray
     }
 
-    _PrintHeader "󰒔" "Windows Update" -Sub
-    try
-    {
-        Write-Host "Checking updates..." -ForegroundColor Gray
-        $wua     = _GetWindowsUpdates
-        $results = $wua.Results
-        if ($results.Updates.Count -eq 0)
-        {
-            Write-Host "󰄬 System up to date." -ForegroundColor Green
-        }
-        else
-        {
-            _PrintUpdateList $results.Updates
-            Write-Host "`n󰋚  $($results.Updates.Count) update(s) available." -ForegroundColor Yellow
-        }
-    }
-    catch
-    {
-        Write-Host "󰅖 Query failed: $_" -ForegroundColor Red
-    }
-
     _PrintFooter
 }
 
@@ -499,8 +478,6 @@ function upall
     catch { Write-Host "󰅖 upf failed: $_" -ForegroundColor Red }
     try { ups }
     catch { Write-Host "󰅖 ups failed: $_" -ForegroundColor Red }
-    try { upw }
-    catch { Write-Host "󰅖 upw failed: $_" -ForegroundColor Red }
 
     try { wp }
     catch { Write-Host "󰅖 Wallpaper sync failed: $_" -ForegroundColor Red }
@@ -510,60 +487,6 @@ function upall
 
     try { upc }
     catch { Write-Host "󰅖 upc failed: $_" -ForegroundColor Red }
-}
-
-function upw
-{
-    if (-not (_IsAdmin)) { Invoke-Elevated -Command $MyInvocation.MyCommand.Name; return }
-    _PrintHeader "󰒔" "Windows Update"
-
-    try
-    {
-        Write-Host "Checking updates..." -ForegroundColor Gray
-        $wua     = _GetWindowsUpdates
-        $session = $wua.Session
-        $results = $wua.Results
-
-        if ($results.Updates.Count -eq 0)
-        {
-            Write-Host "󰄬 System up to date." -ForegroundColor Green
-            _PrintFooter; return
-        }
-
-        Write-Host "󰋚 Found $($results.Updates.Count) update(s):" -ForegroundColor Yellow
-        _PrintUpdateList $results.Updates
-
-        $toInstall = New-Object -ComObject Microsoft.Update.UpdateColl
-        $results.Updates | ForEach-Object { $toInstall.Add($_) | Out-Null }
-
-        Write-Host "`nDownloading..." -ForegroundColor Gray
-        $downloader         = $session.CreateUpdateDownloader()
-        $downloader.Updates = $toInstall
-        $downloader.Download() | Out-Null
-
-        Write-Host "Installing..." -ForegroundColor Gray
-        $installer         = $session.CreateUpdateInstaller()
-        $installer.Updates = $toInstall
-        $result            = $installer.Install()
-
-        switch ($result.ResultCode)
-        {
-            2       { Write-Host "󰄬 Installed successfully." -ForegroundColor Green }
-            3       { Write-Host "󰄬 Installed (reboot pending)." -ForegroundColor Yellow }
-            4       { Write-Host "󰅖 Installation failed." -ForegroundColor Red }
-            5       { Write-Host "󰅖 Aborted." -ForegroundColor Red }
-            default { Write-Host "󰋚 Code: $($result.ResultCode)" -ForegroundColor Gray }
-        }
-
-        if ($result.RebootRequired)
-        { Write-Host "󰜉 Reboot required to finish." -ForegroundColor Yellow }
-
-    } catch
-    {
-        Write-Host "󰅖 Process failed: $_" -ForegroundColor Red
-    }
-
-    _PrintFooter
 }
 
 function ups
@@ -807,7 +730,6 @@ function info
     _InfoCmd "upall"   "Run all system updates"
     _InfoCmd "cup"     "Check updates info"
     _InfoCmd "upp"     "Winget update menu (FZF)"
-    _InfoCmd "upw"     "Install Windows Updates"
     _InfoCmd "ups"     "Update App Store apps"
     _InfoCmd "upf"     "Sync Betterfox configs"
     _InfoCmd "upc"     "Pull dotfiles repository"

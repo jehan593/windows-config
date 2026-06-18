@@ -52,27 +52,8 @@ function _WingetAction
     }
 }
 
-function _PrintUpdateList
-{
-    param([object]$Updates)
-    $Updates | ForEach-Object {
-        $size = if ($_.MaxDownloadSize -gt 0) { " ($([math]::Round($_.MaxDownloadSize / 1MB, 1)) MB)" } else { "" }
-        Write-Host ("󰏔  {0}{1}" -f $_.Title, $size) -ForegroundColor Cyan
-    }
-}
-
 function _AddToHistory([string]$Entry)
 {
     Add-Content -Path (Get-PSReadLineOption).HistorySavePath -Value $Entry
     [Microsoft.PowerShell.PSConsoleReadLine]::AddToHistory($Entry)
-}
-
-function _GetWindowsUpdates
-{
-    $session  = New-Object -ComObject Microsoft.Update.Session
-    $searcher = $session.CreateUpdateSearcher()
-    return [PSCustomObject]@{
-        Session = $session
-        Results = $searcher.Search("IsInstalled=0 and IsHidden=0")
-    }
 }
