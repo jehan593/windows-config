@@ -453,7 +453,7 @@ function cup
     _PrintHeader "󰶬" "Microsoft Store" -Sub
     if (Get-Command store -ErrorAction SilentlyContinue)
     {
-        'n' | store updates
+        'n' | store updates 2>$null
     }
     else
     {
@@ -479,7 +479,7 @@ function upall
     try { ups }
     catch { Write-Host "󰅖 ups failed: $_" -ForegroundColor Red }
 
-    try { wp }
+    try { upwp }
     catch { Write-Host "󰅖 Wallpaper sync failed: $_" -ForegroundColor Red }
 
     try { wgsocks update }
@@ -496,7 +496,7 @@ function ups
         Write-Host "󰅖 store CLI missing." -ForegroundColor Gray; return
     }
     _PrintHeader "󰶬" "Store App Updates"
-    "y" | store updates --apply
+    store updates --apply
     if ($LASTEXITCODE -eq 0)
     { Write-Host "󰄬 Store apps updated." -ForegroundColor Green }
     else
@@ -647,7 +647,7 @@ function timer
 # ==============================================================================
 # 11. MEDIA
 # ==============================================================================
-function wp
+function upwp
 {
     $dir = Join-Path ([Environment]::GetFolderPath("MyPictures")) "config-wallpapers"
     _PrintHeader "󰸉" "Wallpaper Sync"
@@ -655,29 +655,11 @@ function wp
     if (-not (Test-Path $dir))
     { Write-Host "󰅖 Folder missing" -ForegroundColor Red; _PrintFooter; return }
 
-    $changes = git -C $dir status --porcelain 2>$null
-    if ($changes)
-    {
-        Write-Host "󱓟 Local changes detected..." -ForegroundColor Yellow
-        git -C $dir add -A
-        git -C $dir commit -m "sync: local wallpaper changes"
-        if ($LASTEXITCODE -eq 0)
-        { Write-Host "󰄬 Committed changes." -ForegroundColor Green }
-        else
-        { Write-Host "󰅖 Commit failed." -ForegroundColor Red }
-    }
-
     git -C $dir pull --rebase --autostash
     if ($LASTEXITCODE -eq 0)
     { Write-Host "󰄬 Pull up to date." -ForegroundColor Green }
     else
     { Write-Host "󰅖 Pull failed." -ForegroundColor Red }
-
-    git -C $dir push
-    if ($LASTEXITCODE -eq 0)
-    { Write-Host "󰄬 Remote updated." -ForegroundColor Green }
-    else
-    { Write-Host "󰅖 Push failed." -ForegroundColor Gray }
 
     _PrintFooter
 }
@@ -743,7 +725,7 @@ function info
     Write-Host ""
 
     _InfoGroup "󰸉" "Media & Extras"
-    _InfoCmd "wp"        "Sync wallpaper repo"
+    _InfoCmd "upwp"      "Pull wallpaper repo"
     _InfoCmd "ctt"       "CTT WinUtil script"
     _InfoCmd "massgrave" "Activation suite"
     Write-Host ""
