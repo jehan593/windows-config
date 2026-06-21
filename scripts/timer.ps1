@@ -175,7 +175,7 @@ function _DrawStatic
     $reset    = "`e[0m"
 
     # Label
-    $labelLine = "  󰔛  $Label"
+    $labelLine = "    $Label"
     $lPad      = [math]::Max(0, [math]::Floor(($W - $labelLine.Length) / 2))
     $lTail     = [math]::Max(0, $W - $lPad - $labelLine.Length)
     _WriteAt 0 ($StartRow - 2) (" " * $lPad + "$dimColor$labelLine$reset" + " " * $lTail)
@@ -226,7 +226,7 @@ function _DrawDynamic
     _WriteAt 0 $BarRow (" " * $bPad + "$barColor$barLine$reset" + " " * $bTail)
 
     # Percentage / paused label
-    $pctStr = if ($Paused) { "󰏤  paused" } else { "$pct%" }
+    $pctStr = if ($Paused) { "  paused" } else { "$pct%" }
     $pPad   = [math]::Max(0, [math]::Floor(($W - $pctStr.Length) / 2))
     $pTail  = [math]::Max(0, $W - $pPad - $pctStr.Length)
     _WriteAt 0 $PctRow (" " * $pPad + "$dimColor$pctStr$reset" + " " * $pTail)
@@ -239,17 +239,17 @@ function _DrawDynamic
 if (-not $Duration)
 {
     Write-Host ""
-    Write-Host "󰔛  Usage: timer <duration>" -ForegroundColor Cyan
-    Write-Host "─────────────────────────────────────────────────────" -ForegroundColor DarkBlue
+    Write-Host "Usage: timer <duration>" -ForegroundColor Yellow
+    Write-Host "─────────────────────────────────────────────────────" -ForegroundColor DarkGray
     Write-Host "│  Examples:  30s   5m   1h   1h30m   1.5h   2.5m" -ForegroundColor DarkGray
-    Write-Host "─────────────────────────────────────────────────────`n" -ForegroundColor DarkBlue
+    Write-Host "─────────────────────────────────────────────────────`n" -ForegroundColor DarkGray
     exit
 }
 
 $totalSecs = _ParseDuration $Duration
 if ($totalSecs -le 0)
 {
-    Write-Host "󰅙  Invalid duration '$Duration'. Examples: 30s  5m  1h  1h30m  1.5h" -ForegroundColor Red
+    Write-Host " Invalid duration '$Duration'. Examples: 30s, 5m, 1h, 1.5h" -ForegroundColor Red
     exit
 }
 
@@ -334,7 +334,7 @@ try
     $h    = $Host.UI.RawUI.WindowSize.Height
     $mid  = [int][math]::Floor($h / 2)
 
-    $done = "󰄬  Timer complete!"
+    $done = "  Timer complete!"
     $dPad = [math]::Max(0, [math]::Floor(($w - $done.Length) / 2))
     _WriteAt $dPad ($mid - 1) ("`e[92m$done`e[0m")
 

@@ -60,7 +60,7 @@ function Invoke-Elevated
 {
     param([string]$Command)
     if (-not (_AssertGsudo)) { return }
-    Write-Host "󰌋 Elevating with gsudo..." -ForegroundColor Cyan
+    Write-Host " Elevating..." -ForegroundColor Cyan
     gsudo pwsh -Command "$Command"
 }
 
@@ -73,7 +73,7 @@ function _InfoCmd([string]$Cmd, [string]$Desc)
 {
     Write-Host "    " -NoNewline
     Write-Host ("{0,-12}" -f $Cmd) -NoNewline -ForegroundColor Cyan
-    Write-Host " 󰁔 $Desc" -ForegroundColor Gray
+    Write-Host "  $Desc" -ForegroundColor Gray
 }
 
 function _ResolveInstalledPackages
@@ -95,7 +95,7 @@ function _ResolveInstalledPackages
 
     if ($notFound.Count)
     {
-        Write-Host "󰈲 Apps not found:" -ForegroundColor Red
+        Write-Host " Apps not found:" -ForegroundColor Red
         $notFound | ForEach-Object { Write-Host "   • $_" -ForegroundColor Gray }
     }
 
@@ -116,7 +116,7 @@ function _FormatSize([long]$bytes = 0)
 # ==============================================================================
 function reload
 {
-    Write-Host "󰑓 Reloading shell..." -ForegroundColor Cyan
+    Write-Host " Reloading..." -ForegroundColor Cyan
     $loc = $PWD.Path -replace "'", "''"
     pwsh -NoExit -Command "Set-Location '$loc'"
     exit
@@ -124,7 +124,7 @@ function reload
 
 function conf
 {
-    Write-Host "󰏪 Opening configs in Zed..." -ForegroundColor Cyan
+    Write-Host " Opening configs..." -ForegroundColor Cyan
     zed $RepoPath
 }
 
@@ -141,7 +141,7 @@ function cd
 
     if (-not (Test-Path $Path -PathType Container))
     {
-        $msg = if (Test-Path $Path) { "󰈲 Not a directory" } else { "󰈲 Path not found" }
+        $msg = if (Test-Path $Path) { " Not a directory" } else { " Path not found" }
         Write-Host "${msg}: $Path" -ForegroundColor Red; return
     }
     Set-Location $Path
@@ -166,10 +166,10 @@ function rr
     $lastCommand = (Get-History -Count 1).CommandLine
     if (-not $lastCommand)
     {
-        Write-Host "󰈲 No history found." -ForegroundColor Red; return
+        Write-Host " No history found." -ForegroundColor Red; return
     }
     Write-Host ""
-    Write-Host "󰌋 Run as admin:" -ForegroundColor Yellow
+    Write-Host " Run as Admin:" -ForegroundColor Yellow
     Write-Host "   $lastCommand" -ForegroundColor Cyan
     Write-Host ""
     if (-not (_Confirm "Elevate? (Y/n)")) { return }
@@ -181,7 +181,7 @@ function exp
 {
     param([string]$Path = ".")
     $resolved = (Resolve-Path $Path -ErrorAction SilentlyContinue).Path
-    if (-not $resolved) { Write-Host "󰈲 Path not found: $Path" -ForegroundColor Red; return }
+    if (-not $resolved) { Write-Host " Path not found: $Path" -ForegroundColor Red; return }
     $target = if (Test-Path $resolved -PathType Container) { $resolved } else { Split-Path $resolved }
     Invoke-Item $target
 }
@@ -190,9 +190,9 @@ function sz
 {
     param([Parameter(Mandatory)][string]$Path)
     $target = (Resolve-Path $Path -ErrorAction SilentlyContinue).Path
-    if (-not $target) { Write-Host "󰈲 Path not found: $Path" -ForegroundColor Red; return }
+    if (-not $target) { Write-Host " Path not found: $Path" -ForegroundColor Red; return }
 
-    _PrintHeader "󰗮" "Storage Analysis"
+    _PrintHeader "" "Storage Analysis"
     if (Test-Path $target -PathType Leaf)
     {
         $file = Get-Item $target
@@ -216,27 +216,27 @@ function cleanup
     if (-not (_IsAdmin)) { Invoke-Elevated -Command $MyInvocation.MyCommand.Name; return }
     _PrintHeader "󰃢" "System Cleanup"
 
-    Write-Host "󰆋 Cleaning Component Store..." -ForegroundColor Cyan
+    Write-Host "󰃢 Cleaning component store..." -ForegroundColor Cyan
     dism.exe /online /Cleanup-Image /StartComponentCleanup
     if ($LASTEXITCODE -eq 0)
-    { Write-Host "󰄬 Component Store OK" -ForegroundColor Green }
+    { Write-Host " Component store clean" -ForegroundColor Green }
     else
-    { Write-Host "󰅖 Component Store Failed" -ForegroundColor Red }
+    { Write-Host " Component store clean failed" -ForegroundColor Red }
 
-    Write-Host "󰃢 Running Disk Cleanup..." -ForegroundColor Cyan
+    Write-Host "󰃢 Running disk cleanup..." -ForegroundColor Cyan
     cleanmgr.exe /d C: /VERYLOWDISK
     if ($LASTEXITCODE -eq 0)
-    { Write-Host "󰄬 Disk Cleanup OK" -ForegroundColor Green }
+    { Write-Host " Disk cleanup OK" -ForegroundColor Green }
     else
-    { Write-Host "󰅖 Disk Cleanup Failed" -ForegroundColor Red }
+    { Write-Host " Disk cleanup failed" -ForegroundColor Red }
 
-    Write-Host "󰃢 Purging Temp Folders..." -ForegroundColor Cyan
+    Write-Host "󰃢 Purging temp folders..." -ForegroundColor Cyan
     foreach ($path in @($env:TEMP, "$env:SystemRoot\Temp"))
     {
         Get-ChildItem $path -Recurse -ErrorAction SilentlyContinue |
             Remove-Item -Recurse -Force -ErrorAction SilentlyContinue
     }
-    Write-Host "󰄬 Temp Folders OK" -ForegroundColor Green
+    Write-Host " Temp folders clean" -ForegroundColor Green
 
     _PrintFooter
 }
@@ -247,7 +247,7 @@ function fixgpu
 
     _PrintHeader "󰾲" "GPU Stutter Fix"
 
-    Write-Host "󰾲 Killing dGPU apps..." -ForegroundColor Cyan
+    Write-Host "󰾲 Clearing GPU apps..." -ForegroundColor Cyan
     $smiOutput = & "C:\Windows\System32\nvidia-smi.exe" --query-compute-apps=pid --format=csv,noheader 2>$null
     if ($smiOutput)
     {
@@ -259,11 +259,11 @@ function fixgpu
             }
         }
     }
-    Write-Host "󰄬 dGPU apps cleared" -ForegroundColor Green
+    Write-Host " GPU apps cleared" -ForegroundColor Green
 
     Start-Sleep -Milliseconds 500
 
-    Write-Host "󰾲 Resetting graphics pipeline..." -ForegroundColor Cyan
+    Write-Host "󰾲 Resetting graphics..." -ForegroundColor Cyan
     $kickScript = {
         Add-Type -TypeDefinition @"
 using System;
@@ -276,7 +276,7 @@ public class GPUKick {
         Start-Sleep -Milliseconds 800
     }
     Start-Process pwsh -WindowStyle Hidden -ArgumentList "-Command & { $kickScript }" -Wait
-    Write-Host "󰄬 Pipeline refreshed" -ForegroundColor Green
+    Write-Host " Graphics reset" -ForegroundColor Green
 
     _PrintFooter
 }
@@ -304,12 +304,12 @@ function inst
     if ($Refresh)
     {
         Remove-Item $cacheFile -ErrorAction SilentlyContinue
-        Write-Host "󰚰 Cache cleared." -ForegroundColor Cyan
+        Write-Host "󰃢 Cache cleared" -ForegroundColor Cyan
     }
 
     if (-not (Test-Path $cacheFile) -or (Get-Item $cacheFile).LastWriteTime -lt (Get-Date).AddDays(-7))
     {
-        Write-Host "󱑤 Fetching package list..." -ForegroundColor Cyan
+        Write-Host " Fetching package list..." -ForegroundColor Cyan
         Find-WinGetPackage -Source winget | ForEach-Object { $_.Id } | Set-Content $cacheFile
     }
 
@@ -318,7 +318,7 @@ function inst
 
     $ids = if ($Id)
     {
-        Write-Host "󰍉 Resolving packages..." -ForegroundColor Cyan
+        Write-Host " Resolving packages..." -ForegroundColor Cyan
         $notFound = [System.Collections.Generic.List[string]]::new()
         $resolved = foreach ($i in $Id)
         {
@@ -332,7 +332,7 @@ function inst
         }
         if ($notFound)
         {
-            Write-Host "󰈲 Packages not found:" -ForegroundColor Red
+            Write-Host " Packages not found:" -ForegroundColor Red
             $notFound | ForEach-Object { Write-Host "   • $_" -ForegroundColor Gray }
         }
         $resolved | Where-Object { $_ }
@@ -348,8 +348,8 @@ function inst
     $ids = @($ids | Where-Object { $_ })
     if (-not $ids.Count) { return }
 
-    Write-Host "󰏔 Selected for install:" -ForegroundColor Cyan
-    $ids | ForEach-Object { Write-Host "    $_" -ForegroundColor Green }
+    Write-Host " Selected to install:" -ForegroundColor Cyan
+    $ids | ForEach-Object { Write-Host "    $_" -ForegroundColor Green }
     if (-not (_Confirm "`nInstall $($ids.Count) package(s)? (Y/n)")) { return }
     _WingetAction -Verb "install" -Ids $ids -ExtraArgs (@('--source', 'winget') + $extraArgs)
 }
@@ -366,11 +366,11 @@ function uinst
 
     if ($Id)
     {
-        Write-Host "󰍉 Locating apps..." -ForegroundColor Cyan
+        Write-Host " Locating apps..." -ForegroundColor Cyan
         $resolved = _ResolveInstalledPackages -Id $Id
         $ids      = $resolved.Ids
         $names    = $resolved.Names
-        if (-not $ids.Count) { Write-Host "󰅖 No apps found. Aborted." -ForegroundColor Gray; return }
+        if (-not $ids.Count) { Write-Host " No apps found. Aborted." -ForegroundColor Gray; return }
     }
     else
     {
@@ -386,8 +386,8 @@ function uinst
         if (-not $ids.Count) { return }
     }
 
-    Write-Host "󰏔 Selected for removal:" -ForegroundColor Cyan
-    $names | ForEach-Object { Write-Host "    $_" -ForegroundColor Gray }
+    Write-Host " Selected to remove:" -ForegroundColor Cyan
+    $names | ForEach-Object { Write-Host "    $_" -ForegroundColor Gray }
     if (-not (_Confirm "`nUninstall $($ids.Count) package(s)? (Y/n)")) { return }
     _WingetAction -Verb "uninstall" -Ids $ids
 }
@@ -402,16 +402,16 @@ function upp
     $names = @()
     if ($Id)
     {
-        Write-Host "󰍉 Checking apps..." -ForegroundColor Cyan
+        Write-Host " Checking apps..." -ForegroundColor Cyan
         $resolved = _ResolveInstalledPackages -Id $Id
         $ids      = $resolved.Ids
         $names    = $resolved.Names
-        if (-not $ids.Count) { Write-Host "󰅖 No apps found. Aborted." -ForegroundColor Gray; return }
+        if (-not $ids.Count) { Write-Host " No apps found. Aborted." -ForegroundColor Gray; return }
     }
     else
     {
         $updates = @(Get-WinGetPackage | Where-Object { $_.IsUpdateAvailable })
-        if (-not $updates.Count) { Write-Host "󰄬 Everything is up to date!" -ForegroundColor Green; return }
+        if (-not $updates.Count) { Write-Host " Up to date!" -ForegroundColor Green; return }
 
         $allIds    = $updates | Select-Object -ExpandProperty Id
         $allOption = "All Updates"
@@ -433,8 +433,8 @@ function upp
         $names = $ids
         if (-not $ids.Count) { return }
     }
-    Write-Host "󰚰 Selected for update:" -ForegroundColor Cyan
-    $names | ForEach-Object { Write-Host "   󰚰 $_" -ForegroundColor Yellow }
+    Write-Host " Selected to update:" -ForegroundColor Cyan
+    $names | ForEach-Object { Write-Host "    $_" -ForegroundColor Yellow }
     if (-not (_Confirm "`nUpgrade $($ids.Count) package(s)? (Y/n)")) { return }
     _WingetAction -Verb "upgrade" -Ids $ids
 }
@@ -457,7 +457,7 @@ function cup
     }
     else
     {
-        Write-Host "   store CLI missing." -ForegroundColor Gray
+        Write-Host "   Store CLI missing" -ForegroundColor Gray
     }
 
     _PrintFooter
@@ -470,37 +470,37 @@ function upall
     _PrintHeader "󰏔" "Winget Updates"
     winget upgrade --all --interactive
     if ($LASTEXITCODE -eq 0)
-    { Write-Host "󰄬 Winget updates done." -ForegroundColor Green }
+    { Write-Host " Winget updated" -ForegroundColor Green }
     else
-    { Write-Host "󰅖 Some winget updates failed." -ForegroundColor Red }
+    { Write-Host " Winget update failed" -ForegroundColor Red }
 
     try { upf }
-    catch { Write-Host "󰅖 upf failed: $_" -ForegroundColor Red }
+    catch { Write-Host " upf failed: $_" -ForegroundColor Red }
     try { ups }
-    catch { Write-Host "󰅖 ups failed: $_" -ForegroundColor Red }
+    catch { Write-Host " ups failed: $_" -ForegroundColor Red }
 
     try { upwp }
-    catch { Write-Host "󰅖 Wallpaper sync failed: $_" -ForegroundColor Red }
+    catch { Write-Host " Wallpaper sync failed: $_" -ForegroundColor Red }
 
     try { wgsocks update }
-    catch { Write-Host "󰅖 wgsocks update failed: $_" -ForegroundColor Red }
+    catch { Write-Host " wgsocks update failed: $_" -ForegroundColor Red }
 
     try { upc }
-    catch { Write-Host "󰅖 upc failed: $_" -ForegroundColor Red }
+    catch { Write-Host " upc failed: $_" -ForegroundColor Red }
 }
 
 function ups
 {
     if (-not (Get-Command store -ErrorAction SilentlyContinue))
     {
-        Write-Host "󰅖 store CLI missing." -ForegroundColor Gray; return
+        Write-Host " Store CLI missing" -ForegroundColor Gray; return
     }
     _PrintHeader "󰶬" "Store App Updates"
     store updates --apply
     if ($LASTEXITCODE -eq 0)
-    { Write-Host "󰄬 Store apps updated." -ForegroundColor Green }
+    { Write-Host " Store apps updated" -ForegroundColor Green }
     else
-    { Write-Host "󰅖 Store updates failed." -ForegroundColor Red }
+    { Write-Host " Store updates failed" -ForegroundColor Red }
     _PrintFooter
 }
 
@@ -512,16 +512,16 @@ function upf
     $profilesPath  = "$env:APPDATA\Mozilla\Firefox\Profiles"
     _PrintHeader "󰈹" "Firefox Betterfox Sync"
     if (-not (Test-Path $profilesPath))
-    { Write-Host "󰅖 Profiles path missing" -ForegroundColor Red; _PrintFooter; return }
+    { Write-Host " Profiles path missing" -ForegroundColor Red; _PrintFooter; return }
     $profiles = Get-ChildItem $profilesPath -Directory
     if ($profiles.Count -eq 0)
-    { Write-Host "󰅖 No profiles found" -ForegroundColor Red; _PrintFooter; return }
+    { Write-Host " No profiles found" -ForegroundColor Red; _PrintFooter; return }
     try
     {
         $lines = (Invoke-WebRequest -Uri $url -UseBasicParsing -ErrorAction Stop).Content -split "`n"
     } catch
     {
-        Write-Host "󰅖 Download failed" -ForegroundColor Red; _PrintFooter; return
+        Write-Host " Download failed" -ForegroundColor Red; _PrintFooter; return
     }
     if (Test-Path $removalsPath)
     {
@@ -544,10 +544,10 @@ function upf
         try
         {
             Set-Content -Path (Join-Path $prof.FullName "user.js") -Value $content -ErrorAction Stop
-            Write-Host "󰄬 Synced: $($prof.Name)" -ForegroundColor Green
+            Write-Host " Synced: $($prof.Name)" -ForegroundColor Green
         } catch
         {
-            Write-Host "󰅖 Failed: $($prof.Name)" -ForegroundColor Red
+            Write-Host " Failed: $($prof.Name)" -ForegroundColor Red
         }
     }
     _PrintFooter
@@ -559,12 +559,12 @@ function upc
     git -C $RepoPath pull --rebase --autostash
     if ($LASTEXITCODE -eq 0)
     {
-        Write-Host "󰄬 Repository synchronized." -ForegroundColor Green
+        Write-Host " Repo synced" -ForegroundColor Green
         _PrintFooter
-        Write-Host " Run 'reload' to apply changes" -ForegroundColor Yellow
+        Write-Host " Run 'reload' to apply changes" -ForegroundColor Yellow
     } else
     {
-        Write-Host "󰅖 Sync error or conflict." -ForegroundColor Red
+        Write-Host " Sync error or conflict." -ForegroundColor Red
         _PrintFooter
     }
 }
@@ -579,7 +579,7 @@ function ff
         [string]$Path = "C:\"
     )
     $search = (Resolve-Path $Path -ErrorAction SilentlyContinue).Path
-    if (-not $search) { Write-Host "󰈲 Path not found: $Path" -ForegroundColor Red; return }
+    if (-not $search) { Write-Host " Path not found: $Path" -ForegroundColor Red; return }
 
     $selection = fd . $search --hidden --color never --exclude "Windows" |
         fzf --no-multi --layout=reverse --height=40% --header "󰈞 Searching: $search"
@@ -587,12 +587,12 @@ function ff
     if (-not $selection) { return }
 
     "`"$($selection.Trim())`"" | Set-Clipboard
-    Write-Host "󰆒 Copied to clipboard: `"$($selection.Trim())`"" -ForegroundColor Green
+    Write-Host " Copied path to clipboard" -ForegroundColor Green
 }
 
 Set-PSReadLineKeyHandler -Key "Ctrl+h" -ScriptBlock {
     $historyFile = (Get-PSReadLineOption).HistorySavePath
-    if (-not (Test-Path $historyFile)) { Write-Host "󰈲 History file missing." -ForegroundColor Red; return }
+    if (-not (Test-Path $historyFile)) { Write-Host " History file missing" -ForegroundColor Red; return }
 
     $content = Get-Content $historyFile
     [Array]::Reverse($content)
@@ -653,13 +653,13 @@ function upwp
     _PrintHeader "󰸉" "Wallpaper Sync"
 
     if (-not (Test-Path $dir))
-    { Write-Host "󰅖 Folder missing" -ForegroundColor Red; _PrintFooter; return }
+    { Write-Host " Folder missing" -ForegroundColor Red; _PrintFooter; return }
 
     git -C $dir pull --rebase --autostash
     if ($LASTEXITCODE -eq 0)
-    { Write-Host "󰄬 Pull up to date." -ForegroundColor Green }
+    { Write-Host " Wallpapers updated" -ForegroundColor Green }
     else
-    { Write-Host "󰅖 Pull failed." -ForegroundColor Red }
+    { Write-Host " Pull failed." -ForegroundColor Red }
 
     _PrintFooter
 }
@@ -670,14 +670,14 @@ function upwp
 function ctt
 {
     if (-not (_IsAdmin)) { Invoke-Elevated -Command "ctt"; return }
-    _PrintHeader "🛠️" "CTT Windows Toolbox"
+    _PrintHeader "" "CTT Windows Toolbox"
     Invoke-RestMethod https://christitus.com/win | Invoke-Expression
 }
 
 function massgrave
 {
     if (-not (_IsAdmin)) { Invoke-Elevated -Command "massgrave"; return }
-    _PrintHeader "󰄲" "Massgrave Activation"
+    _PrintHeader "" "Massgrave Activation"
     Invoke-RestMethod https://get.activated.win | Invoke-Expression
 }
 
@@ -686,15 +686,15 @@ function massgrave
 # ==============================================================================
 function info
 {
-    _PrintHeader "󰓗" "Shell Toolkit Utilities"
+    _PrintHeader "" "Shell Toolkit Utilities"
 
-    _InfoGroup "󰏪" "Configuration"
+    _InfoGroup "" "Configuration"
     _InfoCmd "conf"    "Open workspace in Zed"
     _InfoCmd "reload"  "Restart shell session"
     _InfoCmd "sudo"    "Elevate command"
     Write-Host ""
 
-    _InfoGroup "󰉋" "System & Files"
+    _InfoGroup "" "System & Files"
     _InfoCmd "z"       "Zoxide jump + ls"
     _InfoCmd "la"      "List all files"
     _InfoCmd "open"    "Open file or folder"
@@ -708,7 +708,7 @@ function info
     _InfoCmd "timer"   "Countdown timer"
     Write-Host ""
 
-    _InfoGroup "󰚰" "Maintenance"
+    _InfoGroup "" "Maintenance"
     _InfoCmd "upall"   "Run all system updates"
     _InfoCmd "cup"     "Check updates info"
     _InfoCmd "upp"     "Winget update menu (FZF)"
@@ -717,20 +717,20 @@ function info
     _InfoCmd "upc"     "Pull dotfiles repository"
     Write-Host ""
 
-    _InfoGroup "󰈞" "Fuzzy Menu (FZF)"
+    _InfoGroup "" "Fuzzy Menu (FZF)"
     _InfoCmd "ff"      "Find file and copy path"
     _InfoCmd "inst"    "Winget install menu"
     _InfoCmd "uinst"   "Winget uninstall menu"
     _InfoCmd "Ctrl+H"  "Fuzzy command history"
     Write-Host ""
 
-    _InfoGroup "󰸉" "Media & Extras"
+    _InfoGroup "" "Media & Extras"
     _InfoCmd "upwp"      "Pull wallpaper repo"
     _InfoCmd "ctt"       "CTT WinUtil script"
     _InfoCmd "massgrave" "Activation suite"
     Write-Host ""
 
-    _InfoGroup "󰒄" "Networking"
+    _InfoGroup "" "Networking"
     _InfoCmd "wgsocks" "WireGuard proxy"
     _InfoCmd "vpn"     "VPN tunnel control"
 
@@ -744,5 +744,5 @@ function info
 # ==============================================================================
 if (-not (_IsAdmin))
 {
-    Write-Host "`n`e[38;2;235;203;139m󰓗  Type 'info' to see custom utilities.`e[0m`n"
+    Write-Host "`n`e[38;2;235;203;139m  Type 'info' to see custom utilities.`e[0m`n"
 }

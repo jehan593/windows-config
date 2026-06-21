@@ -5,7 +5,7 @@ $RepoPath = $PSScriptRoot
 
 if (-not ([Security.Principal.WindowsPrincipal] [Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator))
 {
-    Write-Host "[..] Requesting administrative privileges..." -ForegroundColor Cyan
+    Write-Host "[..] Requesting admin privileges..." -ForegroundColor Cyan
     $psArgs = "-NoProfile -ExecutionPolicy Bypass -File `"$PSCommandPath`""
     if (Get-Command wt -ErrorAction SilentlyContinue)
     { Start-Process wt -ArgumentList "new-tab --title `"Reset`" pwsh $psArgs" -Verb RunAs }
@@ -28,7 +28,7 @@ Write-Host "+--------------------------------------------+" -ForegroundColor Red
 _PrintHeader "Pre-flight"
 $confirm = Read-Host "[WARN] Are you sure you want to reset? (y/N)"
 if ($confirm -notmatch '^[Yy]$')
-{ _Info "Aborted."; _PrintFooter; exit }
+{ _Info "Aborted"; _PrintFooter; exit }
 _PrintFooter
 
 # ==============================================================================
@@ -44,11 +44,11 @@ foreach ($Path in $Profiles)
     {
         $item = Get-Item $Path -Force
         if ($item.LinkType -eq "SymbolicLink")
-        { Remove-Item $Path -Force; _Ok "Removed symlink: $Path" }
+        { Remove-Item $Path -Force; _Ok "Removed PowerShell profile link" }
         else
-        { _Info "Not a symlink, skipping: $Path" }
+        { _Info "Not a symlink: $Path" }
     } else
-    { _Info "Not found, skipping: $Path" }
+    { _Info "Not found: $Path" }
 }
 _PrintFooter
 
@@ -59,16 +59,16 @@ if (Test-Path $initTarget) {
     $item = Get-Item $initTarget -Force
     if ($item.LinkType -eq "SymbolicLink") {
         Remove-Item $initTarget -Force
-        _Ok "Removed symlink: $initTarget"
+        _Ok "Removed Neovim config link"
     } else {
-        _Info "Not a symlink, skipping: $initTarget"
+        _Info "Not a symlink: $initTarget"
     }
 } else {
-    _Info "Not found, skipping: $initTarget"
+    _Info "Not found: $initTarget"
 }
 if (Test-Path $nvimData) {
     Remove-Item $nvimData -Recurse -Force
-    _Ok "Removed nvim-data: $nvimData"
+    _Ok "Removed Neovim data"
 }
 _PrintFooter
 
@@ -81,11 +81,11 @@ foreach ($file in @("mpv.conf", "input.conf"))
     {
         $item = Get-Item $target -Force
         if ($item.LinkType -eq "SymbolicLink")
-        { Remove-Item $target -Force; _Ok "Removed symlink: $target" }
+        { Remove-Item $target -Force; _Ok "Removed mpv config link" }
         else
-        { _Info "Not a symlink, skipping: $target" }
+        { _Info "Not a symlink: $target" }
     } else
-    { _Info "Not found, skipping: $target" }
+    { _Info "Not found: $target" }
 }
 _PrintFooter
 
@@ -100,17 +100,17 @@ if (Test-Path $regPath)
         $remaining = Get-ChildItem $regBase
         if (-not $remaining) { Remove-Item $regBase -Recurse -Force }
     }
-    _Ok "Removed Brave policies from registry"
+    _Ok "Removed Brave policies"
 } else
-{ _Info "Not found, skipping" }
+{ _Info "Brave policies not found" }
 _PrintFooter
 
 _PrintHeader "Removing Firefox Policies"
 $regPath = "HKLM:\SOFTWARE\Policies\Mozilla"
 if (Test-Path $regPath)
-{ Remove-Item $regPath -Recurse -Force; _Ok "Removed Firefox policies from registry" }
+{ Remove-Item $regPath -Recurse -Force; _Ok "Removed Firefox policies" }
 else
-{ _Info "Not found, skipping" }
+{ _Info "Firefox policies not found" }
 _PrintFooter
 
 # ==============================================================================
@@ -119,9 +119,9 @@ _PrintFooter
 _PrintHeader "Removing Windows Terminal Nord Theme"
 $wtFragmentPath = "$Env:LocalAppData\Microsoft\Windows Terminal\Fragments\nord"
 if (Test-Path $wtFragmentPath)
-{ Remove-Item $wtFragmentPath -Recurse -Force; _Ok "Removed Nord theme fragment" }
+{ Remove-Item $wtFragmentPath -Recurse -Force; _Ok "Removed Nord theme" }
 else
-{ _Info "Not found, skipping" }
+{ _Info "Nord theme not found" }
 _PrintFooter
 
 _PrintHeader "Removing Wallpapers"
@@ -132,9 +132,9 @@ if (Test-Path $wallpaperDst)
     if ($removeWallpapers -match '^[Yy]$')
     { Remove-Item $wallpaperDst -Recurse -Force; _Ok "Removed wallpapers" }
     else
-    { _Info "Skipping wallpapers removal" }
+    { _Info "Skipped wallpaper removal" }
 } else
-{ _Info "Not found, skipping" }
+{ _Info "Wallpapers not found" }
 _PrintFooter
 
 # ==============================================================================
@@ -160,24 +160,24 @@ if (-not $active)
 if ($active)
 {
     wireguard /uninstalltunnelservice $active
-    if ($LASTEXITCODE -eq 0) { _Ok "Disconnected: $active" }
-    else                     { _Err "Failed to disconnect: $active" }
+    if ($LASTEXITCODE -eq 0) { _Ok "Disconnected $active" }
+    else                     { _Err "Failed to disconnect $active" }
 } else
-{ _Info "No active tunnel, skipping disconnect" }
+{ _Info "No active tunnel" }
 
 # Backup configs before removing
 if (Test-Path $vpnConfDir)
 {
     if (!(Test-Path $vpnBackup)) { New-Item -ItemType Directory -Path $vpnBackup -Force | Out-Null }
     Copy-Item -Path "$vpnConfDir\*.conf" -Destination $vpnBackup -Force
-    _Ok "Configs backed up to: Documents\vpn-configs-backup"
+    _Ok "VPN configs backed up"
 }
 
 # Remove VPN directory
 if (Test-Path $vpnDir)
-{ Remove-Item $vpnDir -Recurse -Force; _Ok "Removed: $vpnDir" }
+{ Remove-Item $vpnDir -Recurse -Force; _Ok "Removed VPN configs" }
 else
-{ _Info "VPN config dir not found, skipping" }
+{ _Info "VPN configs not found" }
 _PrintFooter
 
 _PrintHeader "Removing wg-socks"
@@ -199,30 +199,30 @@ if ($services)
             if (!(Test-Path $backupDir))
             { New-Item -ItemType Directory -Path $backupDir -Force | Out-Null }
             Copy-Item -Path "$wgsocksConf\*.conf" -Destination $backupDir -Force
-            _Ok "Configs backed up to: Documents\wg-socks-backup"
+            _Ok "wg-socks configs backed up"
         }
         foreach ($svc in $services)
         {
             servy-cli stop      --name="$($svc.Name)" --quiet
             servy-cli uninstall --name="$($svc.Name)" --quiet
-            if ($LASTEXITCODE -eq 0) { _Ok "Removed service: $($svc.Name)" }
-            else                     { _Err "Failed to remove: $($svc.Name)" }
+            if ($LASTEXITCODE -eq 0) { _Ok "Removed service $($svc.Name)" }
+            else                     { _Err "Failed to remove service $($svc.Name)" }
         }
         if (Test-Path $wgsocksDir)
-        { Remove-Item $wgsocksDir -Recurse -Force; _Ok "Removed: $wgsocksDir" }
+        { Remove-Item $wgsocksDir -Recurse -Force; _Ok "Removed wg-socks directory" }
     } else
-    { _Info "Skipping tunnel removal. wg-socks directory preserved." }
+    { _Info "Skipped tunnel removal" }
 } else
 {
     $removedTunnels = $true
     if (Test-Path $wgsocksDir)
-    { Remove-Item $wgsocksDir -Recurse -Force; _Ok "Removed: $wgsocksDir" }
+    { Remove-Item $wgsocksDir -Recurse -Force; _Ok "Removed wg-socks directory" }
     else
-    { _Info "wg-socks dir not found, skipping" }
+    { _Info "wg-socks directory not found" }
 }
 
 if ((Test-Path $configScriptsDir) -and !(Get-ChildItem $configScriptsDir -Force))
-{ Remove-Item $configScriptsDir -Force; _Ok "Removed empty: $configScriptsDir" }
+{ Remove-Item $configScriptsDir -Force; _Ok "Removed config directory" }
 _PrintFooter
 
 _PrintHeader "Removing Init Caches"
@@ -232,9 +232,9 @@ _PrintHeader "Removing Init Caches"
     "$env:LOCALAPPDATA\windows-config\winget_search_cache.txt"
 ) | ForEach-Object {
     if (Test-Path $_)
-    { Remove-Item $_ -Force; _Ok "Removed: $_" }
+    { Remove-Item $_ -Force; _Ok "Removed cache: $_" }
     else
-    { _Info "Not found, skipping: $_" }
+    { _Info "Cache not found: $_" }
 }
 _PrintFooter
 
@@ -254,18 +254,18 @@ if ($response -match '^[Yy]$')
     if ($removedTunnels)
     { $apps += "aelassas.Servy" }
     else
-    { _Info "Skipping Servy uninstall (tunnels still active)" }
+    { _Info "Skipped Servy uninstall" }
 
     foreach ($app in $apps)
     {
         winget uninstall --id $app --exact --silent
         if ($LASTEXITCODE -eq 0)
-        { _Ok "$app" }
+        { _Ok "Uninstalled $app" }
         else
-        { _Err "$app — failed or not found" }
+        { _Err "Uninstall failed: $app" }
     }
 } else
-{ _Info "Skipping package removal" }
+{ _Info "Skipped package removal" }
 _PrintFooter
 
 # ==============================================================================
@@ -279,18 +279,18 @@ if (Test-Path $wtSettingsPath)
 {
     $settings = Get-Content $wtSettingsPath -Raw | ConvertFrom-Json
     $settings.profiles | Add-Member -NotePropertyName "defaults" -NotePropertyValue ([PSCustomObject]@{}) -Force
-    _Ok "Cleared global profile defaults"
+    _Ok "Cleared terminal profile defaults"
 
     $ps5Profile = ([System.Collections.Generic.List[object]]($settings.profiles.list ?? @())) |
         Where-Object { $_.name -like "*Windows PowerShell*" } | Select-Object -First 1
     $restoreGuid = if ($ps5Profile) { $ps5Profile.guid } else { $ps5Guid }
     $settings | Add-Member -NotePropertyName "defaultProfile" -NotePropertyValue $restoreGuid -Force
-    _Ok "Default profile restored to Windows PowerShell"
+    _Ok "Restored default profile"
 
     $settings | ConvertTo-Json -Depth 20 | Set-Content $wtSettingsPath -Encoding UTF8
-    _Ok "Windows Terminal settings saved"
+    _Ok "Saved terminal settings"
 } else
-{ _Info "Windows Terminal settings not found, skipping" }
+{ _Info "Terminal settings not found" }
 _PrintFooter
 
 # ==============================================================================
@@ -301,6 +301,6 @@ Write-Host "+--------------------------------------------+" -ForegroundColor Gre
 Write-Host "|           Reset complete                   |" -ForegroundColor Green
 Write-Host "+--------------------------------------------+" -ForegroundColor Green
 Write-Host ""
-Write-Host "[..] Set a different wallpaper manually if the previous one was from config-wallpapers." -ForegroundColor Cyan
+Write-Host "[..] Set wallpaper manually if needed" -ForegroundColor Cyan
 Write-Host ""
 Pause

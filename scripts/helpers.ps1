@@ -3,12 +3,12 @@ function _PrintHeader
     param([string]$Icon, [string]$Title, [switch]$Sub)
     Write-Host ""
     Write-Host "${Icon}  ${Title}" -ForegroundColor $(if ($Sub) { 'DarkCyan' } else { 'Cyan' })
-    if (-not $Sub) { Write-Host "─────────────────────────────────────────────────────" -ForegroundColor DarkBlue }
+    if (-not $Sub) { Write-Host "─────────────────────────────────────────────────────" -ForegroundColor DarkGray }
 }
 
 function _PrintFooter
 {
-    Write-Host "─────────────────────────────────────────────────────`n" -ForegroundColor DarkBlue
+    Write-Host "─────────────────────────────────────────────────────`n" -ForegroundColor DarkGray
 }
 
 function _PrintRow
@@ -34,7 +34,7 @@ function _AssertGsudo
 function _Confirm([string]$Prompt)
 {
     $r = Read-Host $Prompt
-    if ($r -match '^[Nn]$') { Write-Host "󰅖 Aborted." -ForegroundColor Gray; return $false }
+    if ($r -match '^[Nn]$') { Write-Host " Aborted." -ForegroundColor Gray; return $false }
     return $true
 }
 
@@ -43,10 +43,10 @@ function _WingetAction
     param([string]$Verb, [string[]]$Ids, [string[]]$ExtraArgs = @())
     foreach ($id in $Ids)
     {
-        Write-Host "󰏔 ${Verb}: $id" -ForegroundColor Cyan
+        Write-Host " ${Verb}: $id" -ForegroundColor Cyan
         winget $Verb --id $id --exact --interactive @ExtraArgs
-        if ($LASTEXITCODE -eq 0) { Write-Host "󰄬 Done: $id" -ForegroundColor Green }
-        else                     { Write-Host "󰅖 Failed: $id" -ForegroundColor Red }
+        if ($LASTEXITCODE -eq 0) { Write-Host " Done: $id" -ForegroundColor Green }
+        else                     { Write-Host " Failed: $id" -ForegroundColor Red }
         $argsStr = if ($ExtraArgs) { " " + ($ExtraArgs -join " ") } else { "" }
         _AddToHistory "winget $Verb --id $id --exact --interactive$argsStr"
     }

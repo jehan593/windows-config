@@ -18,7 +18,7 @@ if %errorlevel% equ 0 (
 ) else if exist "%PROGRAMFILES%\PowerShell\7\pwsh.exe" (
     set "PWSH=%PROGRAMFILES%\PowerShell\7\pwsh.exe"
 ) else (
-    echo [!!] PowerShell 7 install failed. Please reopen this terminal and try again.
+    echo [!!] PowerShell 7 install failed. Reopen terminal and try again.
     pause
     exit /b 1
 )
@@ -31,7 +31,7 @@ if %errorlevel% neq 0 (
     echo Windows Terminal not found. Installing...
     winget install --id Microsoft.WindowsTerminal --source winget --silent --accept-package-agreements --accept-source-agreements
     if !errorlevel! neq 0 (
-        echo [!!] Windows Terminal install failed. Continuing with default terminal...
+        echo [!!] Windows Terminal install failed. Continuing...
     )
 )
 
@@ -39,7 +39,7 @@ if %errorlevel% neq 0 (
 :: Validate setup script exists
 :: ----------------------------------------
 if not exist "%~dp0setup-main.ps1" (
-    echo [!!] setup-main.ps1 not found in %~dp0
+    echo [!!] setup-main.ps1 not found
     pause
     exit /b 1
 )
@@ -52,7 +52,7 @@ where wt >nul 2>&1
 if %errorlevel% equ 0 (
     wt new-tab --title "Setup" "!PWSH!" -ExecutionPolicy Bypass -File "%~dp0setup-main.ps1"
 ) else (
-    echo Windows Terminal not available. Launching PowerShell directly...
+    echo Windows Terminal not available. Launching directly...
     "!PWSH!" -ExecutionPolicy Bypass -File "%~dp0setup-main.ps1"
 )
 

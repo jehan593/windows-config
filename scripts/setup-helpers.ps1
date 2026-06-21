@@ -3,12 +3,12 @@ function _PrintHeader
     param([string]$Title)
     Write-Host ""
     Write-Host ">>  $Title" -ForegroundColor Cyan
-    Write-Host "-----------------------------------------------------" -ForegroundColor DarkBlue
+    Write-Host "-----------------------------------------------------" -ForegroundColor DarkGray
 }
 
 function _PrintFooter
 {
-    Write-Host "-----------------------------------------------------" -ForegroundColor DarkBlue
+    Write-Host "-----------------------------------------------------" -ForegroundColor DarkGray
     Write-Host ""
 }
 
@@ -21,11 +21,11 @@ function _Err  { param([string]$Msg) Write-Host ("[!!] {0}" -f $Msg) -Foreground
 function Set-Symlink
 {
     param([string]$Path, [string]$Target)
-    if (-not (Test-Path $Target)) { _Warn "Target not found, skipping: $Target"; return }
+    if (-not (Test-Path $Target)) { _Warn "Target not found: $Target"; return }
     $dir = Split-Path $Path
     if (!(Test-Path $dir)) { New-Item -ItemType Directory -Path $dir -Force | Out-Null }
     if (Test-Path $Path -PathType Container)
-    { _Warn "Directory already exists at symlink path: $Path (skipping)"; return }
+    { _Warn "Directory exists, skipping: $Path"; return }
     if (Test-Path $Path -PathType Leaf)
     {
         $existing = Get-Item $Path -Force
