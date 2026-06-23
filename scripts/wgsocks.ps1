@@ -211,10 +211,17 @@ function _UpdateWireproxy
         Write-Host "  Stopped $($svc.Name)" -ForegroundColor Yellow
     }
 
-    go install github.com/windtf/wireproxy/cmd/wireproxy@latest
+    if (-not (Get-Command gup -ErrorAction SilentlyContinue))
+    {
+        Write-Host "  gup not found. Install it with: go install github.com/nao1215/gup@latest" -ForegroundColor Red
+        _PrintFooter
+        return
+    }
+
+    gup update wireproxy
 
     if ($LASTEXITCODE -ne 0)
-    { Write-Host "  go install failed" -ForegroundColor Red; _PrintFooter; return }
+    { Write-Host "  gup update failed" -ForegroundColor Red; _PrintFooter; return }
 
     Write-Host "  wireproxy updated" -ForegroundColor Green
 

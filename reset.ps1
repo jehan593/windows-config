@@ -89,6 +89,19 @@ foreach ($file in @("mpv.conf", "input.conf"))
 }
 _PrintFooter
 
+_PrintHeader "Removing Topgrade Configuration"
+$topgradeConfigDst = "$env:APPDATA\topgrade.toml"
+if (Test-Path $topgradeConfigDst)
+{
+    $item = Get-Item $topgradeConfigDst -Force
+    if ($item.LinkType -eq "SymbolicLink")
+    { Remove-Item $topgradeConfigDst -Force; _Ok "Removed topgrade config link" }
+    else
+    { _Info "Not a symlink: $topgradeConfigDst" }
+} else
+{ _Info "Not found: $topgradeConfigDst" }
+_PrintFooter
+
 _PrintHeader "Removing Brave Policies"
 $regBase = "HKLM:\SOFTWARE\Policies\BraveSoftware"
 $regPath = "$regBase\Brave"
@@ -242,14 +255,14 @@ _PrintFooter
 # 6. OPTIONAL - Uninstall Apps
 # ==============================================================================
 _PrintHeader "Optional: Package Removal"
-_Info "Targets: Starship, fzf, zoxide, fd, wgcf$(if ($removedTunnels) { ', Servy' })"
+_Info "Targets: Starship, fzf, zoxide, fd, wgcf, gup, topgrade$(if ($removedTunnels) { ', Servy' })"
 $response = Read-Host "Remove these packages? (y/N)"
 
 if ($response -match '^[Yy]$')
 {
     $apps = @(
         "Starship.Starship", "junegunn.fzf", "ajeetdsouza.zoxide",
-        "sharkdp.fd", "ViRb3.wgcf"
+        "sharkdp.fd", "ViRb3.wgcf", "topgrade-rs.topgrade", "nao1215.gup"
     )
     if ($removedTunnels)
     { $apps += "aelassas.Servy" }

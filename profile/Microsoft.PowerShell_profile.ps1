@@ -450,7 +450,7 @@ function cup
     _PrintHeader "󰏔" "Winget" -Sub
     winget upgrade
 
-    _PrintHeader "󰶬" "Microsoft Store" -Sub
+    _PrintHeader "" "Microsoft Store" -Sub
     if (Get-Command store -ErrorAction SilentlyContinue)
     {
         'n' | store updates 2>$null
@@ -495,7 +495,7 @@ function ups
     {
         Write-Host " Store CLI missing" -ForegroundColor Gray; return
     }
-    _PrintHeader "󰶬" "Store App Updates"
+    _PrintHeader "" "Store App Updates"
     store updates --apply
     if ($LASTEXITCODE -eq 0)
     { Write-Host " Store apps updated" -ForegroundColor Green }

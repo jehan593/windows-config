@@ -1,0 +1,14 @@
+[misc]
+assume_yes = true
+cleanup = true
+ask_retry = false
+no_self_update = false
+disable = ["system","winget", "microsoft_store"]
+
+[go]
+gup_exclude = ["wireproxy"]
+
+
+
+
+ 

@@ -31,7 +31,7 @@ $apps = @(
     "Starship.Starship", "junegunn.fzf", "Git.Git", "ajeetdsouza.zoxide",
     "sharkdp.fd", "aelassas.Servy",
     "WireGuard.WireGuard", "ViRb3.wgcf", "GoLang.Go", "gerardog.gsudo",
-    "jurplel.qView", "mpv.net", "Neovim.Neovim"
+    "jurplel.qView", "mpv.net", "Neovim.Neovim", "topgrade-rs.topgrade", "nao1215.gup"
 )
 foreach ($app in $apps)
 {
@@ -104,6 +104,12 @@ foreach ($file in @("mpv.conf", "input.conf"))
 {
     Set-Symlink (Join-Path $mpvConfigDir $file) (Join-Path $repoMpvDir $file)
 }
+_PrintFooter
+
+_PrintHeader "Topgrade Configuration"
+$topgradeConfigDst = "$env:APPDATA\topgrade.toml"
+$repoTopgradeToml  = Join-Path $PSScriptRoot "configs\topgrade\topgrade.toml"
+Set-Symlink $topgradeConfigDst $repoTopgradeToml
 _PrintFooter
 
 _PrintHeader "Brave Policies"
