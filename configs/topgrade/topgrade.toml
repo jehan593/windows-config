@@ -3,7 +3,7 @@ assume_yes = true
 cleanup = true
 ask_retry = false
 no_self_update = false
-disable = ["system","winget", "microsoft_store"]
+disable = ["system"]
 
 [go]
 gup_exclude = ["wireproxy"]
