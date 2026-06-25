@@ -19,7 +19,5 @@
   "UserFeedbackAllowed": false,
   "DomainReliabilityAllowed": false,
   "PromotionsEnabled": false,
-  "NTPMiddleSlotAnnouncementVisible": false,
-  "NTPOutlookCardVisible": false,
-  "NTPSharepointCardVisible": false
+  "SafeBrowsingSurveysEnabled": false
 }

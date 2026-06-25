@@ -1,6 +1,8 @@
 {
   "policies": {
+    "UpdateMode": "manual",
     "TelemetryLevel": "off",
-    "EnableFeedback": false
+    "EnableFeedback": false,
+    "ExtensionsAutoUpdate": false
   }
 }

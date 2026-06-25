@@ -2,6 +2,8 @@
   "policies": {
     "DisableTelemetry": true,
     "DisableFeedbackCommands": true,
+    "ExtensionUpdate": false,
+    "ManualAppUpdateOnly": true,
     "DisableFirefoxStudies": true,
     "FirefoxSuggest": {
       "ImproveSuggest": false
