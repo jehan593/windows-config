@@ -1,0 +1,6 @@
+{
+  "policies": {
+    "TelemetryLevel": "off",
+    "EnableFeedback": false
+  }
+}

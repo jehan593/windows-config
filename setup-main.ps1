@@ -140,13 +140,86 @@ if (Test-Path $bravePolicySrc)
 _PrintFooter
 
 _PrintHeader "Firefox Policies"
-$regPath = "HKLM:\SOFTWARE\Policies\Mozilla\Firefox\ExtensionSettings"
-if (!(Test-Path $regPath))
-{ New-Item -Path $regPath -Force | Out-Null }
-$extId     = "uBlock0@raymondhill.net"
-$extPolicy = '{"installation_mode":"normal_installed","install_url":"https://addons.mozilla.org/firefox/downloads/latest/ublock-origin/latest.xpi"}'
-New-ItemProperty -Path $regPath -Name $extId -Value $extPolicy -PropertyType MultiString -Force | Out-Null
+$firefoxPolicySrc = Join-Path $PSScriptRoot "configs\firefox\policies.json"
+if (Test-Path $firefoxPolicySrc)
+{
+    function Set-FirefoxPolicyKey
+    {
+        param($PolicyObject, $RegPath)
+
+        foreach ($prop in $PolicyObject.PSObject.Properties)
+        {
+            $name  = $prop.Name
+            $value = $prop.Value
+
+            if ($name -eq "ExtensionSettings")
+            {
+                $json = $value | ConvertTo-Json -Compress -Depth 10
+                New-ItemProperty -Path $RegPath -Name $name -Value $json -PropertyType String -Force | Out-Null
+            }
+            elseif ($value -is [System.Management.Automation.PSCustomObject])
+            {
+                $subPath = Join-Path $RegPath $name
+                New-Item -Path $subPath -Force | Out-Null
+                Set-FirefoxPolicyKey -PolicyObject $value -RegPath $subPath
+            }
+            else
+            {
+                $isDword = $value -is [bool] -or $value -is [int] -or $value -is [long]
+                $type    = if ($isDword) { 'DWORD' } else { 'String' }
+                $regVal  = if ($isDword) { [int]$value } else { [string]$value }
+                New-ItemProperty -Path $RegPath -Name $name -Value $regVal -PropertyType $type -Force | Out-Null
+            }
+        }
+    }
+
+    $policies = (Get-Content $firefoxPolicySrc -Raw | ConvertFrom-Json).policies
+    $regPath  = "HKLM:\SOFTWARE\Policies\Mozilla\Firefox"
+    New-Item -Path $regPath -Force | Out-Null
+    Set-FirefoxPolicyKey -PolicyObject $policies -RegPath $regPath
+
     _Ok "Firefox policies applied"
+    _Info "Restart Firefox to apply policies"
+} else
+{
+    _Info "Firefox policies missing, skipping"
+}
+_PrintFooter
+
+_PrintHeader "VS Code Policies"
+$vscodePolicySrc = Join-Path $PSScriptRoot "configs\vscode\policies.json"
+if (Test-Path $vscodePolicySrc)
+{
+    $policies = (Get-Content $vscodePolicySrc -Raw | ConvertFrom-Json).policies
+    $regPath  = "HKLM:\SOFTWARE\Policies\Microsoft\VSCode"
+    New-Item -Path $regPath -Force | Out-Null
+
+    foreach ($prop in $policies.PSObject.Properties)
+    {
+        $name  = $prop.Name
+        $value = $prop.Value
+
+        if ($value -is [System.Management.Automation.PSCustomObject] -or $value -is [System.Object[]])
+        {
+            $json = $value | ConvertTo-Json -Compress -Depth 10
+            New-ItemProperty -Path $regPath -Name $name -Value $json -PropertyType String -Force | Out-Null
+        }
+        else
+        {
+            $isDword = $value -is [bool] -or $value -is [int] -or $value -is [long]
+            $type    = if ($isDword) { 'DWORD' } else { 'String' }
+            $regVal  = if ($isDword) { [int]$value } else { [string]$value }
+            New-ItemProperty -Path $regPath -Name $name -Value $regVal -PropertyType $type -Force | Out-Null
+        }
+    }
+
+    _Ok "VS Code policies applied"
+    _Info "Restart VS Code to apply policies"
+} else
+{
+    _Info "VS Code policies missing, skipping"
+}
+_PrintFooter
 _PrintFooter
 
 # ==============================================================================

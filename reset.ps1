@@ -126,6 +126,14 @@ else
 { _Info "Firefox policies not found" }
 _PrintFooter
 
+_PrintHeader "Removing VS Code Policies"
+$regPath = "HKLM:\SOFTWARE\Policies\Microsoft\VSCode"
+if (Test-Path $regPath)
+{ Remove-Item $regPath -Recurse -Force; _Ok "Removed VS Code policies" }
+else
+{ _Info "VS Code policies not found" }
+_PrintFooter
+
 # ==============================================================================
 # 4. ASSETS & THEMING
 # ==============================================================================
