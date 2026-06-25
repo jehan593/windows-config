@@ -76,32 +76,6 @@ function _InfoCmd([string]$Cmd, [string]$Desc)
     Write-Host "  $Desc" -ForegroundColor Gray
 }
 
-function _ResolveInstalledPackages
-{
-    param([string[]]$Id)
-    $installed = Get-WinGetPackage -ErrorAction SilentlyContinue
-    $ids      = [System.Collections.Generic.List[string]]::new()
-    $names    = [System.Collections.Generic.List[string]]::new()
-    $notFound = [System.Collections.Generic.List[string]]::new()
-
-    foreach ($i in $Id)
-    {
-        $pkg = $installed | Where-Object { $_.Id -match $i -or $_.Name -match $i } | Select-Object -First 1
-        if ($pkg)
-        { $ids.Add($pkg.Id); $names.Add("$($pkg.Name) [$($pkg.Id)]") }
-        else
-        { $notFound.Add($i) }
-    }
-
-    if ($notFound.Count)
-    {
-        Write-Host " Apps not found:" -ForegroundColor Red
-        $notFound | ForEach-Object { Write-Host "   • $_" -ForegroundColor Gray }
-    }
-
-    return [PSCustomObject]@{ Ids = $ids.ToArray(); Names = $names.ToArray() }
-}
-
 function _FormatSize([long]$bytes = 0)
 {
     if     ($bytes -ge 1TB) { "{0:N2} TB" -f ($bytes / 1TB) }
@@ -172,7 +146,7 @@ function rr
     Write-Host " Run as Admin:" -ForegroundColor Yellow
     Write-Host "   $lastCommand" -ForegroundColor Cyan
     Write-Host ""
-    if (-not (_Confirm "Elevate? (Y/n)")) { return }
+    if (-not (_Confirm "Elevate? (Y/n)" -Y)) { return }
     $encoded = [Convert]::ToBase64String([Text.Encoding]::Unicode.GetBytes($lastCommand))
     gsudo pwsh -EncodedCommand $encoded
 }
@@ -292,8 +266,6 @@ function regtwk
 function inst
 {
     param(
-        [Parameter(ValueFromRemainingArguments)]
-        [string[]]$Id,
         [switch]$Refresh,
         [switch]$IgnoreHash
     )
@@ -316,126 +288,91 @@ function inst
     $cacheIds  = Get-Content $cacheFile
     $extraArgs = if ($IgnoreHash) { @('--ignore-security-hash') } else { @() }
 
-    $ids = if ($Id)
-    {
-        Write-Host " Resolving packages..." -ForegroundColor Cyan
-        $notFound = [System.Collections.Generic.List[string]]::new()
-        $resolved = foreach ($i in $Id)
-        {
-            $m = @($cacheIds | Where-Object { $_ -like "*$i*" })
-            if (-not $m)
-            { $notFound.Add($i); continue }
-            if ($m.Count -eq 1)
-            { $m[0].Trim() }
-            else
-            { $m | fzf --prompt "󰍉 Choose '$i' › " --reverse --height 40% }
-        }
-        if ($notFound)
-        {
-            Write-Host " Packages not found:" -ForegroundColor Red
-            $notFound | ForEach-Object { Write-Host "   • $_" -ForegroundColor Gray }
-        }
-        $resolved | Where-Object { $_ }
-    } else
-    {
-        $cacheIds | fzf --multi --reverse `
-            --header "󰏔 [Ctrl-P]: Preview Info | [Tab]: Multi-select" `
-            --preview "winget show --id {}" `
-            --preview-window "right:60%:hidden" `
-            --bind "ctrl-p:toggle-preview"
-    }
+    $ids = $cacheIds | fzf --multi --reverse `
+        --header "󰏔 [Ctrl-P]: Preview Info | [Tab]: Multi-select" `
+        --preview "winget show --id {}" `
+        --preview-window "right:60%:hidden" `
+        --bind "ctrl-p:toggle-preview"
 
     $ids = @($ids | Where-Object { $_ })
     if (-not $ids.Count) { return }
 
     Write-Host " Selected to install:" -ForegroundColor Cyan
-    $ids | ForEach-Object { Write-Host "    $_" -ForegroundColor Green }
-    if (-not (_Confirm "`nInstall $($ids.Count) package(s)? (Y/n)")) { return }
+    $ids | ForEach-Object { Write-Host "     $_" -ForegroundColor Green }
+    
+    if (-not (_Confirm "`nInstall $($ids.Count) package(s)? (Y/n)" -Y)) { return }
     _WingetAction -Verb "install" -Ids $ids -ExtraArgs (@('--source', 'winget') + $extraArgs)
 }
 
 function uinst
 {
-    param(
-        [Parameter(ValueFromRemainingArguments)]
-        [string[]]$Id
-    )
-
-    $ids   = @()
-    $names = @()
-
-    if ($Id)
-    {
-        Write-Host " Locating apps..." -ForegroundColor Cyan
-        $resolved = _ResolveInstalledPackages -Id $Id
-        $ids      = $resolved.Ids
-        $names    = $resolved.Names
-        if (-not $ids.Count) { Write-Host " No apps found. Aborted." -ForegroundColor Gray; return }
-    }
-    else
-    {
-        $ids = @(Get-WinGetPackage |
-                Select-Object -ExpandProperty Id |
-                fzf --multi --reverse `
-                    --header "󰏔 [Ctrl-P]: Preview Info | [Tab]: Multi-select" `
-                    --preview "winget show --id {}" `
-                    --preview-window "right:60%:hidden" `
-                    --bind "ctrl-p:toggle-preview" |
-                ForEach-Object { $_.Trim() } | Where-Object { $_ })
-        $names = $ids
-        if (-not $ids.Count) { return }
-    }
+    $ids = @(Get-WinGetPackage |
+            Select-Object -ExpandProperty Id |
+            fzf --multi --reverse `
+                --header "󰏔 [Ctrl-P]: Preview Info | [Tab]: Multi-select" `
+                --preview "winget show --id {}" `
+                --preview-window "right:60%:hidden" `
+                --bind "ctrl-p:toggle-preview" |
+            ForEach-Object { $_.Trim() } | Where-Object { $_ })
+            
+    $names = $ids
+    if (-not $ids.Count) { return }
 
     Write-Host " Selected to remove:" -ForegroundColor Cyan
-    $names | ForEach-Object { Write-Host "    $_" -ForegroundColor Gray }
-    if (-not (_Confirm "`nUninstall $($ids.Count) package(s)? (Y/n)")) { return }
+    $names | ForEach-Object { Write-Host "     $_" -ForegroundColor Gray }
+    
+    if (-not (_Confirm "`nUninstall $($ids.Count) package(s)? (Y/n)" -Y)) { return }
     _WingetAction -Verb "uninstall" -Ids $ids
 }
 
 function upp
 {
-    param(
-        [Parameter(ValueFromRemainingArguments)]
-        [string[]]$Id
-    )
-    $ids   = @()
-    $names = @()
-    if ($Id)
-    {
-        Write-Host " Checking apps..." -ForegroundColor Cyan
-        $resolved = _ResolveInstalledPackages -Id $Id
-        $ids      = $resolved.Ids
-        $names    = $resolved.Names
-        if (-not $ids.Count) { Write-Host " No apps found. Aborted." -ForegroundColor Gray; return }
+    $updates = @(Get-WinGetPackage | Where-Object { $_.IsUpdateAvailable })
+    if (-not $updates.Count) { Write-Host " Up to date!" -ForegroundColor Green; return }
+
+    $allIds    = $updates | Select-Object -ExpandProperty Id
+    
+    $allOption = "󰎂 All Updates"
+    $fzfInput  = @($allOption) + $allIds
+
+    $previewScript = Join-Path $env:TEMP "upp_preview_$PID.ps1"
+    
+    @"
+param([string]`$Item)
+if (`$Item -match 'All Updates$') {
+    Write-Output 'Upgrade all $($allIds.Count) packages'
+} else {
+    winget show --id `$Item
+}
+"@ | Set-Content -Path $previewScript -Encoding UTF8
+
+    $selected = @($fzfInput |
+            fzf --multi --reverse `
+                --header "󰚰 [Ctrl-P]: Preview | [Tab]: Multi-select |" `
+                --preview "powershell -NoProfile -ExecutionPolicy Bypass -File `"$previewScript`" -Item {}" `
+                --preview-window "right:60%:hidden" `
+                --bind "ctrl-p:toggle-preview" `
+                --height "70%" `
+                --prompt "󰚰 Upgrade › ")
+
+    Remove-Item $previewScript -ErrorAction SilentlyContinue
+    
+    if ($selected | Where-Object { $_ -match 'All Updates$' })
+    { 
+        $ids = $allIds 
     }
     else
-    {
-        $updates = @(Get-WinGetPackage | Where-Object { $_.IsUpdateAvailable })
-        if (-not $updates.Count) { Write-Host " Up to date!" -ForegroundColor Green; return }
-
-        $allIds    = $updates | Select-Object -ExpandProperty Id
-        $allOption = "All Updates"
-        $fzfInput  = @($allOption) + $allIds
-
-        $selected = @($fzfInput |
-                fzf --multi --reverse `
-                    --header "󰚰 [Ctrl-P]: Preview | [Tab]: Multi-select | Choose 'All Updates' to upgrade everything" `
-                    --preview "if ('{}' -eq '$allOption') { Write-Output 'Upgrade all $($allIds.Count) packages' } else { winget show --id '{}' }" `
-                    --preview-window "right:60%:hidden" `
-                    --bind "ctrl-p:toggle-preview" `
-                    --prompt "󰚰 Upgrade › ")
-
-        if ($selected | Where-Object { $_ -eq $allOption })
-        { $ids = $allIds }
-        else
-        { $ids = $selected }
-
-        $names = $ids
-        if (-not $ids.Count) { return }
+    { 
+        $ids = $selected 
     }
+
+    $names = $ids
+    if (-not $ids.Count) { return }
+
     Write-Host " Selected to update:" -ForegroundColor Cyan
-    $names | ForEach-Object { Write-Host "    $_" -ForegroundColor Yellow }
-    if (-not (_Confirm "`nUpgrade $($ids.Count) package(s)? (Y/n)")) { return }
+    $names | ForEach-Object { Write-Host "     $_" -ForegroundColor Yellow }
+    
+    if (-not (_Confirm "`nUpgrade $($ids.Count) package(s)? (Y/n)" -Y)) { return }
     _WingetAction -Verb "upgrade" -Ids $ids
 }
 
@@ -468,25 +405,31 @@ function upall
     if (-not (_IsAdmin)) { Invoke-Elevated -Command $MyInvocation.MyCommand.Name; return }
 
     _PrintHeader "󰏔" "Winget Updates"
-    winget upgrade --all --interactive
-    if ($LASTEXITCODE -eq 0)
-    { Write-Host " Winget updated" -ForegroundColor Green }
-    else
-    { Write-Host " Winget update failed" -ForegroundColor Red }
-
+    winget source update
+    Write-Host ""
+    try { upp }
+    catch { Write-Host " upp failed" -ForegroundColor Red }
+    _PrintFooter
+    
     try { upf }
-    catch { Write-Host " upf failed: $_" -ForegroundColor Red }
+    catch { Write-Host " upf failed" -ForegroundColor Red }
     try { ups }
-    catch { Write-Host " ups failed: $_" -ForegroundColor Red }
+    catch { Write-Host " ups failed" -ForegroundColor Red }
 
     try { upwp }
-    catch { Write-Host " Wallpaper sync failed: $_" -ForegroundColor Red }
+    catch { Write-Host " Wallpaper sync failed" -ForegroundColor Red }
 
     try { wgsocks update }
-    catch { Write-Host " wgsocks update failed: $_" -ForegroundColor Red }
+    catch { Write-Host " wgsocks update failed" -ForegroundColor Red }
 
     try { upc }
-    catch { Write-Host " upc failed: $_" -ForegroundColor Red }
+    catch { Write-Host " upc failed" -ForegroundColor Red }
+
+    if (_Confirm "`nRun topgrade as well? (y/N)" -N)
+    {
+        try { topgrade }
+        catch { Write-Host " topgrade failed" -ForegroundColor Red }
+    }    
 }
 
 function ups
@@ -567,6 +510,13 @@ function upc
         Write-Host " Sync error or conflict." -ForegroundColor Red
         _PrintFooter
     }
+}
+
+function topgrade {
+    _PrintHeader "󰚰" "Topgrade"
+    try { gsudo topgrade $args }
+    catch { Write-Host " topgrade failed: $_" -ForegroundColor Red }
+    _PrintFooter
 }
 
 # ==============================================================================

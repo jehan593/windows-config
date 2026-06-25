@@ -31,11 +31,20 @@ function _AssertGsudo
     return $false
 }
 
-function _Confirm([string]$Prompt)
+function _Confirm([string]$Prompt, [switch]$Y, [switch]$N)
 {
     $r = Read-Host $Prompt
-    if ($r -match '^[Nn]$') { Write-Host " Aborted." -ForegroundColor Gray; return $false }
-    return $true
+    if ($Y)
+    {
+        if ($r -match '^[Nn]$') { Write-Host " Skipped." -ForegroundColor Gray; return $false }
+        return $true
+    }
+    if ($N)
+    {
+        if ($r -match '^[Yy]$') { return $true }
+        Write-Host " Skipped." -ForegroundColor Gray
+        return $false
+    }
 }
 
 function _WingetAction

@@ -3,7 +3,8 @@ assume_yes = true
 cleanup = true
 ask_retry = false
 no_self_update = false
-disable = ["system"]
+disable = ["system", "winget"]
+set_title = false
 
 [go]
 gup_exclude = ["wireproxy"]
