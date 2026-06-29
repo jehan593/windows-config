@@ -64,5 +64,6 @@ function _WingetAction
 function _AddToHistory([string]$Entry)
 {
     Add-Content -Path (Get-PSReadLineOption).HistorySavePath -Value $Entry
-    [Microsoft.PowerShell.PSConsoleReadLine]::AddToHistory($Entry)
+    try { [Microsoft.PowerShell.PSConsoleReadLine]::AddToHistory($Entry) }
+    catch { }
 }
