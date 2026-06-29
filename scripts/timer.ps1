@@ -3,6 +3,31 @@ param([string]$Duration)
 $OutputEncoding = [System.Text.Encoding]::UTF8
 
 # ==============================================================================
+# KEEP SCREEN AWAKE (Windows SetThreadExecutionState)
+# ==============================================================================
+
+Add-Type -Namespace Native -Name Power -MemberDefinition @'
+[DllImport("kernel32.dll", SetLastError = true)]
+public static extern uint SetThreadExecutionState(uint esFlags);
+'@
+
+$ES_CONTINUOUS       = [uint32]2147483648   # 0x80000000
+$ES_SYSTEM_REQUIRED  = [uint32]1            # 0x00000001
+$ES_DISPLAY_REQUIRED = [uint32]2            # 0x00000002
+
+function _KeepAwake
+{
+    # Prevent both system sleep and display sleep while the timer runs
+    [Native.Power]::SetThreadExecutionState([uint32]($ES_CONTINUOUS -bor $ES_SYSTEM_REQUIRED -bor $ES_DISPLAY_REQUIRED)) | Out-Null
+}
+
+function _AllowSleep
+{
+    # Restore normal power management behavior
+    [Native.Power]::SetThreadExecutionState($ES_CONTINUOUS) | Out-Null
+}
+
+# ==============================================================================
 # BIG DIGITS  (5 rows tall)
 # ==============================================================================
 
@@ -257,6 +282,9 @@ if ($totalSecs -le 0)
 [Console]::Write("`e[?1049h")
 [Console]::CursorVisible = $false
 
+# Keep display/system awake for the duration of the timer
+_KeepAwake
+
 $remaining = $totalSecs
 $paused    = $false
 $lastW     = 0
@@ -321,6 +349,7 @@ try
                     _DrawDynamic $remaining $totalSecs $w $startRow $barRow $pctRow $paused
                 }
             }
+            _KeepAwake
             Start-Sleep -Milliseconds 100
             if (-not $paused) { $elapsed++ }
         }
@@ -352,4 +381,5 @@ finally
 {
     [Console]::CursorVisible = $true
     [Console]::Write("`e[?1049l")
+    _AllowSleep
 }
