@@ -1,8 +1,6 @@
 # ==============================================================================
 # 1. SELF-ELEVATION BLOCK
 # ==============================================================================
-$RepoPath = $PSScriptRoot
-
 if (-not ([Security.Principal.WindowsPrincipal] [Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator))
 {
     Write-Host "[..] Requesting admin privileges..." -ForegroundColor Cyan
@@ -13,7 +11,8 @@ if (-not ([Security.Principal.WindowsPrincipal] [Security.Principal.WindowsIdent
     { Start-Process pwsh -ArgumentList $psArgs -Verb RunAs }
     exit
 }
-. "$RepoPath\scripts\setup-helpers.ps1"
+
+. (Join-Path $PSScriptRoot "scripts\helpers\setup-helpers.ps1")
 
 # ==============================================================================
 # 2. PRE-FLIGHT

@@ -1,5 +1,8 @@
 param([string]$Action, [string]$Arg1, [string]$Arg2)
 
+. (Join-Path $PSScriptRoot "helpers\elevate.ps1")
+. (Join-Path $PSScriptRoot "helpers\printers.ps1")
+
 # Elevate entire script if not admin
 if (-not (_IsAdmin))
 {

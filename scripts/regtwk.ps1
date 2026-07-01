@@ -1,6 +1,10 @@
 # ==============================================================================
 # REGISTRY TWEAKS
 # ==============================================================================
+
+. (Join-Path $PSScriptRoot "helpers\elevate.ps1")
+. (Join-Path $PSScriptRoot "helpers\printers.ps1")
+
 if (-not (_IsAdmin))
 {
     if (-not (_AssertGsudo)) { exit 1 }

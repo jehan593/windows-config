@@ -13,7 +13,9 @@ if (-not ([Security.Principal.WindowsPrincipal] [Security.Principal.WindowsIdent
     { Start-Process pwsh -ArgumentList $psArgs -Verb RunAs }
     exit
 }
-. "$RepoPath\scripts\setup-helpers.ps1"
+
+. (Join-Path $RepoPath "scripts\helpers\setup-helpers.ps1")
+
 # ==============================================================================
 # 2. PRE-FLIGHT
 # ==============================================================================
@@ -86,6 +88,26 @@ _PrintFooter
 # ==============================================================================
 # 4. DOTFILES & CONFIG LINKING
 # ==============================================================================
+
+function Set-Symlink
+{
+    param([string]$Path, [string]$Target)
+    if (-not (Test-Path $Target)) { _Warn "Target not found: $Target"; return }
+    $dir = Split-Path $Path
+    if (!(Test-Path $dir)) { New-Item -ItemType Directory -Path $dir -Force | Out-Null }
+    if (Test-Path $Path -PathType Container)
+    { _Warn "Directory exists, skipping: $Path"; return }
+    if (Test-Path $Path -PathType Leaf)
+    {
+        $existing = Get-Item $Path -Force
+        if ($existing.LinkType -eq "SymbolicLink" -and $existing.Target -eq $Target)
+        { _Warn "Already linked: $Path"; return }
+        Remove-Item $Path -Force
+    }
+    New-Item -ItemType SymbolicLink -Path $Path -Value $Target -Force | Out-Null
+    _Ok "Linked: $Path"
+}
+
 _PrintHeader "PowerShell Profile"
 $RepoProfile = Join-Path $PSScriptRoot "profile\Microsoft.PowerShell_profile.ps1"
 Set-Symlink "$HOME\Documents\PowerShell\Microsoft.PowerShell_profile.ps1" $RepoProfile

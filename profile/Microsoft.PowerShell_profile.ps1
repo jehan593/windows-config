@@ -3,7 +3,10 @@
 # ==============================================================================
 $RepoPath = "$HOME\windows-config"
 $env:STARSHIP_CONFIG = "$RepoPath\configs\starship.toml"
-. "$RepoPath\scripts\helpers.ps1"
+. "$RepoPath\scripts\helpers\printers.ps1"
+. "$RepoPath\scripts\helpers\prompt.ps1" 
+. "$RepoPath\scripts\helpers\elevate.ps1"
+. "$RepoPath\scripts\helpers\keepawake.ps1"
 
 $env:FZF_DEFAULT_OPTS = '--exact --cycle --color=bg+:#3b4252,bg:#2e3440,spinner:#81a1c1,hl:#c2a166,fg:#d8dee9,header:#5e81ac,info:#b48ead,pointer:#88c0d0,marker:#ebcb8b,fg+:#e5e9f0,prompt:#81a1c1,hl+:#ebcb8b'
 
@@ -62,6 +65,27 @@ function Invoke-Elevated
     if (-not (_AssertGsudo)) { return }
     Write-Host " Elevating..." -ForegroundColor Cyan
     gsudo pwsh -Command "$Command"
+}
+
+function _WingetAction
+{
+    param([string]$Verb, [string[]]$Ids, [string[]]$ExtraArgs = @())
+
+    foreach ($id in $Ids)
+    {
+        Write-Host " ${Verb}: $id" -ForegroundColor Cyan
+        winget $Verb --id $id --exact --interactive @ExtraArgs
+        
+        if ($LASTEXITCODE -eq 0) { Write-Host " Done: $id" -ForegroundColor Green }
+        else                     { Write-Host " Failed: $id" -ForegroundColor Red }
+        
+        # Format and append command to both PSReadLine file and active session history
+        $argsStr = if ($ExtraArgs) { " " + ($ExtraArgs -join " ") } else { "" }
+        $cmdEntry = "winget $Verb --id $id --exact --interactive$argsStr"
+        
+        Add-Content -Path (Get-PSReadLineOption).HistorySavePath -Value $cmdEntry
+        try { [Microsoft.PowerShell.PSConsoleReadLine]::AddToHistory($cmdEntry) } catch { }
+    }
 }
 
 function _InfoGroup([string]$Icon, [string]$Title)
@@ -594,6 +618,24 @@ function timer
     & "$RepoPath\scripts\timer.ps1" @args
 }
 
+function keepawake
+{
+    Write-Host "Keeping screen awake. Press Ctrl+C to cancel..." -ForegroundColor Cyan
+
+    try
+    {
+        while ($true)
+        {
+            _EnableKeepAwake
+            Start-Sleep -Seconds 30
+        }
+    } finally
+    {
+        _DisableKeepAwake
+        Write-Host "Keepawake cancelled, normal sleep behavior restored." -ForegroundColor Yellow
+    }
+}
+
 # ==============================================================================
 # 11. MEDIA
 # ==============================================================================
@@ -656,6 +698,7 @@ function info
     _InfoCmd "regtwk"  "Registry optimization"
     _InfoCmd "fixgpu"  "Fix GPU hybrid stutter"
     _InfoCmd "timer"   "Countdown timer"
+    _InfoCmd "keepawake" "Keep screen on (Ctrl+C to stop)"
     Write-Host ""
 
     _InfoGroup "" "Maintenance"
