@@ -79,5 +79,5 @@ command = 'type %LOCALAPPDATA%\windows-config\vpn\active_tunnel'
 when = 'type %LOCALAPPDATA%\windows-config\vpn\active_tunnel 2>nul | findstr /r /v "^$"'
 shell = ["C:\\Windows\\System32\\cmd.exe", "/C"]
 style = "bg:#3b4252"
-format = '[[ $output](fg:#d08770 bg:#3b4252)]($style)'
+format = '[[ 󰌆 $output](fg:#d08770 bg:#3b4252)]($style)'
 description = "VPN tunnel status"

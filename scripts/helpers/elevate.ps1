@@ -8,6 +8,8 @@ function _IsAdmin
 function _AssertGsudo
 {
     if (Get-Command gsudo -ErrorAction SilentlyContinue) { return $true }
-    Write-Warning "gsudo not found. Run: winget install gsudo"
+    
+    Write-Host "Error: gsudo is missing." -ForegroundColor Red
+    Write-Host "Please run: winget install gsudo" -ForegroundColor DarkGray
     return $false
 }

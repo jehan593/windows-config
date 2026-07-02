@@ -11,13 +11,13 @@ if (-not (_IsAdmin))
     exit
 }
 
-# ─── Paths ────────────────────────────────────────────────────────────────────
+# --- Paths --------------------------------------------------------------------
 $vpnRoot    = "$env:LOCALAPPDATA\windows-config\vpn"
 $configsDir = "$vpnRoot\configs"
 $statusFile = "$vpnRoot\active_tunnel"
 $warpConf   = "$env:LOCALAPPDATA\windows-config\warp\warp.conf"
 
-# ─── Helpers ──────────────────────────────────────────────────────────────────
+# --- Helpers ------------------------------------------------------------------
 
 function _EnsureDirs {
     @($vpnRoot, $configsDir) | ForEach-Object {
@@ -53,21 +53,21 @@ function _GetActiveTunnel {
 function _SetActiveTunnel {
     param([string]$TunnelName)
     _EnsureDirs
-    Set-Content $statusFile "󰌆 $TunnelName" -Encoding utf8
+    Set-Content $statusFile "$TunnelName" -Encoding utf8
 }
 
 function _ClearActiveTunnel {
-    if (Test-Path $statusFile) { Set-Content $statusFile "" -Encoding utf8 }
+    if (Test-Path $statusFile) { Remove-Item $statusFile -Force }
 }
 
-# ─── FZF picker ───────────────────────────────────────────────────────────────
+# --- FZF picker ---------------------------------------------------------------
 function _PickConfig {
     param([string]$Prompt = "Select VPN profile")
 
     $configs = _GetAllConfigs
 
     if ($configs.Count -eq 0) {
-        Write-Host " No VPN configs available." -ForegroundColor Red
+        Write-Host "Error: No VPN configs available." -ForegroundColor Red
         return $null
     }
 
@@ -80,57 +80,57 @@ function _PickConfig {
     return $configs | Where-Object { $_.Name -eq $selected.Trim() } | Select-Object -First 1
 }
 
-# ─── Actions ──────────────────────────────────────────────────────────────────
+# --- Actions ------------------------------------------------------------------
 function _VpnOn {
     _EnsureDirs
 
     $active = _GetActiveTunnel
     if ($active) {
-        Write-Host " '$active' is active. Run 'vpn off' first." -ForegroundColor Red
+        Write-Host "Error: '$active' is active. Run 'vpn off' first." -ForegroundColor Red
         return
     }
 
     $vpnProfile = _PickConfig "Connect to"
-    if (-not $vpnProfile) { Write-Host " Cancelled." -ForegroundColor DarkGray; return }
+    if (-not $vpnProfile) { Write-Host "Cancelled." -ForegroundColor DarkGray; return }
 
     if (-not (Test-Path $vpnProfile.Path)) {
         if ($vpnProfile.Builtin -and $vpnProfile.Name -eq "warp") {
-            Write-Host " Warp config not found. Generating with wgcf..." -ForegroundColor Cyan
+            Write-Host "Warp config not found. Generating with wgcf..." -ForegroundColor Cyan
             $warpDir = Split-Path $vpnProfile.Path -Parent
             if (-not (Test-Path $warpDir)) { New-Item -ItemType Directory -Path $warpDir -Force | Out-Null }
             Push-Location $warpDir
             try {
                 wgcf register --accept-tos 2>&1 | Out-Null
-                if ($LASTEXITCODE -ne 0) { Write-Host " wgcf register failed." -ForegroundColor Red; return }
+                if ($LASTEXITCODE -ne 0) { Write-Host "Error: wgcf register failed." -ForegroundColor Red; return }
                 wgcf generate 2>&1 | Out-Null
-                if ($LASTEXITCODE -ne 0) { Write-Host " wgcf generate failed." -ForegroundColor Red; return }
+                if ($LASTEXITCODE -ne 0) { Write-Host "Error: wgcf generate failed." -ForegroundColor Red; return }
                 $generated = Join-Path $warpDir "wgcf-profile.conf"
                 if (Test-Path $generated) {
                     Move-Item $generated $vpnProfile.Path -Force
-                    Write-Host " Warp config generated: $($vpnProfile.Path)" -ForegroundColor Green
+                    Write-Host "Warp config generated: $($vpnProfile.Path)" -ForegroundColor Green
                 } else {
-                    Write-Host " wgcf did not produce a config file." -ForegroundColor Red
+                    Write-Host "Error: wgcf did not produce a config file." -ForegroundColor Red
                     return
                 }
             } catch {
-                Write-Host " wgcf failed: $_" -ForegroundColor Red
+                Write-Host "Error: wgcf failed: $_" -ForegroundColor Red
                 return
             } finally {
                 Pop-Location
             }
         } else {
-            Write-Host " Config file not found: $($vpnProfile.Path)" -ForegroundColor Red
+            Write-Host "Error: Config file not found: $($vpnProfile.Path)" -ForegroundColor Red
             return
         }
     }
 
-    _PrintHeader "" "Connecting: $($vpnProfile.Name)"
+    _PrintHeader "Connecting: $($vpnProfile.Name)"
     wireguard /installtunnelservice $vpnProfile.Path
 
     if ($LASTEXITCODE -ne 0) {
-        Write-Host " Connection failed (exit $LASTEXITCODE)" -ForegroundColor Red
+        Write-Host "Connection failed (exit $LASTEXITCODE)" -ForegroundColor Red
     } else {
-        Write-Host " Connected to $($vpnProfile.Name)" -ForegroundColor Green
+        Write-Host "Connected to $($vpnProfile.Name)" -ForegroundColor Green
         _SetActiveTunnel $vpnProfile.Name
     }
     _PrintFooter
@@ -141,17 +141,17 @@ function _VpnOff {
     $active = _GetActiveTunnel
 
     if (-not $active) {
-        Write-Host " No active tunnel found." -ForegroundColor DarkGray
+        Write-Host "No active tunnel found." -ForegroundColor DarkGray
         return
     }
 
-    _PrintHeader "" "Disconnecting: $active"
+    _PrintHeader "Disconnecting: $active"
     wireguard /uninstalltunnelservice $active
 
     if ($LASTEXITCODE -ne 0) {
-        Write-Host " Disconnect failed (exit $LASTEXITCODE)" -ForegroundColor Red
+        Write-Host "Disconnect failed (exit $LASTEXITCODE)" -ForegroundColor Red
     } else {
-        Write-Host " Disconnected from $active" -ForegroundColor Gray
+        Write-Host "Disconnected from $active" -ForegroundColor Gray
         _ClearActiveTunnel
     }
     _PrintFooter
@@ -163,43 +163,43 @@ function _VpnAdd {
         return
     }
     if ($Name -eq "warp") {
-        Write-Host " 'warp' is a built-in profile and cannot be overwritten." -ForegroundColor Red
+        Write-Host "Error: 'warp' is a built-in profile and cannot be overwritten." -ForegroundColor Red
         return
     }
 
     _EnsureDirs
     $src  = Resolve-Path $ConfigPath -ErrorAction SilentlyContinue
     if (-not $src) {
-        Write-Host " File not found: $ConfigPath" -ForegroundColor Red
+        Write-Host "Error: File not found: $ConfigPath" -ForegroundColor Red
         return
     }
 
     $dest = "$configsDir\$Name.conf"
-    _PrintHeader "" "Add VPN Profile"
+    _PrintHeader "Add VPN Profile"
     Copy-Item $src.Path $dest -Force
-    Write-Host " Added profile '$Name'" -ForegroundColor Green
-    Write-Host "   Path: $dest" -ForegroundColor DarkGray
+    Write-Host "Added profile '$Name'" -ForegroundColor Green
+    Write-Host "Path: $dest" -ForegroundColor DarkGray
     _PrintFooter
 }
 
 function _VpnRemove {
     $active = _GetActiveTunnel
     if ($active) {
-        Write-Host " '$active' is active. Run 'vpn off' first." -ForegroundColor Red
+        Write-Host "Error: '$active' is active. Run 'vpn off' first." -ForegroundColor Red
         return
     }
 
     $configs = _GetAllConfigs | Where-Object { -not $_.Builtin }
 
     if ($configs.Count -eq 0) {
-        Write-Host " No user-added profiles to remove." -ForegroundColor DarkGray
+        Write-Host "No user-added profiles to remove." -ForegroundColor DarkGray
         return
     }
 
     $selected = ($configs | ForEach-Object { $_.Name }) |
         fzf --prompt="Remove profile > " --reverse --height=40%
 
-    if (-not $selected) { Write-Host " Cancelled." -ForegroundColor DarkGray; return }
+    if (-not $selected) { Write-Host "Cancelled." -ForegroundColor DarkGray; return }
 
     $target = "$configsDir\$selected.conf"
     if (Test-Path $target) {
@@ -215,7 +215,6 @@ function _VpnRemove {
             }
         }
         $backupRoot = Join-Path $realUserProfile "Documents\vpn-configs-backup"
-        # ─────────────────────────────────────────────────────────────────────
 
         if (-not (Test-Path $backupRoot)) {
             New-Item -ItemType Directory -Path $backupRoot -Force | Out-Null
@@ -225,13 +224,13 @@ function _VpnRemove {
         $backupFile = Join-Path $backupRoot "$selected`_$timestamp.conf"
         Copy-Item $target $backupFile -Force
 
-        _PrintHeader "" "Remove VPN Profile"
+        _PrintHeader "Remove VPN Profile"
         Remove-Item $target -Force
-        Write-Host " Removed profile '$selected'" -ForegroundColor Yellow
-        Write-Host "   Backup saved to: $backupFile" -ForegroundColor DarkGray
+        Write-Host "Removed profile '$selected'" -ForegroundColor Yellow
+        Write-Host "Backup saved to: $backupFile" -ForegroundColor DarkGray
         _PrintFooter
     } else {
-        Write-Host " Config file not found: $target" -ForegroundColor Red
+        Write-Host "Error: Config file not found: $target" -ForegroundColor Red
     }
 }
 
@@ -241,32 +240,32 @@ function _VpnStatus {
                    Where-Object { $_.Status -eq "Running" } |
                    ForEach-Object { $_.Name -replace "WireGuardTunnel$", "" }
 
-    _PrintHeader "" "VPN Status"
+    _PrintHeader "VPN Status"
 
     if ($runningSvcs) {
         foreach ($svc in $runningSvcs) {
-            Write-Host "│   Connected: $svc" -ForegroundColor Green
+            Write-Host "Connected: $svc" -ForegroundColor Green
         }
     } else {
-        Write-Host "│   No active tunnels" -ForegroundColor Gray
+        Write-Host "No active tunnels" -ForegroundColor Gray
     }
 
-    Write-Host "│" -ForegroundColor DarkGray
-    Write-Host "│  Registered profiles:" -ForegroundColor DarkGray
+    Write-Host ""
+    Write-Host "Registered profiles:" -ForegroundColor DarkGray
 
     foreach ($cfg in $configs) {
-        $avail  = Test-Path $cfg.Path
-        $bullet = if ($avail) { "" } else { "" }
-        $color  = if ($avail) { "Cyan" } else { "Red" }
-        $tag    = if ($cfg.Builtin) { " [warp]" } else { "" }
-        $active_marker = if ($runningSvcs -contains $cfg.Name) { "  ← active" } else { "" }
-        Write-Host ("│    {0}  {1}{2}{3}" -f $bullet, $cfg.Name, $tag, $active_marker) -ForegroundColor $color
+        $avail        = Test-Path $cfg.Path
+        $status_label = if ($avail) { "Available" } else { "Missing" }
+        $color        = if ($avail) { "Cyan" } else { "Red" }
+        $tag          = if ($cfg.Builtin) { " [warp]" } else { "" }
+        $active_marker = if ($runningSvcs -contains $cfg.Name) { " (active)" } else { "" }
+        Write-Host ("  {0}: {1}{2}{3}" -f $status_label, $cfg.Name, $tag, $active_marker) -ForegroundColor $color
     }
 
     _PrintFooter
 }
 
-# ─── Dispatch ─────────────────────────────────────────────────────────────────
+# --- Dispatch -----------------------------------------------------------------
 switch ($Action) {
     "on"     { _VpnOn }
     "off"    { _VpnOff }
@@ -274,14 +273,14 @@ switch ($Action) {
     "remove" { _VpnRemove }
     "status" { _VpnStatus }
     default {
-        _PrintHeader "" "VPN Manager"
-        _PrintRow "" "on"     "Pick profile via fzf and connect"
-        _PrintRow "" "off"    "Disconnect active tunnel"
-        _PrintRow "" "add"    "Register a new WireGuard config"
-        _PrintRow "" "remove" "Remove a registered profile"
-        _PrintRow "" "status" "Show tunnel status + all profiles"
+        _PrintHeader "VPN Manager"
+        _PrintRow "on"     "Pick profile via fzf and connect"
+        _PrintRow "off"    "Disconnect active tunnel"
+        _PrintRow "add"    "Register a new WireGuard config"
+        _PrintRow "remove" "Remove a registered profile"
+        _PrintRow "status" "Show tunnel status + all profiles"
         _PrintFooter
-        Write-Host "  Usage: vpn add <name> <path-to-conf>" -ForegroundColor DarkGray
+        Write-Host "Usage: vpn add <name> <path-to-conf>" -ForegroundColor DarkGray
         Write-Host ""
     }
 }

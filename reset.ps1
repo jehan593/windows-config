@@ -1,6 +1,8 @@
 # ==============================================================================
 # 1. SELF-ELEVATION BLOCK
 # ==============================================================================
+$RepoPath = $PSScriptRoot
+
 if (-not ([Security.Principal.WindowsPrincipal] [Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator))
 {
     Write-Host "[..] Requesting admin privileges..." -ForegroundColor Cyan
@@ -12,7 +14,7 @@ if (-not ([Security.Principal.WindowsPrincipal] [Security.Principal.WindowsIdent
     exit
 }
 
-. (Join-Path $PSScriptRoot "scripts\helpers\setup-helpers.ps1")
+. (Join-Path $RepoPath "scripts\helpers\setup-helpers.ps1")
 
 # ==============================================================================
 # 2. PRE-FLIGHT
@@ -20,12 +22,12 @@ if (-not ([Security.Principal.WindowsPrincipal] [Security.Principal.WindowsIdent
 Clear-Host
 Write-Host ""
 Write-Host "+--------------------------------------------+" -ForegroundColor Red
-Write-Host "|         Windows Config Reset               |" -ForegroundColor Red
+Write-Host "|            Windows Config Reset            |" -ForegroundColor Red
 Write-Host "|    This will UNDO everything setup did!    |" -ForegroundColor Yellow
 Write-Host "+--------------------------------------------+" -ForegroundColor Red
 
 _PrintHeader "Pre-flight"
-$confirm = Read-Host "[WARN] Are you sure you want to reset? (y/N)"
+$confirm = Read-Host "Are you sure you want to reset? (y/N)"
 if ($confirm -notmatch '^[Yy]$')
 { _Info "Aborted"; _PrintFooter; exit }
 _PrintFooter
@@ -160,13 +162,12 @@ _PrintFooter
 # ==============================================================================
 # 5. TOOLS & SCRIPTS
 # ==============================================================================
-_PrintHeader "Removing WARP Tunnel"
+_PrintHeader "Removing Tunnel Configuration"
 $vpnConfDir = "$env:LOCALAPPDATA\windows-config\vpn\configs"
 $statusFile = "$env:LOCALAPPDATA\windows-config\vpn\.active-tunnel"
 $vpnDir     = "$env:LOCALAPPDATA\windows-config\vpn"
 $vpnBackup  = Join-Path ([Environment]::GetFolderPath("MyDocuments")) "vpn-configs-backup"
 
-# Disconnect active tunnel if any
 $active = $null
 if (Test-Path $statusFile)
 { $active = (Get-Content $statusFile -Raw).Trim() -replace '^[^\s]+\s+', '' }
@@ -185,7 +186,6 @@ if ($active)
 } else
 { _Info "No active tunnel" }
 
-# Backup configs before removing
 if (Test-Path $vpnConfDir)
 {
     if (!(Test-Path $vpnBackup)) { New-Item -ItemType Directory -Path $vpnBackup -Force | Out-Null }
@@ -193,7 +193,6 @@ if (Test-Path $vpnConfDir)
     _Ok "VPN configs backed up"
 }
 
-# Remove VPN directory
 if (Test-Path $vpnDir)
 { Remove-Item $vpnDir -Recurse -Force; _Ok "Removed VPN configs" }
 else
@@ -203,7 +202,7 @@ _PrintFooter
 _PrintHeader "Removing wg-socks"
 $configScriptsDir = "$env:LOCALAPPDATA\windows-config"
 $wgsocksDir       = "$configScriptsDir\wg-socks"
-$services         = Get-Service -ErrorAction SilentlyContinue | Where-Object { $_.Name -like "*-wgsocks" }
+$services          = Get-Service -ErrorAction SilentlyContinue | Where-Object { $_.Name -like "*-wgsocks" }
 $removedTunnels   = $false
 
 if ($services)
@@ -302,7 +301,7 @@ if (Test-Path $wtSettingsPath)
     _Ok "Cleared terminal profile defaults"
 
     $ps5Profile = ([System.Collections.Generic.List[object]]($settings.profiles.list ?? @())) |
-        Where-Object { $_.name -like "*Windows PowerShell*" } | Select-Object -First 1
+                  Where-Object { $_.name -like "*Windows PowerShell*" } | Select-Object -First 1
     $restoreGuid = if ($ps5Profile) { $ps5Profile.guid } else { $ps5Guid }
     $settings | Add-Member -NotePropertyName "defaultProfile" -NotePropertyValue $restoreGuid -Force
     _Ok "Restored default profile"
@@ -318,7 +317,7 @@ _PrintFooter
 # ==============================================================================
 Write-Host ""
 Write-Host "+--------------------------------------------+" -ForegroundColor Green
-Write-Host "|           Reset complete                   |" -ForegroundColor Green
+Write-Host "|              Reset complete                |" -ForegroundColor Green
 Write-Host "+--------------------------------------------+" -ForegroundColor Green
 Write-Host ""
 Write-Host "[..] Set wallpaper manually if needed" -ForegroundColor Cyan

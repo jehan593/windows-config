@@ -22,7 +22,7 @@ if (-not ([Security.Principal.WindowsPrincipal] [Security.Principal.WindowsIdent
 Clear-Host
 Write-Host ""
 Write-Host "+--------------------------------------------+" -ForegroundColor Cyan
-Write-Host "|        Windows Config Setup                |" -ForegroundColor Cyan
+Write-Host "|            Windows Config Setup            |" -ForegroundColor Cyan
 Write-Host "+--------------------------------------------+" -ForegroundColor Cyan
 
 # ==============================================================================
@@ -162,7 +162,6 @@ if (Test-Path $bravePolicySrc)
 _PrintFooter
 
 _PrintHeader "Firefox Policies"
-$firefoxPolicySrc = Join-Path $PSScriptRoot "configs\firefox\policies.json"
 if (Test-Path $firefoxPolicySrc)
 {
     function Set-FirefoxPolicyKey
@@ -241,7 +240,6 @@ if (Test-Path $vscodePolicySrc)
 {
     _Info "VS Code policies missing, skipping"
 }
-_PrintFooter
 _PrintFooter
 
 # ==============================================================================
@@ -389,7 +387,7 @@ if ($effectivePolicy -in @('Bypass', 'Unrestricted', 'RemoteSigned'))
 
 Write-Host ""
 Write-Host "+--------------------------------------------+" -ForegroundColor Green
-Write-Host "|           Setup complete                   |" -ForegroundColor Green
+Write-Host "|              Setup complete                |" -ForegroundColor Green
 Write-Host "+--------------------------------------------+" -ForegroundColor Green
 Write-Host ""
 Write-Host "[..] Set wallpapers from: Pictures\config-wallpapers" -ForegroundColor Cyan
