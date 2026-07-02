@@ -126,9 +126,189 @@ function conf
 }
 
 # ==============================================================================
+# 4a. POWER MANAGEMENT
+# ==============================================================================
+function poweroff
+{
+    param([switch]$Force)
+    if (-not $Force -and -not (_Confirm "Shut down now? (Y/n)" -Y)) { return }
+    Write-Host "Shutting down..." -ForegroundColor Cyan
+    Stop-Computer -Force
+}
+
+function reboot
+{
+    param([switch]$Force)
+    if (-not $Force -and -not (_Confirm "Restart now? (Y/n)" -Y)) { return }
+    Write-Host "Restarting..." -ForegroundColor Cyan
+    Restart-Computer -Force
+}
+
+# ==============================================================================
 # 5. SHELL OVERRIDES
 # ==============================================================================
 Remove-Item Alias:cd -Force -ErrorAction SilentlyContinue
+Remove-Item Alias:rm -Force -ErrorAction SilentlyContinue
+Remove-Item Alias:cp -Force -ErrorAction SilentlyContinue
+Remove-Item Alias:mv -Force -ErrorAction SilentlyContinue
+Remove-Item Alias:touch -Force -ErrorAction SilentlyContinue
+
+function cp
+{
+    param(
+        [Parameter(Mandatory, Position = 0)]
+        [string[]]$Path,
+
+        [Parameter(Mandatory, Position = 1)]
+        [string]$Destination
+    )
+
+    $resolved = foreach ($p in $Path)
+    {
+        $items = Resolve-Path $p -ErrorAction SilentlyContinue
+        if (-not $items) { Write-Host "Error: Path not found: $p" -ForegroundColor Red; continue }
+        $items
+    }
+    if (-not $resolved) { return }
+
+    Write-Host ""
+    Write-Host "Copy:" -ForegroundColor Yellow
+    foreach ($r in $resolved)
+    {
+        $type = if (Test-Path $r.Path -PathType Container) { "Folder" } else { "File" }
+        Write-Host "  [$type] $($r.Path) -> $Destination" -ForegroundColor Cyan
+    }
+    Write-Host ""
+
+    if (-not (_Confirm "Copy $($resolved.Count) item(s)? (Y/n)" -Y)) { return }
+
+    foreach ($r in $resolved)
+    {
+        $target = $r.Path
+        try
+        {
+            # Folders are copied recursively automatically; no -r needed
+            $isDir = Test-Path $target -PathType Container
+            Copy-Item -Path $target -Destination $Destination -Recurse:$isDir -Force -ErrorAction Stop
+            Write-Host "Copied: $target" -ForegroundColor Green
+        } catch
+        {
+            Write-Host "Error: Failed to copy: $target - $_" -ForegroundColor Red
+        }
+    }
+}
+
+function mv
+{
+    param(
+        [Parameter(Mandatory, Position = 0)]
+        [string[]]$Path,
+
+        [Parameter(Mandatory, Position = 1)]
+        [string]$Destination
+    )
+
+    $resolved = foreach ($p in $Path)
+    {
+        $items = Resolve-Path $p -ErrorAction SilentlyContinue
+        if (-not $items) { Write-Host "Error: Path not found: $p" -ForegroundColor Red; continue }
+        $items
+    }
+    if (-not $resolved) { return }
+
+    Write-Host ""
+    Write-Host "Move:" -ForegroundColor Yellow
+    foreach ($r in $resolved)
+    {
+        $type = if (Test-Path $r.Path -PathType Container) { "Folder" } else { "File" }
+        Write-Host "  [$type] $($r.Path) -> $Destination" -ForegroundColor Cyan
+    }
+    Write-Host ""
+
+    if (-not (_Confirm "Move $($resolved.Count) item(s)? (Y/n)" -Y)) { return }
+
+    foreach ($r in $resolved)
+    {
+        $target = $r.Path
+        try
+        {
+            # Move-Item relocates folders as a whole; no -r needed
+            Move-Item -Path $target -Destination $Destination -Force -ErrorAction Stop
+            Write-Host "Moved: $target" -ForegroundColor Green
+        } catch
+        {
+            Write-Host "Error: Failed to move: $target - $_" -ForegroundColor Red
+        }
+    }
+}
+
+function rm
+{
+    param(
+        [Parameter(Mandatory, Position = 0, ValueFromRemainingArguments = $true)]
+        [string[]]$Path,
+
+        [Alias("f")]
+        [switch]$Force
+    )
+
+    Add-Type -AssemblyName Microsoft.VisualBasic -ErrorAction SilentlyContinue
+
+    $resolved = foreach ($p in $Path)
+    {
+        $items = Resolve-Path $p -ErrorAction SilentlyContinue
+        if (-not $items) { Write-Host "Error: Path not found: $p" -ForegroundColor Red; continue }
+        $items
+    }
+    if (-not $resolved) { return }
+
+    $verb   = if ($Force) { "Permanently Delete" } else { "Move to Recycle Bin" }
+    $color  = if ($Force) { "Red" } else { "Yellow" }
+
+    Write-Host ""
+    Write-Host "${verb}:" -ForegroundColor $color
+    foreach ($r in $resolved)
+    {
+        $type = if (Test-Path $r.Path -PathType Container) { "Folder" } else { "File" }
+        Write-Host "  [$type] $($r.Path)" -ForegroundColor Cyan
+    }
+    Write-Host ""
+
+    # -f/-Force still confirms, but deletes permanently instead of recycling
+    if (-not (_Confirm "$verb $($resolved.Count) item(s)? (Y/n)" -Y)) { return }
+
+    foreach ($r in $resolved)
+    {
+        $target = $r.Path
+        try
+        {
+            if ($Force)
+            {
+                Remove-Item $target -Recurse -Force -ErrorAction Stop
+                Write-Host "Deleted: $target" -ForegroundColor Green
+                continue
+            }
+
+            if (Test-Path $target -PathType Leaf)
+            {
+                # Clear read-only/hidden/system attrs so locked-down files still recycle
+                try { (Get-Item $target -Force).Attributes = 'Normal' } catch { }
+                [Microsoft.VisualBasic.FileIO.FileSystem]::DeleteFile(
+                    $target, 'OnlyErrorDialogs', 'SendToRecycleBin')
+            } else
+            {
+                Get-ChildItem $target -Recurse -Force -ErrorAction SilentlyContinue |
+                    ForEach-Object { try { $_.Attributes = 'Normal' } catch { } }
+                [Microsoft.VisualBasic.FileIO.FileSystem]::DeleteDirectory(
+                    $target, 'OnlyErrorDialogs', 'SendToRecycleBin')
+            }
+            Write-Host "Recycled: $target" -ForegroundColor Green
+        } catch
+        {
+            Write-Host "Error: Failed to remove: $target - $_" -ForegroundColor Red
+        }
+    }
+}
 
 function cd
 {
@@ -150,9 +330,76 @@ function la
     Get-ChildItem -Force @args
 }
 
+function touch
+{
+    param(
+        [Parameter(Mandatory, Position = 0, ValueFromRemainingArguments = $true)]
+        [string[]]$Path
+    )
+
+    Write-Host ""
+    Write-Host "Create:" -ForegroundColor Yellow
+    foreach ($p in $Path)
+    {
+        $label = if (Test-Path $p) { "Update timestamp" } else { "New File" }
+        Write-Host "  [$label] $p" -ForegroundColor Cyan
+    }
+    Write-Host ""
+
+    if (-not (_Confirm "Create $($Path.Count) item(s)? (Y/n)" -Y)) { return }
+
+    foreach ($p in $Path)
+    {
+        try
+        {
+            if (Test-Path $p)
+            {
+                (Get-Item $p -Force).LastWriteTime = Get-Date
+                Write-Host "Touched: $p" -ForegroundColor Green
+            } else
+            {
+                New-Item -ItemType File -Path $p -Force -ErrorAction Stop | Out-Null
+                Write-Host "Created: $p" -ForegroundColor Green
+            }
+        } catch
+        {
+            Write-Host "Error: Failed to create: $p - $_" -ForegroundColor Red
+        }
+    }
+}
+
+function mkdir
+{
+    param(
+        [Parameter(Mandatory, Position = 0, ValueFromRemainingArguments = $true)]
+        [string[]]$Path
+    )
+
+    Write-Host ""
+    Write-Host "Create Folder:" -ForegroundColor Yellow
+    foreach ($p in $Path)
+    {
+        Write-Host "  [Folder] $p" -ForegroundColor Cyan
+    }
+    Write-Host ""
+
+    if (-not (_Confirm "Create $($Path.Count) folder(s)? (Y/n)" -Y)) { return }
+
+    foreach ($p in $Path)
+    {
+        try
+        {
+            New-Item -ItemType Directory -Path $p -Force -ErrorAction Stop | Out-Null
+            Write-Host "Created: $p" -ForegroundColor Green
+        } catch
+        {
+            Write-Host "Error: Failed to create: $p - $_" -ForegroundColor Red
+        }
+    }
+}
+
 Set-Alias sudo  gsudo
 Set-Alias open  Invoke-Item
-Set-Alias touch New-Item
 
 # ==============================================================================
 # 6. CORE UTILITIES
@@ -234,6 +481,16 @@ function cleanup
             Remove-Item -Recurse -Force -ErrorAction SilentlyContinue
     }
     Write-Host "Temp folders clean" -ForegroundColor Green
+
+    Write-Host "Emptying Recycle Bin..." -ForegroundColor Cyan
+    try
+    {
+        Clear-RecycleBin -Force -ErrorAction Stop
+        Write-Host "Recycle Bin empty" -ForegroundColor Green
+    } catch
+    {
+        Write-Host "Error: Recycle Bin empty failed" -ForegroundColor Red
+    }
 
     _PrintFooter
 }
@@ -534,7 +791,7 @@ function upc
     {
         Write-Host "Repo synced" -ForegroundColor Green
         _PrintFooter
-        Write-Host "Notice: Run 'reload' to apply changes" -ForegroundColor Yellow
+        Write-Host "Run 'reload' to apply changes" -ForegroundColor Yellow
     } else
     {
         Write-Host "Error: Sync error or conflict." -ForegroundColor Red
@@ -690,13 +947,19 @@ function info
     _InfoCmd "conf"    "Open workspace in Zed"
     _InfoCmd "reload"  "Restart shell session"
     _InfoCmd "sudo"    "Elevate command"
+    _InfoCmd "poweroff" "Shut down the machine"
+    _InfoCmd "reboot"  "Restart the machine"
     Write-Host ""
 
     _InfoGroup "System & Files"
     _InfoCmd "z"       "Zoxide jump + ls"
     _InfoCmd "la"      "List all files"
     _InfoCmd "open"    "Open file or folder"
-    _InfoCmd "touch"   "Create new file"
+    _InfoCmd "touch"   "Create file/update timestamp (confirms)"
+    _InfoCmd "mkdir"   "Create folder (confirms)"
+    _InfoCmd "rm"      "Recycle file/folder (-f permanently deletes)"
+    _InfoCmd "cp"      "Copy file/folder (confirms, auto-recurse)"
+    _InfoCmd "mv"      "Move file/folder (confirms)"
     _InfoCmd "rr"      "Elevate last command"
     _InfoCmd "exp"     "Open in File Explorer"
     _InfoCmd "sz"      "Calculate folder sizes"
