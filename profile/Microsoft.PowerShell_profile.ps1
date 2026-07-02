@@ -351,17 +351,25 @@ function uinst
 
 function upp
 {
+    param([switch]$all)
+
     $updates = @(Get-WinGetPackage | Where-Object { $_.IsUpdateAvailable })
-    if (-not $updates.Count) { Write-Host " Up to date!" -ForegroundColor Green; return }
+    if (-not $updates.Count) { Write-Host " Up to date!" -ForegroundColor Green; return }
 
-    $allIds    = $updates | Select-Object -ExpandProperty Id
-    
-    $allOption = "󰎂 All Updates"
-    $fzfInput  = @($allOption) + $allIds
+    $allIds = $updates | Select-Object -ExpandProperty Id
 
-    $previewScript = Join-Path $env:TEMP "upp_preview_$PID.ps1"
-    
-    @"
+    if ($all)
+    {
+        $ids = $allIds
+    }
+    else
+    {
+        $allOption = "󰎂 All Updates"
+        $fzfInput  = @($allOption) + $allIds
+
+        $previewScript = Join-Path $env:TEMP "upp_preview_$PID.ps1"
+
+        @"
 param([string]`$Item)
 if (`$Item -match 'All Updates$') {
     Write-Output 'Upgrade all $($allIds.Count) packages'
@@ -370,31 +378,32 @@ if (`$Item -match 'All Updates$') {
 }
 "@ | Set-Content -Path $previewScript -Encoding UTF8
 
-    $selected = @($fzfInput |
-            fzf --multi --reverse `
-                --header "󰚰 [Ctrl-P]: Preview | [Tab]: Multi-select |" `
-                --preview "powershell -NoProfile -ExecutionPolicy Bypass -File `"$previewScript`" -Item {}" `
-                --preview-window "right:60%:hidden" `
-                --bind "ctrl-p:toggle-preview" `
-                --height "70%" `
-                --prompt "󰚰 Upgrade › ")
+        $selected = @($fzfInput |
+                fzf --multi --reverse `
+                    --header "󰚰 [Ctrl-P]: Preview | [Tab]: Multi-select |" `
+                    --preview "powershell -NoProfile -ExecutionPolicy Bypass -File `"$previewScript`" -Item {}" `
+                    --preview-window "right:60%:hidden" `
+                    --bind "ctrl-p:toggle-preview" `
+                    --height "70%" `
+                    --prompt "󰚰 Upgrade › ")
 
-    Remove-Item $previewScript -ErrorAction SilentlyContinue
-    
-    if ($selected | Where-Object { $_ -match 'All Updates$' })
-    { 
-        $ids = $allIds 
-    }
-    else
-    { 
-        $ids = $selected 
+        Remove-Item $previewScript -ErrorAction SilentlyContinue
+
+        if ($selected | Where-Object { $_ -match 'All Updates$' })
+        {
+            $ids = $allIds
+        }
+        else
+        {
+            $ids = $selected
+        }
     }
 
     $names = $ids
     if (-not $ids.Count) { return }
 
-    Write-Host " Selected to update:" -ForegroundColor Cyan
-    $names | ForEach-Object { Write-Host "     $_" -ForegroundColor Yellow }
+    Write-Host " Selected to update:" -ForegroundColor Cyan
+    $names | ForEach-Object { Write-Host "     $_" -ForegroundColor Yellow }
     
     if (-not (_Confirm "`nUpgrade $($ids.Count) package(s)? (Y/n)" -Y)) { return }
     _WingetAction -Verb "upgrade" -Ids $ids
@@ -704,7 +713,7 @@ function info
     _InfoGroup "" "Maintenance"
     _InfoCmd "upall"   "Run all system updates"
     _InfoCmd "cup"     "Check updates info"
-    _InfoCmd "upp"     "Winget update menu (FZF)"
+    _InfoCmd "upp"     "Winget update menu (FZF, -all for all )"
     _InfoCmd "ups"     "Update App Store apps"
     _InfoCmd "upf"     "Sync Betterfox configs"
     _InfoCmd "upc"     "Pull dotfiles repository"
