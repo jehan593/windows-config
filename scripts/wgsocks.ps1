@@ -3,14 +3,6 @@ param([string]$Action, [string]$Arg1, [string]$Arg2)
 . (Join-Path $PSScriptRoot "helpers\elevate.ps1")
 . (Join-Path $PSScriptRoot "helpers\printers.ps1")
 
-# Elevate entire script if not admin
-if (-not (_IsAdmin))
-{
-    if (-not (_AssertGsudo)) { exit 1 }
-    gsudo pwsh -File "$PSCommandPath" -Action "$Action" -Arg1 "$Arg1" -Arg2 "$Arg2"
-    exit
-}
-
 $confDir = "$env:LOCALAPPDATA\windows-config\wg-socks\configs"
 
 # ==============================================================================
@@ -247,6 +239,17 @@ function _UpdateWireproxy
 if (-not (Get-Command wireproxy -ErrorAction SilentlyContinue))
 {
     Write-Host "Error: wireproxy not found. Run setup-main.ps1 first." -ForegroundColor Red
+    exit
+}
+
+# Define operations that strictly require local administrative elevation.
+# (If you want "list" to completely bypass elevation checks, keep it out of this array)
+$RequiresAdminActions = @("install", "uninstall", "refresh", "update")
+
+if ($Action -in $RequiresAdminActions -and -not (_IsAdmin))
+{
+    if (-not (_AssertGsudo)) { exit 1 }
+    gsudo pwsh -File "$PSCommandPath" -Action "$Action" -Arg1 "$Arg1" -Arg2 "$Arg2"
     exit
 }
 

@@ -414,7 +414,6 @@ if (`$Item -match 'All Updates$') {
 # ==============================================================================
 function cup
 {
-    if (-not (_IsAdmin)) { Invoke-Elevated -Command $MyInvocation.MyCommand.Name; return }
     _PrintHeader "Update Checker"
 
     _PrintHeader "Winget" -Sub
@@ -435,8 +434,6 @@ function cup
 
 function upall
 {
-    if (-not (_IsAdmin)) { Invoke-Elevated -Command $MyInvocation.MyCommand.Name; return }
-
     _PrintHeader "Winget Updates"
     winget source update
     Write-Host ""

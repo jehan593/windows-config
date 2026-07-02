@@ -3,14 +3,6 @@ param([string]$Action, [string]$Name, [string]$ConfigPath)
 . (Join-Path $PSScriptRoot "helpers\elevate.ps1")
 . (Join-Path $PSScriptRoot "helpers\printers.ps1")
 
-# Elevate entire script if not admin
-if (-not (_IsAdmin))
-{
-    if (-not (_AssertGsudo)) { exit 1 }
-    gsudo pwsh -File "$PSCommandPath" -Action "$Action" -Name "$Name" -ConfigPath "$ConfigPath"
-    exit
-}
-
 # --- Paths --------------------------------------------------------------------
 $vpnRoot    = "$env:LOCALAPPDATA\windows-config\vpn"
 $configsDir = "$vpnRoot\configs"
@@ -137,7 +129,6 @@ function _VpnOn {
 }
 
 function _VpnOff {
-
     $active = _GetActiveTunnel
 
     if (-not $active) {
@@ -203,7 +194,6 @@ function _VpnRemove {
 
     $target = "$configsDir\$selected.conf"
     if (Test-Path $target) {
-
         $realUserProfile = $env:USERPROFILE
         if ($realUserProfile -match '\\[Aa]dministrator$') {
             $interactiveUser = Get-CimInstance Win32_ComputerSystem |
@@ -263,6 +253,17 @@ function _VpnStatus {
     }
 
     _PrintFooter
+}
+
+# --- Elevation Check ----------------------------------------------------------
+# Define operations that absolutely require administrative permissions
+$RequiresAdminActions = @("on", "off", "add", "remove", "status")
+
+if ($Action -in $RequiresAdminActions -and -not (_IsAdmin))
+{
+    if (-not (_AssertGsudo)) { exit 1 }
+    gsudo pwsh -File "$PSCommandPath" -Action "$Action" -Name "$Name" -ConfigPath "$ConfigPath"
+    exit
 }
 
 # --- Dispatch -----------------------------------------------------------------
