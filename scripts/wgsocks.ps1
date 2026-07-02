@@ -21,13 +21,13 @@ function _GetSocksPort([string]$ConfFile)
 # ACTIONS
 # ==============================================================================
 
-function _InstallSocks
+function _AddSocks
 {
     param([string]$ConfigPath, [string]$Port)
 
     if (-not $ConfigPath -or -not $Port)
     {
-        Write-Host "Usage: wgsocks install <config_path> <port>" -ForegroundColor Yellow
+        Write-Host "Usage: wgsocks add <config_path> <port>" -ForegroundColor Yellow
         return
     }
 
@@ -70,7 +70,7 @@ function _InstallSocks
         return
     }
 
-    _PrintHeader "Installing Tunnel: $serviceName"
+    _PrintHeader "Adding Tunnel: $serviceName"
 
     servy-cli install --name="$serviceName" --path="$wireproxyPath" --params="-c `"$confDest`"" --startupType=Automatic --enableHealth --heartbeatInterval=10 --maxFailedChecks=3 --recoveryAction=RestartProcess --maxRestartAttempts=10 --quiet
 
@@ -111,26 +111,33 @@ function _ListSocks
     _PrintFooter
 }
 
-function _UninstallSocks
+function _RemoveSocks
 {
     $services = @(Get-Service -ErrorAction SilentlyContinue | Where-Object { $_.Name -like "*-wgsocks" })
     if (-not $services)
     {
-        Write-Host "Error: No tunnels found." -ForegroundColor Gray
+        Write-Host "No tunnels found." -ForegroundColor Gray
+        
         return
     }
 
-    _PrintHeader "Uninstall Tunnels"
-    for ($i = 0; $i -lt $services.Count; $i++)
+    if (-not (Get-Command fzf -ErrorAction SilentlyContinue))
     {
-        $confFile = "$confDir\$($services[$i].Name -replace '-wgsocks','').conf"
-        $port = _GetSocksPort $confFile
-        Write-Host ("  {0,-4} {1,-35} {2}" -f "$($i+1):", $services[$i].Name, $port) -ForegroundColor White
+        Write-Host "Error: fzf not found. Install it first (e.g. winget install fzf)." -ForegroundColor Red
+        return
     }
 
-    Write-Host ""
-    $inputs = Read-Host "Enter numbers to uninstall (comma separated)"
-    if (-not $inputs) { _PrintFooter; return }
+    $entries = $services | ForEach-Object {
+        [PSCustomObject]@{
+            Line = $_.Name
+            Svc  = $_
+        }
+    }
+
+    $picked = $entries.Line | fzf --reverse --multi --height=70% --header="TAB to select, ENTER to confirm removal" --prompt="Remove> "
+    if (-not $picked) { _PrintFooter; return }
+
+    _PrintHeader "Remove Tunnels"
 
     $backupDir = Join-Path ([Environment]::GetFolderPath("MyDocuments")) "wg-socks-backup"
     if (!(Test-Path $backupDir))
@@ -138,17 +145,16 @@ function _UninstallSocks
         New-Item -ItemType Directory -Path $backupDir -Force | Out-Null
     }
 
-    $selected = $inputs -split ',' | ForEach-Object { $_.Trim() } | Where-Object { $_ -match '^\d+$' }
-    foreach ($num in $selected)
+    foreach ($line in $picked)
     {
-        $idx = [int]$num - 1
-        if ($idx -lt 0 -or $idx -ge $services.Count)
+        $entry = $entries | Where-Object { $_.Line -eq $line } | Select-Object -First 1
+        if (-not $entry)
         {
-            Write-Host "Error: Invalid number: $num" -ForegroundColor Red
+            Write-Host "Error: Could not resolve selection: $line" -ForegroundColor Red
             continue
         }
 
-        $svc      = $services[$idx]
+        $svc      = $entry.Svc
         $confFile = "$confDir\$($svc.Name -replace '-wgsocks','').conf"
 
         if (Test-Path $confFile)
@@ -244,7 +250,7 @@ if (-not (Get-Command wireproxy -ErrorAction SilentlyContinue))
 
 # Define operations that strictly require local administrative elevation.
 # (If you want "list" to completely bypass elevation checks, keep it out of this array)
-$RequiresAdminActions = @("install", "uninstall", "refresh", "update")
+$RequiresAdminActions = @("add", "remove", "refresh", "update")
 
 if ($Action -in $RequiresAdminActions -and -not (_IsAdmin))
 {
@@ -255,18 +261,18 @@ if ($Action -in $RequiresAdminActions -and -not (_IsAdmin))
 
 switch ($Action)
 {
-    "install"   { _InstallSocks $Arg1 $Arg2 }
+    "add"       { _AddSocks $Arg1 $Arg2 }
     "list"      { _ListSocks }
-    "uninstall" { _UninstallSocks }
+    "remove"    { _RemoveSocks }
     "refresh"   { _RefreshSocks }
     "update"    { _UpdateWireproxy }
     default
     {
         _PrintHeader "WireGuard SOCKS5 Manager"
-        _PrintRow "install"   "<path> <port>  Create tunnel"
+        _PrintRow "add"       "<path> <port>  Create tunnel"
         _PrintRow "list"      "List all tunnels"
         _PrintRow "refresh"   "Restart all tunnels"
-        _PrintRow "uninstall" "Remove tunnel(s)"
+        _PrintRow "remove"    "Remove tunnel(s)"
         _PrintRow "update"    "Update wireproxy binary"
         _PrintFooter
     }
