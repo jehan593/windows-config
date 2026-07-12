@@ -1,0 +1,16 @@
+{
+  "policies": {
+    "DisableTelemetry:Bool": 1,
+    "DisableFeedbackCommands:Bool": 1,
+    "ExtensionUpdate:Bool": 0,
+    "ManualAppUpdateOnly:Bool": 1,
+    "DisableFirefoxStudies:Bool": 1,
+    "NoDefaultBookmarks:Bool": 1,
+    "ExtensionSettings:Json": {
+      "uBlock0@raymondhill.net": {
+        "installation_mode": "normal_installed",
+        "install_url": "https://addons.mozilla.org/firefox/downloads/latest/ublock-origin/latest.xpi"
+      }
+    }
+  }
+}
