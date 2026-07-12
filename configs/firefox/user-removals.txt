@@ -1,0 +1,3 @@
+browser.search.suggest.enabled
+privacy.globalprivacycontrol.enabled
+browser.contentblocking.category

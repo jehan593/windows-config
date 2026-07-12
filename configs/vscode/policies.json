@@ -1,0 +1,8 @@
+{
+  "policies": {
+    "UpdateMode:String": "manual",
+    "TelemetryLevel:String": "off",
+    "EnableFeedback:Bool": 0,
+    "ExtensionsAutoUpdate:String": "off"
+  }
+}

@@ -1,0 +1,25 @@
+{
+  "policies": {
+    "BraveRewardsDisabled:Bool": 1,
+    "BraveWalletDisabled:Bool": 1,
+    "BraveVPNDisabled:DWord": 1,
+    "BraveAIChatEnabled:Bool": 0,
+    "TorDisabled:Bool": 1,
+    "BraveNewsDisabled:Bool": 1,
+    "BraveTalkDisabled:Bool": 1,
+    "BraveWaybackMachineEnabled:Bool": 0,
+    "BraveP3AEnabled:Bool": 0,
+    "BraveStatsPingEnabled:Bool": 0,
+    "BraveWebDiscoveryEnabled:Bool": 0,
+    "BravePlaylistEnabled:Bool": 0,
+    "ShoppingListEnabled:Bool": 0,
+    "MetricsReportingEnabled:Bool": 0,
+    "SafeBrowsingExtendedReportingEnabled:Bool": 0,
+    "UrlKeyedAnonymizedDataCollectionEnabled:Bool": 0,
+    "FeedbackSurveysEnabled:Bool": 0,
+    "UserFeedbackAllowed:Bool": 0,
+    "DomainReliabilityAllowed:Bool": 0,
+    "PromotionsEnabled:Bool": 0,
+    "SafeBrowsingSurveysEnabled:Bool": 0
+  }
+}
