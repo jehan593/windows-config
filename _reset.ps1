@@ -21,21 +21,21 @@ if (-not ([Security.Principal.WindowsPrincipal] [Security.Principal.WindowsIdent
     exit
 }
 
-. "$ConfigPath\scripts\common-helpers\backup.ps1"
-. "$ConfigPath\scripts\common-helpers\apps.ps1"
-. "$ConfigPath\scripts\wgm\wgm-helper.ps1"
-. "$ConfigPath\scripts\wpm\wpm-helper.ps1"
+. "$ConfigPath\helpers\backup-wg-configs.ps1"
+. "$ConfigPath\helpers\winget-apps.ps1"
+. "$ConfigPath\helpers\wgm-helper.ps1"
+. "$ConfigPath\helpers\wpm-helper.ps1"
 
 # ==============================================================================
 # 2. PRE-FLIGHT (CONFIRMATION BANNERS)
 # ==============================================================================
 Clear-Host
 Write-Host ""
-Write-Host "==========================================" -ForegroundColor Red
-Write-Host "           WINDOWS CONFIG RESET           " -ForegroundColor Red
-Write-Host "==========================================" -ForegroundColor Red
-Write-Host "    This will UNDO everything setup did!  " -ForegroundColor Yellow
-Write-Host "==========================================" -ForegroundColor Red
+Write-Host " ┌──────────────────────────────────────────┐" -ForegroundColor Red
+Write-Host " │           WINDOWS CONFIG RESET           │" -ForegroundColor Red
+Write-Host " ├──────────────────────────────────────────┤" -ForegroundColor Red
+Write-Host " │   This will UNDO everything setup did!   │" -ForegroundColor Yellow
+Write-Host " └──────────────────────────────────────────┘" -ForegroundColor Red
 Write-Host ""
 
 $response = Read-Host "Are you sure you want to completely reset? (y/N)"
@@ -76,52 +76,83 @@ function Remove-Symlink {
     }
 }
 
-$LinksToRemove = @{
-    "PowerShell Profile" = "$HOME\Documents\PowerShell\Microsoft.PowerShell_profile.ps1"
-    "Neovim Init"        = "$env:LOCALAPPDATA\nvim\init.lua"
-    "MPV Config"         = "$env:APPDATA\mpv.net\mpv.conf"
-    "MPV Input"          = "$env:APPDATA\mpv.net\input.conf"
-    "Topgrade Config"    = "$env:APPDATA\topgrade.toml"
+$HomeSourceRoot = Join-Path $ConfigPath "home"
+
+foreach ($item in (Get-ChildItem -Path $HomeSourceRoot -Recurse -File)) {
+    $relativePath = $item.FullName.Substring($HomeSourceRoot.Length + 1)
+    $destPath = Join-Path $HOME $relativePath
+    Write-Host "`n> Removing $relativePath" -ForegroundColor Blue
+    Remove-Symlink $destPath
 }
 
-foreach ($name in $LinksToRemove.Keys) {
-    Write-Host "`n> Removing $name" -ForegroundColor Blue
-    Remove-Symlink $LinksToRemove[$name]
-}
+function Remove-RegistryValues {
+    param([string]$SourcePath, [string]$RegPath, [string]$StopAt)
 
-function Remove-ManagedPolicyBranch {
-    param([string]$Target, [string]$Parent)
-
-    if (-not (Test-Path $Target)) {
-        Write-Host "Policies not found: $(Split-Path $Target -Leaf) (Skipped)" -ForegroundColor Gray
+    if (-not (Test-Path $RegPath)) {
+        Write-Host "Registry key not found: $(Split-Path $RegPath -Leaf) (Skipped)" -ForegroundColor Gray
         return
     }
 
     try {
-        Remove-Item -Path $Target -Recurse -Force -ErrorAction Stop
-        Write-Host "Successfully removed: $(Split-Path $Target -Leaf)" -ForegroundColor Green
+        $json = Get-Content $SourcePath -Raw | ConvertFrom-Json
+        foreach ($prop in $json.values.PSObject.Properties) {
+            # "Name:Type" -> just delete it. "Name:Type:Default" -> an important
+            # value; restore it to its declared default instead of deleting it.
+            $parts   = $prop.Name -split ':', 3
+            $keyName = $parts[0]
 
-        if ($Parent -and (Test-Path $Parent)) {
-            if (-not (Get-ChildItem -Path $Parent -ErrorAction SilentlyContinue)) {
-                Remove-Item -Path $Parent -Recurse -Force -ErrorAction SilentlyContinue
-                Write-Host "Cleaned empty parent container: $(Split-Path $Parent -Leaf)" -ForegroundColor Gray
+            if ($parts.Count -eq 3) {
+                $typeSuffix = $parts[1]
+                $defaultRaw = $parts[2]
+                switch ($typeSuffix) {
+                    { $_ -in 'DWord', 'Bool' } {
+                        New-ItemProperty -Path $RegPath -Name $keyName -Value ([int]$defaultRaw) -PropertyType DWord -Force | Out-Null
+                    }
+                    Default {
+                        New-ItemProperty -Path $RegPath -Name $keyName -Value $defaultRaw -PropertyType String -Force | Out-Null
+                    }
+                }
+                Write-Host "Restored default value: $keyName" -ForegroundColor Gray
             }
+            else {
+                Remove-ItemProperty -Path $RegPath -Name $keyName -Force -ErrorAction SilentlyContinue
+            }
+        }
+        Write-Host "Reverted managed values at: $RegPath" -ForegroundColor Green
+
+        # Only remove the key itself (and climb up) if nothing other than what
+        # we just cleared/restored ever lived here - never touch pre-existing/foreign content.
+        $current = $RegPath
+        while ($current -and $current -ne $StopAt -and (Test-Path $current)) {
+            $item = Get-Item -Path $current
+            if ($item.ValueCount -gt 0 -or $item.SubKeyCount -gt 0) { break }
+
+            Remove-Item -Path $current -Force
+            Write-Host "Removed now-empty key: $(Split-Path $current -Leaf)" -ForegroundColor Gray
+            $current = Split-Path $current -Parent
         }
     }
     catch {
-        Write-Host "Error clearing registry branch for $(Split-Path $Target -Leaf): $_" -ForegroundColor Red
+        Write-Host "Error clearing registry values for $(Split-Path $RegPath -Leaf): $_" -ForegroundColor Red
     }
 }
 
-$policyTargets = @(
-    @{ Title = "Brave Policies";  Target = "HKLM:\SOFTWARE\Policies\BraveSoftware\Brave"; Parent = "HKLM:\SOFTWARE\Policies\BraveSoftware" },
-    @{ Title = "Firefox Policies"; Target = "HKLM:\SOFTWARE\Policies\Mozilla";             Parent = $null },
-    @{ Title = "VS Code Policies"; Target = "HKLM:\SOFTWARE\Policies\Microsoft\VSCode";    Parent = "HKLM:\SOFTWARE\Policies\Microsoft" }
-)
+$RegistrySourceRoot = Join-Path $ConfigPath "registry"
+$RegistryHives = @('HKLM', 'HKCU')
 
-foreach ($policy in $policyTargets) {
-    Write-Host "`n> $($policy.Title)" -ForegroundColor Blue
-    Remove-ManagedPolicyBranch -Target $policy.Target -Parent $policy.Parent
+foreach ($hive in $RegistryHives) {
+    $HiveSourceRoot = Join-Path $RegistrySourceRoot $hive
+    if (-not (Test-Path $HiveSourceRoot)) { continue }
+
+    $hiveStopAt = "${hive}:\"
+    $files = Get-ChildItem -Path $HiveSourceRoot -Recurse -Filter "values.json" |
+        Sort-Object { ($_.DirectoryName -split '\\').Count } -Descending
+
+    foreach ($file in $files) {
+        $regPath = $file.DirectoryName.Substring($RegistrySourceRoot.Length + 1) -replace '^([^\\]+)\\', '$1:\'
+        Write-Host "`n> $regPath" -ForegroundColor Blue
+        Remove-RegistryValues -SourcePath $file.FullName -RegPath $regPath -StopAt $hiveStopAt
+    }
 }
 
 # ==============================================================================

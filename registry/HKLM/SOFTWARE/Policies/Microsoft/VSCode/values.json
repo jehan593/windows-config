@@ -1,5 +1,5 @@
 {
-  "policies": {
+  "values": {
     "UpdateMode:String": "manual",
     "TelemetryLevel:String": "off",
     "EnableFeedback:Bool": 0,

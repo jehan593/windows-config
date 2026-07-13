@@ -6,7 +6,7 @@ $OutputEncoding = [System.Text.Encoding]::UTF8
 # TIMER
 # ==============================================================================
 $ConfigPath = $env:WINDOWS_CONFIG_PATH
-. "$ConfigPath\scripts\common-helpers\keepawake.ps1"
+. "$ConfigPath\helpers\keep-awake.ps1"
 
 # ==============================================================================
 # BIG DIGITS  (5 rows tall)
