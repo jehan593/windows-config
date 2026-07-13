@@ -1,0 +1,130 @@
+{
+  "HKLM": [
+    {
+      "path": "SOFTWARE\\Policies\\BraveSoftware\\Brave",
+      "values": [
+        { "name": "BraveRewardsDisabled", "type": "DWord", "value": 1 },
+        { "name": "BraveWalletDisabled", "type": "DWord", "value": 1 },
+        { "name": "BraveVPNDisabled", "type": "DWord", "value": 1 },
+        { "name": "BraveAIChatEnabled", "type": "DWord", "value": 0 },
+        { "name": "TorDisabled", "type": "DWord", "value": 1 },
+        { "name": "BraveNewsDisabled", "type": "DWord", "value": 1 },
+        { "name": "BraveTalkDisabled", "type": "DWord", "value": 1 },
+        { "name": "BraveWaybackMachineEnabled", "type": "DWord", "value": 0 },
+        { "name": "BraveP3AEnabled", "type": "DWord", "value": 0 },
+        { "name": "BraveStatsPingEnabled", "type": "DWord", "value": 0 },
+        { "name": "BraveWebDiscoveryEnabled", "type": "DWord", "value": 0 },
+        { "name": "BravePlaylistEnabled", "type": "DWord", "value": 0 },
+        { "name": "ShoppingListEnabled", "type": "DWord", "value": 0 },
+        { "name": "MetricsReportingEnabled", "type": "DWord", "value": 0 },
+        { "name": "SafeBrowsingExtendedReportingEnabled", "type": "DWord", "value": 0 },
+        { "name": "UrlKeyedAnonymizedDataCollectionEnabled", "type": "DWord", "value": 0 },
+        { "name": "FeedbackSurveysEnabled", "type": "DWord", "value": 0 },
+        { "name": "UserFeedbackAllowed", "type": "DWord", "value": 0 },
+        { "name": "DomainReliabilityAllowed", "type": "DWord", "value": 0 },
+        { "name": "PromotionsEnabled", "type": "DWord", "value": 0 },
+        { "name": "SafeBrowsingSurveysEnabled", "type": "DWord", "value": 0 }
+      ]
+    },
+    {
+      "path": "SOFTWARE\\Policies\\Microsoft\\VSCode",
+      "values": [
+        { "name": "UpdateMode", "type": "String", "value": "manual" },
+        { "name": "TelemetryLevel", "type": "String", "value": "off" },
+        { "name": "EnableFeedback", "type": "DWord", "value": 0 },
+        { "name": "ExtensionsAutoUpdate", "type": "String", "value": "off" }
+      ]
+    },
+    {
+      "path": "SOFTWARE\\Policies\\Mozilla\\Firefox",
+      "values": [
+        { "name": "DisableTelemetry", "type": "DWord", "value": 1 },
+        { "name": "DisableFeedbackCommands", "type": "DWord", "value": 1 },
+        { "name": "ExtensionUpdate", "type": "DWord", "value": 0 },
+        { "name": "ManualAppUpdateOnly", "type": "DWord", "value": 1 },
+        { "name": "DisableFirefoxStudies", "type": "DWord", "value": 1 },
+        { "name": "NoDefaultBookmarks", "type": "DWord", "value": 1 },
+        {
+          "name": "ExtensionSettings",
+          "type": "Json",
+          "value": {
+            "uBlock0@raymondhill.net": {
+              "installation_mode": "normal_installed",
+              "install_url": "https://addons.mozilla.org/firefox/downloads/latest/ublock-origin/latest.xpi"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "path": "SOFTWARE\\Policies\\Mozilla\\Firefox\\FirefoxSuggest",
+      "values": [
+        { "name": "ImproveSuggest", "type": "DWord", "value": 0 }
+      ]
+    },
+    {
+      "path": "SOFTWARE\\PolicyManager\\current\\device\\Start",
+      "values": [
+        { "name": "HideRecommendedSection", "type": "DWord", "value": "1", "default": "0" }
+      ]
+    },
+    {
+      "path": "SOFTWARE\\Policies\\Microsoft\\Windows\\Explorer",
+      "values": [
+        { "name": "HideRecommendedSection", "type": "DWord", "value": "1", "default": "0" }
+      ]
+    },
+    {
+      "path": "SOFTWARE\\Microsoft\\PolicyManager\\current\\device\\Education",
+      "values": [
+        { "name": "IsEducationEnvironment", "type": "DWord", "value": "1", "default": "0" }
+      ]
+    }
+  ],
+  "HKCU": [
+    {
+      "path": "Software\\Classes\\CLSID\\{86ca1aa0-34aa-4e8b-a509-50c905bae2a2}\\InprocServer32",
+      "values": [
+        { "name": "(Default)", "type": "String", "value": "" }
+      ]
+    },
+    {
+      "path": "Software\\Microsoft\\Windows\\CurrentVersion\\Explorer\\Advanced",
+      "values": [
+        { "name": "HideFileExt", "type": "DWord", "value": "0", "default": "1" },
+        { "name": "Hidden", "type": "DWord", "value": "1", "default": "0" },
+        { "name": "LaunchTo", "type": "DWord", "value": "1" }
+      ]
+    },
+    {
+      "path": "Software\\Microsoft\\Windows\\CurrentVersion\\Policies\\Explorer",
+      "values": [
+        { "name": "SettingsPageVisibility", "type": "String", "value": "hide:home", "default": "show:home" }
+      ]
+    },
+    {
+      "path": "Software\\Microsoft\\Windows\\CurrentVersion\\Search",
+      "values": [
+        { "name": "BingSearchEnabled", "type": "DWord", "value": "0", "default": "1" }
+      ]
+    },
+    {
+      "path": "Software\\Classes\\CLSID\\{f874310e-b6b7-47dc-bc84-b9e6b38f5903}",
+      "values": [
+        { "name": "System.IsPinnedToNameSpaceTree", "type": "DWord", "value": "0" }
+      ]
+    },
+    {
+      "path": "Software\\Classes\\CLSID\\{e88865ea-0e1c-4e20-9aa6-edcd0212c87c}",
+      "values": [
+        { "name": "System.IsPinnedToNameSpaceTree", "type": "DWord", "value": "0" }
+      ]
+    },
+    {
+      "path": "Software\\Microsoft\\Windows\\CurrentVersion\\Explorer\\Advanced\\TaskbarDeveloperSettings",
+      "values": [
+        { "name": "TaskbarEndTask", "type": "DWord", "value": "1" }
+      ]
+    }
+  ]
+}

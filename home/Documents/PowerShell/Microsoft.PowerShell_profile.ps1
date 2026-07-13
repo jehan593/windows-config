@@ -196,7 +196,7 @@ function cleanup
         try {
             dism.exe /online /Cleanup-Image /StartComponentCleanup
         } catch {
-            Write-Host "DISM Failed: $($_.Exception.Message)" -ForegroundColor Yellow
+            Write-Host "DISM Failed: $($_.Exception.Message)" -ForegroundColor Red
         }
 
         Write-Host "`n>Disk Cleanup" -ForegroundColor Blue
@@ -204,7 +204,7 @@ function cleanup
             cleanmgr.exe /d C: /VERYLOWDISK
             Write-Host "Disk Cleanup Started" -ForegroundColor Green
         } catch {
-            Write-Host "Disk Cleanup Failed: $($_.Exception.Message)" -ForegroundColor Yellow
+            Write-Host "Disk Cleanup Failed: $($_.Exception.Message)" -ForegroundColor Red
         }
 
         Write-Host "`n>Temp Folder Cleanup" -ForegroundColor Blue
@@ -215,7 +215,7 @@ function cleanup
                 Write-Host "Cleared items inside: $path" -ForegroundColor Green
             }
             catch {
-                Write-Host "Failed to clear ${path}: $($_.Exception.Message)" -ForegroundColor Yellow
+                Write-Host "Failed to clear ${path}: $($_.Exception.Message)" -ForegroundColor Red
             }
         }
 
@@ -225,7 +225,7 @@ function cleanup
             Write-Host "Recycle Bin Cleaned" -ForegroundColor Green
         }
         catch {
-            Write-Host "Recycle Bin Cleanup Failed: $($_.Exception.Message)" -ForegroundColor Yellow
+            Write-Host "Recycle Bin Cleanup Failed: $($_.Exception.Message)" -ForegroundColor Red
         }
                  
     } -args $env:TEMP, "$env:SystemRoot\Temp"
@@ -250,7 +250,7 @@ function fixgpu
                             Write-Host "Stopped GPU Process: $procId" -ForegroundColor Green
                         }
                         catch {
-                            Write-Host "Failed to stop ${procId}: $($_.Exception.Message)" -ForegroundColor Yellow
+                            Write-Host "Failed to stop ${procId}: $($_.Exception.Message)" -ForegroundColor Red
                         }
                     }
                 }

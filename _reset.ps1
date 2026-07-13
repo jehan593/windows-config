@@ -22,7 +22,7 @@ if (-not ([Security.Principal.WindowsPrincipal] [Security.Principal.WindowsIdent
 }
 
 . "$ConfigPath\helpers\backup-wg-configs.ps1"
-. "$ConfigPath\helpers\winget-apps.ps1"
+. "$ConfigPath\helpers\packages.ps1"
 . "$ConfigPath\helpers\wgm-helper.ps1"
 . "$ConfigPath\helpers\wpm-helper.ps1"
 
@@ -62,7 +62,7 @@ function Remove-Symlink {
         Write-Host "Successfully unlinked: $Path" -ForegroundColor Green
     }
     catch {
-        Write-Error "Failed to remove link: $Path. Error: $_"
+        Write-Host "Failed to remove link: $Path. Error: $_" -ForegroundColor Red
         return
     }
     if ($isOurLink -and (Test-Path $backupPath)) {
@@ -71,7 +71,7 @@ function Remove-Symlink {
             Write-Host "Restored original: $($item.Name)" -ForegroundColor Green
         }
         catch {
-            Write-Error "Failed to restore backup from $backupPath. Error: $_"
+            Write-Host "Failed to restore backup from $backupPath. Error: $_" -ForegroundColor Red
         }
     }
 }
@@ -86,7 +86,7 @@ foreach ($item in (Get-ChildItem -Path $HomeSourceRoot -Recurse -File)) {
 }
 
 function Remove-RegistryValues {
-    param([string]$SourcePath, [string]$RegPath, [string]$StopAt)
+    param([array]$Values, [string]$RegPath, [string]$StopAt)
 
     if (-not (Test-Path $RegPath)) {
         Write-Host "Registry key not found: $(Split-Path $RegPath -Leaf) (Skipped)" -ForegroundColor Gray
@@ -94,28 +94,35 @@ function Remove-RegistryValues {
     }
 
     try {
-        $json = Get-Content $SourcePath -Raw | ConvertFrom-Json
-        foreach ($prop in $json.values.PSObject.Properties) {
-            # "Name:Type" -> just delete it. "Name:Type:Default" -> an important
-            # value; restore it to its declared default instead of deleting it.
-            $parts   = $prop.Name -split ':', 3
-            $keyName = $parts[0]
+        foreach ($entry in $Values) {
+            $isDefaultValue = $entry.name -eq '(Default)'
 
-            if ($parts.Count -eq 3) {
-                $typeSuffix = $parts[1]
-                $defaultRaw = $parts[2]
-                switch ($typeSuffix) {
-                    { $_ -in 'DWord', 'Bool' } {
-                        New-ItemProperty -Path $RegPath -Name $keyName -Value ([int]$defaultRaw) -PropertyType DWord -Force | Out-Null
-                    }
-                    Default {
-                        New-ItemProperty -Path $RegPath -Name $keyName -Value $defaultRaw -PropertyType String -Force | Out-Null
-                    }
+            # No "default" field -> just delete it. "default" present -> an
+            # important value; restore it to its declared default instead of deleting it.
+            if ($null -ne $entry.default) {
+                $propType, $propValue = switch ($entry.type) {
+                    'DWord'  { 'DWord', ([int]$entry.default) }
+                    'String' { 'String', ([string]$entry.default) }
+                    'Json'   { 'String', ($entry.default | ConvertTo-Json -Compress -Depth 10) }
+                    Default  { throw "Unknown registry value type '$($entry.type)' for entry '$($entry.name)'" }
                 }
-                Write-Host "Restored default value: $keyName" -ForegroundColor Gray
+
+                if ($isDefaultValue) {
+                    Set-Item -Path $RegPath -Value $propValue | Out-Null
+                } else {
+                    New-ItemProperty -Path $RegPath -Name $entry.name -Value $propValue -PropertyType $propType -Force | Out-Null
+                }
+                Write-Host "Restored default value: $($entry.name)" -ForegroundColor Gray
+            }
+            elseif ($isDefaultValue) {
+                # The registry provider can't remove a key's default value via
+                # Remove-ItemProperty (no valid -Name maps to it) - reg.exe /ve is
+                # the only way to actually delete it rather than leave it blank.
+                $regExePath = $RegPath -replace '^([A-Z]+):\\', '$1\'
+                reg.exe delete $regExePath /ve /f 2>$null | Out-Null
             }
             else {
-                Remove-ItemProperty -Path $RegPath -Name $keyName -Force -ErrorAction SilentlyContinue
+                Remove-ItemProperty -Path $RegPath -Name $entry.name -Force -ErrorAction SilentlyContinue
             }
         }
         Write-Host "Reverted managed values at: $RegPath" -ForegroundColor Green
@@ -137,21 +144,23 @@ function Remove-RegistryValues {
     }
 }
 
-$RegistrySourceRoot = Join-Path $ConfigPath "registry"
+$RegistryFile = Join-Path $ConfigPath "registry\registry.json"
+$RegistryData = Get-Content $RegistryFile -Raw | ConvertFrom-Json
 $RegistryHives = @('HKLM', 'HKCU')
 
 foreach ($hive in $RegistryHives) {
-    $HiveSourceRoot = Join-Path $RegistrySourceRoot $hive
-    if (-not (Test-Path $HiveSourceRoot)) { continue }
+    $entries = $RegistryData.$hive
+    if (-not $entries) { continue }
 
     $hiveStopAt = "${hive}:\"
-    $files = Get-ChildItem -Path $HiveSourceRoot -Recurse -Filter "values.json" |
-        Sort-Object { ($_.DirectoryName -split '\\').Count } -Descending
+    # Deepest keys first, so a child key is cleared (and possibly removed)
+    # before its parent's own now-empty check runs.
+    $sortedEntries = $entries | Sort-Object { ($_.path -split '\\').Count } -Descending
 
-    foreach ($file in $files) {
-        $regPath = $file.DirectoryName.Substring($RegistrySourceRoot.Length + 1) -replace '^([^\\]+)\\', '$1:\'
+    foreach ($entry in $sortedEntries) {
+        $regPath = "${hive}:\$($entry.path)"
         Write-Host "`n> $regPath" -ForegroundColor Blue
-        Remove-RegistryValues -SourcePath $file.FullName -RegPath $regPath -StopAt $hiveStopAt
+        Remove-RegistryValues -Values $entry.values -RegPath $regPath -StopAt $hiveStopAt
     }
 }
 
@@ -196,7 +205,7 @@ if (-not (Test-Path $wallpaperDst)) {
     Write-Host "Wallpapers directory not found (Skipped)" -ForegroundColor Gray
 } else {
     $confirm = Read-Host "Remove local cloned wallpapers folder? (y/N)"
-    if ($confirm -eq 'y') {
+    if ($confirm.Trim().ToLower() -in @("y", "yes")) {
         Remove-Item $wallpaperDst -Recurse -Force
         Write-Host "Successfully deleted local wallpapers repository" -ForegroundColor Green
     } else {
@@ -263,7 +272,7 @@ $skipWpmCleanup = $false
 
 if ($services) {
     $ans = Read-Host "Existing WPM tunnels found. Remove tunnels and backup configs? (y/N)"
-    if ($ans -ne 'y') {
+    if ($ans.Trim().ToLower() -notin @("y", "yes")) {
         Write-Host "Wireproxy service removal skipped by user" -ForegroundColor Yellow
         $skipWpmCleanup = $true
     }
@@ -406,6 +415,9 @@ else
 Write-Host "`n>>> RESET COMPLETE <<<`n" -ForegroundColor Green
 Write-Host "Note: Uninstall these manually if you no longer use them:" -ForegroundColor Yellow
 foreach ($app in (Get-WingetApps)) { Write-Host "  • $app" -ForegroundColor Yellow }
+foreach ($module in (Get-PsModules)) { Write-Host "  • $module (PowerShell module)" -ForegroundColor Yellow }
 Write-Host "  • PowerShell 7" -ForegroundColor Yellow
+Write-Host ""
+Write-Host "Restart Explorer or sign out and sign back in to apply some registry tweaks." -ForegroundColor Gray
 Write-Host ""
 Pause
