@@ -2,7 +2,7 @@
 # REGISTRY TWEAKS
 # ==============================================================================
 $ConfigPath = $env:WINDOWS_CONFIG_PATH
-. "$ConfigPath\scripts\common-helpers\dependencies.ps1"              
+. "$ConfigPath\helpers\dep-checker.ps1"
 
 if (-not (_TestDependencies -Commands "gsudo", "fzf"))
 {

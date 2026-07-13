@@ -33,7 +33,7 @@ Write-Host ""
 # ==============================================================================
 # 3. PACKAGE MANAGERS & CORE TOOLS
 # ==============================================================================
-. "$ConfigPath\scripts\common-helpers\apps.ps1"
+. "$ConfigPath\helpers\winget-apps.ps1"
 
 Write-Host "`n>Winget Packages" -ForegroundColor Blue
 
@@ -62,7 +62,7 @@ foreach ($module in @("Microsoft.WinGet.Client", "Terminal-Icons"))
 try
 {
     Import-Module Terminal-Icons -ErrorAction Stop
-    $nordThemePath = "$ConfigPath\configs\ps-modules\Terminal-Icons\nord.psd1"
+    $nordThemePath = "$ConfigPath\data\ps-modules\Terminal-Icons\nord.psd1"
     Add-TerminalIconsColorTheme -Path $nordThemePath -Force
     Set-TerminalIconsTheme -ColorTheme 'Nord'
     Write-Host "Terminal-Icons configured with Nord theme" -ForegroundColor Green
@@ -103,62 +103,67 @@ function Set-Symlink {
     }
 }
 
-$SetupItems = @(
-    @{ Name = "PowerShell Profile"; Dest = "$HOME\Documents\PowerShell\Microsoft.PowerShell_profile.ps1"; Src = Join-Path $PSScriptRoot "scripts\ps-profile\Microsoft.PowerShell_profile.ps1" },
-    @{ Name = "Neovim Config";      Dest = "$env:LOCALAPPDATA\nvim\init.lua";                        Src = Join-Path $PSScriptRoot "configs\nvim\init.lua" },
-    @{ Name = "MPV Conf";           Dest = "$env:APPDATA\mpv.net\mpv.conf";                          Src = Join-Path $PSScriptRoot "configs\mpv\mpv.conf" },
-    @{ Name = "MPV Input";          Dest = "$env:APPDATA\mpv.net\input.conf";                        Src = Join-Path $PSScriptRoot "configs\mpv\input.conf" },
-    @{ Name = "Topgrade Config";    Dest = "$env:APPDATA\topgrade.toml";                             Src = Join-Path $PSScriptRoot "configs\topgrade\topgrade.toml" }
-)
+$HomeSourceRoot = Join-Path $ConfigPath "home"
 
-foreach ($item in $SetupItems) {
-    Write-Host "`n>Linking: $($item.Name)" -ForegroundColor Blue
-    Set-Symlink -Path $item.Dest -Target $item.Src
+foreach ($item in (Get-ChildItem -Path $HomeSourceRoot -Recurse -File)) {
+    $relativePath = $item.FullName.Substring($HomeSourceRoot.Length + 1)
+    $destPath = Join-Path $HOME $relativePath
+    Write-Host "`n>Linking: $relativePath" -ForegroundColor Blue
+    Set-Symlink -Path $destPath -Target $item.FullName
 }
 
-function Set-ManagedPolicy {
+function Set-RegistryValues {
     param([string]$SourcePath, [string]$RegPath)
 
     try {
-        New-Item -Path $RegPath -Force | Out-Null
+        # New-Item -Force on a path that already exists wipes ALL of that key's
+        # existing values and subkeys - only call it when the key is genuinely new.
+        if (-not (Test-Path $RegPath)) {
+            New-Item -Path $RegPath -Force | Out-Null
+        }
 
         $json = Get-Content $SourcePath -Raw | ConvertFrom-Json
-        foreach ($prop in $json.policies.PSObject.Properties) {
+        foreach ($prop in $json.values.PSObject.Properties) {
             $name  = $prop.Name
             $value = $prop.Value
-            $parts      = $name -split ':'
+            # "Name:Type" or "Name:Type:Default" - the optional 3rd part is only
+            # used by reset (to restore an important value instead of deleting it).
+            $parts      = $name -split ':', 3
             $keyName    = $parts[0]
             $typeSuffix = if ($parts.Count -gt 1) { $parts[1] } else { 'String' }
 
             switch ($typeSuffix) {
-                { $_ -in 'DWord', 'Bool' } { 
-                    New-ItemProperty -Path $RegPath -Name $keyName -Value ([int]$value) -PropertyType DWord -Force | Out-Null 
+                { $_ -in 'DWord', 'Bool' } {
+                    New-ItemProperty -Path $RegPath -Name $keyName -Value ([int]$value) -PropertyType DWord -Force | Out-Null
                 }
-                'Json' { 
+                'Json' {
                     $jsonStr = $value | ConvertTo-Json -Compress -Depth 10
-                    New-ItemProperty -Path $RegPath -Name $keyName -Value $jsonStr -PropertyType String -Force | Out-Null 
+                    New-ItemProperty -Path $RegPath -Name $keyName -Value $jsonStr -PropertyType String -Force | Out-Null
                 }
-                Default { 
-                    New-ItemProperty -Path $RegPath -Name $keyName -Value ([string]$value) -PropertyType String -Force | Out-Null 
+                Default {
+                    New-ItemProperty -Path $RegPath -Name $keyName -Value ([string]$value) -PropertyType String -Force | Out-Null
                 }
             }
         }
-        Write-Host "Policies applied successfully to: $RegPath" -ForegroundColor Green
+        Write-Host "Registry values applied successfully to: $RegPath" -ForegroundColor Green
     }
     catch {
-        Write-Error "Failed to apply policies to ${RegPath}: $($_.Exception.Message)"
+        Write-Error "Failed to apply registry values to ${RegPath}: $($_.Exception.Message)"
     }
 }
 
-$PolicyConfigs = @(
-    @{ Name = "Brave";   Src = "$PSScriptRoot\configs\brave\policies.json";   Path = "HKLM:\SOFTWARE\Policies\BraveSoftware\Brave" },
-    @{ Name = "Firefox"; Src = "$PSScriptRoot\configs\firefox\policies.json"; Path = "HKLM:\SOFTWARE\Policies\Mozilla\Firefox" },
-    @{ Name = "VS Code"; Src = "$PSScriptRoot\configs\vscode\policies.json";  Path = "HKLM:\SOFTWARE\Policies\Microsoft\VSCode" }
-)
+$RegistrySourceRoot = Join-Path $ConfigPath "registry"
+$RegistryHives = @('HKLM', 'HKCU')
 
-foreach ($config in $PolicyConfigs) {
-    Write-Host "`n> $($config.Name) Policies" -ForegroundColor Blue
-    Set-ManagedPolicy -SourcePath $config.Src -RegPath $config.Path
+foreach ($hive in $RegistryHives) {
+    $HiveSourceRoot = Join-Path $RegistrySourceRoot $hive
+    if (-not (Test-Path $HiveSourceRoot)) { continue }
+
+    foreach ($file in (Get-ChildItem -Path $HiveSourceRoot -Recurse -Filter "values.json")) {
+        $regPath = $file.DirectoryName.Substring($RegistrySourceRoot.Length + 1) -replace '^([^\\]+)\\', '$1:\'
+        Write-Host "`n> $regPath" -ForegroundColor Blue
+        Set-RegistryValues -SourcePath $file.FullName -RegPath $regPath
+    }
 }
 
 # ==============================================================================
@@ -204,7 +209,7 @@ catch {
 
 Write-Host "`n> Windows Terminal Nord Theme" -ForegroundColor Blue
 
-$nordJson = Join-Path $PSScriptRoot "configs\Windows-Terminal\nord.json"
+$nordJson = Join-Path $PSScriptRoot "data\Windows-Terminal\nord.json"
 $wtFragmentPath = "$env:LOCALAPPDATA\Microsoft\Windows Terminal\Fragments\nord"
 
 try {

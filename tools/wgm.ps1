@@ -5,7 +5,7 @@ param(
 )
 
 $ConfigPath = $env:WINDOWS_CONFIG_PATH
-. "$ConfigPath\scripts\common-helpers\dependencies.ps1"
+. "$ConfigPath\helpers\dep-checker.ps1"
 
 if (-not (_TestDependencies -Commands "gsudo", "fzf", "wireguard"))
 {
@@ -13,8 +13,8 @@ if (-not (_TestDependencies -Commands "gsudo", "fzf", "wireguard"))
     return
 }
 
-. "$ConfigPath\scripts\common-helpers\backup.ps1"
-. "$ConfigPath\scripts\wgm\wgm-helper.ps1"
+. "$ConfigPath\helpers\backup-wg-configs.ps1"
+. "$ConfigPath\helpers\wgm-helper.ps1"
 
 # --- Paths --------------------------------------------------------------------
 $wgmRoot    = "$env:LOCALAPPDATA\windows-config-files\wgm"

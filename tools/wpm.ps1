@@ -1,7 +1,7 @@
 param([string]$Action, [string]$Arg1, [string]$Arg2, [string]$Arg3)
 
 $ConfigPath = $env:WINDOWS_CONFIG_PATH
-. "$ConfigPath\scripts\common-helpers\dependencies.ps1"
+. "$ConfigPath\helpers\dep-checker.ps1"
 
 if (-not (_TestDependencies -Commands "gsudo", "fzf", "wireproxy", "servy-cli"))
 {
@@ -9,8 +9,8 @@ if (-not (_TestDependencies -Commands "gsudo", "fzf", "wireproxy", "servy-cli"))
     return
 }
 
-. "$ConfigPath\scripts\common-helpers\backup.ps1"
-. "$ConfigPath\scripts\wpm\wpm-helper.ps1"
+. "$ConfigPath\helpers\backup-wg-configs.ps1"
+. "$ConfigPath\helpers\wpm-helper.ps1"
 
 $confDir = "$env:LOCALAPPDATA\windows-config-files\wpm\configs"
 New-Item -ItemType Directory -Path $confDir -Force > $null

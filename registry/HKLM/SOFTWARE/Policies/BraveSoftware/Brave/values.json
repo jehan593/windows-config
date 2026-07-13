@@ -1,5 +1,5 @@
 {
-  "policies": {
+  "values": {
     "BraveRewardsDisabled:Bool": 1,
     "BraveWalletDisabled:Bool": 1,
     "BraveVPNDisabled:DWord": 1,

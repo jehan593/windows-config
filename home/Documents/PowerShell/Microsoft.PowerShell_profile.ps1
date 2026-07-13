@@ -2,8 +2,7 @@
 # 1. ENVIRONMENT & INITIALIZATION
 # ==============================================================================
 $ConfigPath = $env:WINDOWS_CONFIG_PATH
-$env:STARSHIP_CONFIG = "$ConfigPath\configs\starship\starship.toml"
-. "$ConfigPath\scripts\common-helpers\dependencies.ps1"
+. "$ConfigPath\helpers\dep-checker.ps1"
 
 if (-not (_TestDependencies -Commands "starship", "fzf", "git", "fd", "gsudo", "winget"))
 {
@@ -11,7 +10,7 @@ if (-not (_TestDependencies -Commands "starship", "fzf", "git", "fd", "gsudo", "
     return
 }
 
-. "$ConfigPath\scripts\common-helpers\keepawake.ps1"
+. "$ConfigPath\helpers\keep-awake.ps1"
 
 $env:FZF_DEFAULT_OPTS = '--exact --cycle --border=rounded --color=bg+:#3b4252,bg:#2e3440,spinner:#81a1c1,hl:#c2a166,fg:#d8dee9,header:#5e81ac,info:#b48ead,pointer:#88c0d0,marker:#ebcb8b,fg+:#e5e9f0,prompt:#81a1c1,hl+:#ebcb8b,border:#4c566a --bind "ctrl-a:toggle-all"'
 
@@ -145,7 +144,7 @@ function sz {
     } -args $path
 }
 
-function osage
+function wage
 {
    try{ 
     $installDate = (Get-CimInstance Win32_OperatingSystem).InstallDate
@@ -285,7 +284,7 @@ function fixgpu
 
 function regtwk
 {
-    & "$ConfigPath\scripts\regtwk\regtwk.ps1"
+    & "$ConfigPath\tools\regtwk.ps1"
 }
 
 # ==============================================================================
@@ -411,8 +410,8 @@ function upf
 {
   try{
     $url           = "https://raw.githubusercontent.com/yokoffing/Betterfox/main/user.js"
-    $removalsPath  = "$ConfigPath\configs\firefox\user-removals.txt"
-    $overridesPath = "$ConfigPath\configs\firefox\overrides.txt"
+    $removalsPath  = "$ConfigPath\data\firefox\user-removals.txt"
+    $overridesPath = "$ConfigPath\data\firefox\overrides.txt"
     $profilesPath  = "$env:APPDATA\Mozilla\Firefox\Profiles"
     Write-Host "`n>Betterfox - Firefox user.js Update" -ForegroundColor Blue
     $profiles = Get-ChildItem $profilesPath -Directory
@@ -504,17 +503,17 @@ Set-PSReadLineKeyHandler -Key "Ctrl+h" -ScriptBlock {
 # ==============================================================================
 function wpm
 {
-    & "$ConfigPath\scripts\wpm\wpm.ps1" @args
+    & "$ConfigPath\tools\wpm.ps1" @args
 }
 
 function wgm
 {
-    & "$ConfigPath\scripts\wgm\wgm.ps1" @args
+    & "$ConfigPath\tools\wgm.ps1" @args
 }
 
 function timer
 {
-    & "$ConfigPath\scripts\timer\timer.ps1" @args
+    & "$ConfigPath\tools\timer.ps1" @args
 }
 
 function keepawake

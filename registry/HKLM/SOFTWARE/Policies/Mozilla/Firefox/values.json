@@ -1,5 +1,5 @@
 {
-  "policies": {
+  "values": {
     "DisableTelemetry:Bool": 1,
     "DisableFeedbackCommands:Bool": 1,
     "ExtensionUpdate:Bool": 0,
