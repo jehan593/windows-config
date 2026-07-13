@@ -11,3 +11,11 @@ function Get-WingetApps
         "Microsoft.WindowsTerminal"
     )
 }
+
+# ==============================================================================
+# POWERSHELL MODULE LIST
+# ==============================================================================
+function Get-PsModules
+{
+    return @("Microsoft.WinGet.Client", "Terminal-Icons")
+}

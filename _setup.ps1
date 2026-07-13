@@ -33,7 +33,7 @@ Write-Host ""
 # ==============================================================================
 # 3. PACKAGE MANAGERS & CORE TOOLS
 # ==============================================================================
-. "$ConfigPath\helpers\winget-apps.ps1"
+. "$ConfigPath\helpers\packages.ps1"
 
 Write-Host "`n>Winget Packages" -ForegroundColor Blue
 
@@ -45,7 +45,7 @@ foreach ($app in (Get-WingetApps))
 
 Write-Host "`n>PowerShell Modules" -ForegroundColor Blue
 
-foreach ($module in @("Microsoft.WinGet.Client", "Terminal-Icons"))
+foreach ($module in (Get-PsModules))
 {
     try
     {
@@ -99,7 +99,7 @@ function Set-Symlink {
         Write-Host "Linked: $Path -> $Target" -ForegroundColor Green
     }
     catch {
-        Write-Error "Failed to set symlink at '$Path'. Error: $($_.Exception.Message)"
+        Write-Host "Failed to set symlink at '$Path'. Error: $($_.Exception.Message)" -ForegroundColor Red
     }
 }
 
@@ -113,7 +113,7 @@ foreach ($item in (Get-ChildItem -Path $HomeSourceRoot -Recurse -File)) {
 }
 
 function Set-RegistryValues {
-    param([string]$SourcePath, [string]$RegPath)
+    param([string]$RegPath, [array]$Values)
 
     try {
         # New-Item -Force on a path that already exists wipes ALL of that key's
@@ -122,47 +122,41 @@ function Set-RegistryValues {
             New-Item -Path $RegPath -Force | Out-Null
         }
 
-        $json = Get-Content $SourcePath -Raw | ConvertFrom-Json
-        foreach ($prop in $json.values.PSObject.Properties) {
-            $name  = $prop.Name
-            $value = $prop.Value
-            # "Name:Type" or "Name:Type:Default" - the optional 3rd part is only
-            # used by reset (to restore an important value instead of deleting it).
-            $parts      = $name -split ':', 3
-            $keyName    = $parts[0]
-            $typeSuffix = if ($parts.Count -gt 1) { $parts[1] } else { 'String' }
+        foreach ($entry in $Values) {
+            $propType, $propValue = switch ($entry.type) {
+                'DWord'  { 'DWord', ([int]$entry.value) }
+                'String' { 'String', ([string]$entry.value) }
+                'Json'   { 'String', ($entry.value | ConvertTo-Json -Compress -Depth 10) }
+                Default  { throw "Unknown registry value type '$($entry.type)' for entry '$($entry.name)'" }
+            }
 
-            switch ($typeSuffix) {
-                { $_ -in 'DWord', 'Bool' } {
-                    New-ItemProperty -Path $RegPath -Name $keyName -Value ([int]$value) -PropertyType DWord -Force | Out-Null
-                }
-                'Json' {
-                    $jsonStr = $value | ConvertTo-Json -Compress -Depth 10
-                    New-ItemProperty -Path $RegPath -Name $keyName -Value $jsonStr -PropertyType String -Force | Out-Null
-                }
-                Default {
-                    New-ItemProperty -Path $RegPath -Name $keyName -Value ([string]$value) -PropertyType String -Force | Out-Null
-                }
+            # The registry provider has no -Name for a key's (Default) value -
+            # New-ItemProperty rejects an empty name, so it must go through Set-Item.
+            if ($entry.name -eq '(Default)') {
+                Set-Item -Path $RegPath -Value $propValue | Out-Null
+            } else {
+                New-ItemProperty -Path $RegPath -Name $entry.name -Value $propValue -PropertyType $propType -Force | Out-Null
             }
         }
         Write-Host "Registry values applied successfully to: $RegPath" -ForegroundColor Green
     }
     catch {
-        Write-Error "Failed to apply registry values to ${RegPath}: $($_.Exception.Message)"
+        Write-Host "Failed to apply registry values to ${RegPath}: $($_.Exception.Message)" -ForegroundColor Red
     }
 }
 
-$RegistrySourceRoot = Join-Path $ConfigPath "registry"
+$RegistryFile = Join-Path $ConfigPath "registry\registry.json"
+$RegistryData = Get-Content $RegistryFile -Raw | ConvertFrom-Json
 $RegistryHives = @('HKLM', 'HKCU')
 
 foreach ($hive in $RegistryHives) {
-    $HiveSourceRoot = Join-Path $RegistrySourceRoot $hive
-    if (-not (Test-Path $HiveSourceRoot)) { continue }
+    $entries = $RegistryData.$hive
+    if (-not $entries) { continue }
 
-    foreach ($file in (Get-ChildItem -Path $HiveSourceRoot -Recurse -Filter "values.json")) {
-        $regPath = $file.DirectoryName.Substring($RegistrySourceRoot.Length + 1) -replace '^([^\\]+)\\', '$1:\'
+    foreach ($entry in $entries) {
+        $regPath = "${hive}:\$($entry.path)"
         Write-Host "`n> $regPath" -ForegroundColor Blue
-        Set-RegistryValues -SourcePath $file.FullName -RegPath $regPath
+        Set-RegistryValues -RegPath $regPath -Values $entry.values
     }
 }
 
@@ -204,7 +198,7 @@ try {
     Write-Host "Martian Mono Nerd Font setup complete." -ForegroundColor Green
 }
 catch {
-    Write-Error "Font installation failed: $($_.Exception.Message)"
+    Write-Host "Font installation failed: $($_.Exception.Message)" -ForegroundColor Red
 }
 
 Write-Host "`n> Windows Terminal Nord Theme" -ForegroundColor Blue
@@ -218,7 +212,7 @@ try {
     Write-Host "Nord theme fragment deployed successfully" -ForegroundColor Green
 }
 catch {
-    Write-Error "Failed to deploy Nord theme fragment: $($_.Exception.Message)"
+    Write-Host "Failed to deploy Nord theme fragment: $($_.Exception.Message)" -ForegroundColor Red
 }
 
 Write-Host "`n> Syncing Wallpapers" -ForegroundColor Blue
@@ -331,6 +325,7 @@ Write-Host " └─────────────────────�
 Write-Host ""
 Write-Host " • Wallpapers cloned to: Pictures\windows-config-wallpapers" -ForegroundColor Gray
 Write-Host " • Please restart your terminal application to apply active PATH environment changes." -ForegroundColor Gray
+Write-Host " • Restart Explorer or sign out and sign back in to apply some registry tweaks." -ForegroundColor Gray
 Write-Host ""
 
 Pause

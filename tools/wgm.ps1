@@ -70,7 +70,9 @@ function _WgOn
             return
         }
         Write-Host "Successfully disconnected from '$active'." -ForegroundColor Green
-        Start-Sleep -Milliseconds 1000 
+        if (-not (Wait-WgmTunnelState -ExpectedTunnel $null)) {
+            Write-Host "Warning: '$active' still appears active after waiting." -ForegroundColor Yellow
+        }
     }
 
     if (-not (Test-Path $wgProfile.Path)) {
@@ -100,8 +102,10 @@ function _WgOn
     gsudo wireguard /installtunnelservice $wgProfile.Path
     
     if ($LASTEXITCODE -eq 0) {
+        if (-not (Wait-WgmTunnelState -ExpectedTunnel $wgProfile.Name)) {
+            Write-Host "Warning: tunnel service started but '$($wgProfile.Name)' isn't showing as active yet." -ForegroundColor Yellow
+        }
         Write-Host "Connected to $($wgProfile.Name) successfully!" -ForegroundColor Green
-        Start-Sleep -Milliseconds 1000
     } else {
         Write-Host "Failed to connect to $($wgProfile.Name)." -ForegroundColor Red
     }
@@ -115,8 +119,10 @@ function _WgOff
         return
     }    
     if (Disconnect-WgmTunnel -TunnelName $active -UseGsudo) {
+        if (-not (Wait-WgmTunnelState -ExpectedTunnel $null)) {
+            Write-Host "Warning: '$active' still appears active after waiting." -ForegroundColor Yellow
+        }
         Write-Host "Disconnected from $active" -ForegroundColor Green
-        Start-Sleep -Milliseconds 1000
     } else {
         Write-Host "Disconnect failed" -ForegroundColor Red
     }
