@@ -65,10 +65,10 @@ function Remove-Symlink {
 
 $HomeSourceRoot = Join-Path $ConfigPath "home"
 
+Write-Host "`n> Removing Links to Home Directory..." -ForegroundColor Blue
 foreach ($item in (Get-ChildItem -Path $HomeSourceRoot -Recurse -File)) {
     $relativePath = $item.FullName.Substring($HomeSourceRoot.Length + 1)
     $destPath = Join-Path $HOME $relativePath
-    Write-Host "`n> Removing $relativePath" -ForegroundColor Blue
     Remove-Symlink $destPath
 }
 
@@ -130,6 +130,8 @@ $RegistryFile = Join-Path $ConfigPath "registry\registry.json"
 $RegistryData = Get-Content $RegistryFile -Raw | ConvertFrom-Json
 $RegistryHives = @('HKLM', 'HKCU')
 
+Write-Host "`n> Removing/Resetting Registry Values" -ForegroundColor Blue
+
 foreach ($hive in $RegistryHives) {
     $entries = $RegistryData.$hive
     if (-not $entries) { continue }
@@ -141,8 +143,8 @@ foreach ($hive in $RegistryHives) {
 
     foreach ($entry in $sortedEntries) {
         $regPath = "${hive}:\$($entry.path)"
-        Write-Host "`n> $regPath" -ForegroundColor Blue
         Remove-RegistryValues -Values $entry.values -RegPath $regPath -StopAt $hiveStopAt
+        Write-Host ""
     }
 }
 

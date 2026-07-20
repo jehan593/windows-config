@@ -23,7 +23,9 @@
         { "name": "UserFeedbackAllowed", "type": "DWord", "value": 0 },
         { "name": "DomainReliabilityAllowed", "type": "DWord", "value": 0 },
         { "name": "PromotionsEnabled", "type": "DWord", "value": 0 },
-        { "name": "SafeBrowsingSurveysEnabled", "type": "DWord", "value": 0 }
+        { "name": "SafeBrowsingSurveysEnabled", "type": "DWord", "value": 0 },
+        { "name": "IncognitoModeAvailability", "type": "DWord", "value": 1 },
+        { "name": "BrowserAddPersonEnabled", "type": "DWord", "value": 0 }
       ]
     },
     {
@@ -54,6 +56,17 @@
             }
           }
         }
+      ]
+    },
+    {
+      "path": "SOFTWARE\\Policies\\Google\\Chrome",
+      "values": [
+        { "name": "FeedbackSurveysEnabled", "type": "DWord", "value": 0 },
+        { "name": "UserFeedbackAllowed", "type": "DWord", "value": 0 },
+        { "name": "SafeBrowsingExtendedReportingEnabled", "type": "DWord", "value": 0 },
+        { "name": "SafeBrowsingSurveysEnabled", "type": "DWord", "value": 0 },
+        { "name": "ShoppingListEnabled", "type": "DWord", "value": 0 },
+        { "name": "PromotionsEnabled", "type": "DWord", "value": 0 }
       ]
     },
     {

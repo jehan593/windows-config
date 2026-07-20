@@ -93,10 +93,10 @@ function Set-Symlink {
 
 $HomeSourceRoot = Join-Path $ConfigPath "home"
 
+Write-Host "`n>Linking Files to Home Directory..." -ForegroundColor Blue
 foreach ($item in (Get-ChildItem -Path $HomeSourceRoot -Recurse -File)) {
     $relativePath = $item.FullName.Substring($HomeSourceRoot.Length + 1)
     $destPath = Join-Path $HOME $relativePath
-    Write-Host "`n>Linking: $relativePath" -ForegroundColor Blue
     Set-Symlink -Path $destPath -Target $item.FullName
 }
 
@@ -132,13 +132,14 @@ $RegistryFile = Join-Path $ConfigPath "registry\registry.json"
 $RegistryData = Get-Content $RegistryFile -Raw | ConvertFrom-Json
 $RegistryHives = @('HKLM', 'HKCU')
 
+Write-Host "`n> Applying Registry Values" -ForegroundColor Blue
+
 foreach ($hive in $RegistryHives) {
     $entries = $RegistryData.$hive
     if (-not $entries) { continue }
 
     foreach ($entry in $entries) {
         $regPath = "${hive}:\$($entry.path)"
-        Write-Host "`n> $regPath" -ForegroundColor Blue
         Set-RegistryValues -RegPath $regPath -Values $entry.values
     }
 }
