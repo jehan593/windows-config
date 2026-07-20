@@ -117,31 +117,43 @@ function sz {
         [Parameter(ValueFromPipeline=$true)]
         [string]$path = "."
     )
-    gsudo {
-        param($targetPath)
-        try {
-            $obj = Get-Item -LiteralPath $targetPath -ErrorAction Stop
-            $fullName = $obj.FullName
-            $size = 0       
-            if ($obj.PSIsContainer) {
-                $size = (Get-ChildItem -Path $fullName -Recurse -Force -File -ErrorAction SilentlyContinue | 
-                         Measure-Object -Property Length -Sum).Sum
-                if ($null -eq $size) { $size = 0 }
-            } else {
-                $size = $obj.Length
-            }
 
-            $friendlySize = if ($size -lt 1KB) { "$size bytes" }
-                            elseif ($size -lt 1MB) { "{0:N2} KB" -f ($size / 1KB) }
-                            elseif ($size -lt 1GB) { "{0:N2} MB" -f ($size / 1MB) }  
-                            else { "{0:N2} GB" -f ($size / 1GB) }
+    # -Strict surfaces access-denied instead of swallowing it, so the
+    # un-elevated attempt can detect the need to escalate rather than
+    # spawning gsudo unconditionally for every call.
+    $sizeScript = {
+        param($targetPath, [switch]$Strict)
+        $eap = if ($Strict) { 'Stop' } else { 'SilentlyContinue' }
 
-            Write-Host "$friendlySize ($fullName)"
-        } 
-        catch {
-            Write-Host "Failed: $_" -ForegroundColor Red
+        $obj = Get-Item -LiteralPath $targetPath -ErrorAction Stop
+        $fullName = $obj.FullName
+        $size = 0
+        if ($obj.PSIsContainer) {
+            $size = (Get-ChildItem -Path $fullName -Recurse -Force -File -ErrorAction $eap |
+                     Measure-Object -Property Length -Sum).Sum
+            if ($null -eq $size) { $size = 0 }
+        } else {
+            $size = $obj.Length
         }
-    } -args $path
+
+        $friendlySize = if ($size -lt 1KB) { "$size bytes" }
+                        elseif ($size -lt 1MB) { "{0:N2} KB" -f ($size / 1KB) }
+                        elseif ($size -lt 1GB) { "{0:N2} MB" -f ($size / 1MB) }
+                        else { "{0:N2} GB" -f ($size / 1GB) }
+
+        Write-Host "$friendlySize ($fullName)"
+    }
+
+    try {
+        & $sizeScript $path -Strict
+    }
+    catch [System.UnauthorizedAccessException] {
+        Write-Host "Access denied, retrying elevated..." -ForegroundColor Yellow
+        gsudo $sizeScript -args $path
+    }
+    catch {
+        Write-Host "Failed: $_" -ForegroundColor Red
+    }
 }
 
 function wage
@@ -397,6 +409,8 @@ function upall
     upf
     ups
     upwp
+    Write-Host "`n>Wireproxy Update" -ForegroundColor Blue
+    wpm update
     upc
 }
 

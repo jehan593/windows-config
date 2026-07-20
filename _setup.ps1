@@ -3,22 +3,8 @@
 # ==============================================================================
 $ConfigPath = $PSScriptRoot
 
-if (-not ([Security.Principal.WindowsPrincipal] [Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator))
-{
-    Write-Host "Requesting admin privileges..." -ForegroundColor Yellow
-    $currentRuntime = (Get-Process -Id $PID).Path
-    $psArgs = "-NoProfile -ExecutionPolicy Bypass -File `"$PSCommandPath`""
-
-    if (Get-Command wt -ErrorAction SilentlyContinue)
-    {
-        Start-Process -FilePath wt -ArgumentList "new-tab --title `"Setup`" `"$currentRuntime`" $psArgs" -Verb RunAs
-    }
-    else
-    {
-        Start-Process -FilePath $currentRuntime -ArgumentList $psArgs -Verb RunAs
-    }
-    exit
-}
+. "$ConfigPath\helpers\elevate.ps1"
+Assert-Elevated -ScriptPath $PSCommandPath -Title "Setup"
 
 # ==============================================================================
 # 2. PRE-FLIGHT
@@ -34,6 +20,8 @@ Write-Host ""
 # 3. PACKAGE MANAGERS & CORE TOOLS
 # ==============================================================================
 . "$ConfigPath\helpers\packages.ps1"
+. "$ConfigPath\helpers\registry-value.ps1"
+. "$ConfigPath\helpers\wireproxy-install.ps1"
 
 Write-Host "`n>Winget Packages" -ForegroundColor Blue
 
@@ -123,12 +111,7 @@ function Set-RegistryValues {
         }
 
         foreach ($entry in $Values) {
-            $propType, $propValue = switch ($entry.type) {
-                'DWord'  { 'DWord', ([int]$entry.value) }
-                'String' { 'String', ([string]$entry.value) }
-                'Json'   { 'String', ($entry.value | ConvertTo-Json -Compress -Depth 10) }
-                Default  { throw "Unknown registry value type '$($entry.type)' for entry '$($entry.name)'" }
-            }
+            $propType, $propValue = ConvertTo-RegistryTypedValue -Type $entry.type -RawValue $entry.value -EntryName $entry.name
 
             # The registry provider has no -Name for a key's (Default) value -
             # New-ItemProperty rejects an empty name, so it must go through Set-Item.
@@ -233,11 +216,12 @@ if (-not (Test-Path $wallpaperDst)) {
 # ==============================================================================
 Write-Host "`n> Wireproxy Manager" -ForegroundColor Blue
 
-Write-Host "Installing/Updating wireproxy via Go..." -ForegroundColor Gray
-go install github.com/windtf/wireproxy/cmd/wireproxy@latest
-
-if ($LASTEXITCODE -eq 0) {
-    Write-Host "wireproxy installed successfully" -ForegroundColor Green
+try {
+    $wireproxyExe = Install-Wireproxy
+    Write-Host "wireproxy installed successfully: $wireproxyExe" -ForegroundColor Green
+}
+catch {
+    Write-Host "Failed to install wireproxy: $($_.Exception.Message)" -ForegroundColor Red
 }
 
 

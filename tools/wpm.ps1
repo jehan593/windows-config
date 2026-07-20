@@ -11,6 +11,7 @@ if (-not (_TestDependencies -Commands "gsudo", "fzf", "wireproxy", "servy-cli"))
 
 . "$ConfigPath\helpers\backup-wg-configs.ps1"
 . "$ConfigPath\helpers\wpm-helper.ps1"
+. "$ConfigPath\helpers\wireproxy-install.ps1"
 
 $confDir = "$env:LOCALAPPDATA\windows-config-files\wpm\configs"
 New-Item -ItemType Directory -Path $confDir -Force > $null
@@ -281,6 +282,38 @@ function _RestartSocks
     }
 }
 
+function _UpdateWireproxy
+{
+    $running = @(Get-Service -ErrorAction SilentlyContinue |
+        Where-Object { $_.Name -like "*-wpm" -and $_.Status -eq "Running" } |
+        ForEach-Object { $_.Name })
+
+    if ($running.Count -gt 0) {
+        Write-Host "Stopping active tunnels before update..." -ForegroundColor Gray
+        if (-not (_ServyBatchAction -Verb "stop" -ServiceNames $running)) {
+            Write-Host "Failed to stop one or more tunnels. Aborting update." -ForegroundColor Red
+            return
+        }
+    }
+
+    try {
+        $wireproxyExe = Install-Wireproxy
+        Write-Host "wireproxy updated: $wireproxyExe" -ForegroundColor Green
+    }
+    catch {
+        Write-Host "Failed to update wireproxy: $($_.Exception.Message)" -ForegroundColor Red
+    }
+
+    if ($running.Count -gt 0) {
+        Write-Host "Restarting previously active tunnels..." -ForegroundColor Gray
+        if (_ServyBatchAction -Verb "start" -ServiceNames $running) {
+            Write-Host "Tunnels restarted successfully." -ForegroundColor Green
+        } else {
+            Write-Host "Failed to restart one or more tunnels." -ForegroundColor Red
+        }
+    }
+}
+
 # ==============================================================================
 # MAIN ENTRY
 # ==============================================================================
@@ -293,6 +326,7 @@ switch ($Action)
     "start"    { _StartSocks }
     "stop"     { _StopSocks }
     "restart"  { _RestartSocks }
+    "update"   { _UpdateWireproxy }
     default
     {
         Write-Host ">Wireproxy Manager" -ForegroundColor Blue
@@ -305,6 +339,7 @@ switch ($Action)
         Write-Host "  stop     - Stop target tunnel(s)"
         Write-Host "  restart  - Restart target tunnel(s)"
         Write-Host "  refresh  - Restart ALL tunnels"
+        Write-Host "  update   - Update the wireproxy binary (stops/restarts active tunnels)"
         Write-Host "  rm       - Remove tunnel(s)"
         Write-Host ""
     }

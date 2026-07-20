@@ -4,27 +4,14 @@
 $ConfigPath = $env:WINDOWS_CONFIG_PATH
 if (-not $ConfigPath) { $ConfigPath = $PSScriptRoot }
 
-if (-not ([Security.Principal.WindowsPrincipal] [Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator))
-{
-    Write-Host "Requesting admin privileges..." -ForegroundColor Yellow
-    $currentRuntime = (Get-Process -Id $PID).Path
-    $psArgs = "-NoProfile -ExecutionPolicy Bypass -File `"$PSCommandPath`""
-
-    if (Get-Command wt -ErrorAction SilentlyContinue)
-    {
-        Start-Process -FilePath wt -ArgumentList "new-tab --title `"Reset`" `"$currentRuntime`" $psArgs" -Verb RunAs
-    }
-    else
-    {
-        Start-Process -FilePath $currentRuntime -ArgumentList $psArgs -Verb RunAs
-    }
-    exit
-}
+. "$ConfigPath\helpers\elevate.ps1"
+Assert-Elevated -ScriptPath $PSCommandPath -Title "Reset"
 
 . "$ConfigPath\helpers\backup-wg-configs.ps1"
 . "$ConfigPath\helpers\packages.ps1"
 . "$ConfigPath\helpers\wgm-helper.ps1"
 . "$ConfigPath\helpers\wpm-helper.ps1"
+. "$ConfigPath\helpers\registry-value.ps1"
 
 # ==============================================================================
 # 2. PRE-FLIGHT (CONFIRMATION BANNERS)
@@ -100,12 +87,7 @@ function Remove-RegistryValues {
             # No "default" field -> just delete it. "default" present -> an
             # important value; restore it to its declared default instead of deleting it.
             if ($null -ne $entry.default) {
-                $propType, $propValue = switch ($entry.type) {
-                    'DWord'  { 'DWord', ([int]$entry.default) }
-                    'String' { 'String', ([string]$entry.default) }
-                    'Json'   { 'String', ($entry.default | ConvertTo-Json -Compress -Depth 10) }
-                    Default  { throw "Unknown registry value type '$($entry.type)' for entry '$($entry.name)'" }
-                }
+                $propType, $propValue = ConvertTo-RegistryTypedValue -Type $entry.type -RawValue $entry.default -EntryName $entry.name
 
                 if ($isDefaultValue) {
                     Set-Item -Path $RegPath -Value $propValue | Out-Null
@@ -306,21 +288,29 @@ else {
         Write-Host "Successfully removed WPM application directory data" -ForegroundColor Green
     }
 
-    $goBinPath = Join-Path $HOME "go\bin"
-    $resolvedCmd = Get-Command wireproxy -ErrorAction SilentlyContinue
-    if ($resolvedCmd) { $goBinPath = Split-Path $resolvedCmd.Source }
-
-    $goWireproxyExe = Join-Path $goBinPath "wireproxy.exe"
-    if (Test-Path $goWireproxyExe) {
+    $wireproxyBinDir = "$env:LOCALAPPDATA\windows-config-files\bin"
+    $wireproxyExe    = Join-Path $wireproxyBinDir "wireproxy.exe"
+    if (Test-Path $wireproxyExe) {
         try {
-            Remove-Item $goWireproxyExe -Force -ErrorAction Stop
-            Write-Host "Successfully deleted compiled wireproxy binary from: $goWireproxyExe" -ForegroundColor Green
+            Remove-Item $wireproxyExe -Force -ErrorAction Stop
+            Write-Host "Successfully deleted wireproxy binary from: $wireproxyExe" -ForegroundColor Green
         }
         catch {
             Write-Host "Failed to delete wireproxy binary. File might be locked." -ForegroundColor Red
         }
     }
-    
+
+    if ((Test-Path $wireproxyBinDir) -and -not (Get-ChildItem $wireproxyBinDir -Force -ErrorAction SilentlyContinue)) {
+        Remove-Item $wireproxyBinDir -Force -ErrorAction SilentlyContinue
+    }
+
+    $userPath = [Environment]::GetEnvironmentVariable("Path", "User")
+    if ($userPath -like "*$wireproxyBinDir*") {
+        $newPath = ($userPath -split ';' | Where-Object { $_ -and $_ -ne $wireproxyBinDir }) -join ';'
+        [Environment]::SetEnvironmentVariable("Path", $newPath, "User")
+        Write-Host "Removed wireproxy bin directory from User PATH" -ForegroundColor Green
+    }
+
     if ((Test-Path $configScriptsDir) -and -not (Get-ChildItem $configScriptsDir -Force)) {
         Remove-Item $configScriptsDir -Force -ErrorAction SilentlyContinue
         Write-Host "Cleaned empty root config directory" -ForegroundColor Gray

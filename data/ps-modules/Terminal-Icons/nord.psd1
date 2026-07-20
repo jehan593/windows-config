@@ -64,7 +64,6 @@
                 'README.txt'                    = '88C0D0'
                 'README'                        = '88C0D0'
                 '.DS_Store'                     = '4C566A'  # nord3  dim
-                '.tsbuildinfo'                  = '7681A1'  # muted
                 '.jscsrc'                       = '7681A1'
                 '.jshintrc'                     = '7681A1'
                 'tsconfig.json'                 = '81A1C1'  # nord9  blue
