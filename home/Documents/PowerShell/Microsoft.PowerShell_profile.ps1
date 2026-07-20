@@ -105,7 +105,6 @@ function trash {
             } else {
                 [Microsoft.VisualBasic.FileIO.FileSystem]::DeleteFile($path.FullName, 'OnlyErrorDialogs', 'SendToRecycleBin')
             }
-            Write-Host "Trashed: '$item'" -ForegroundColor Green
         } catch {
             Write-Host "Failed: $_" -ForegroundColor Red
         }
@@ -484,7 +483,7 @@ function ff
     if (-not $search) { Write-Host "Path not found: $Path" -ForegroundColor Red; return }
 
     $selection = fd . $search --hidden --color never --exclude "Windows" |
-        fzf --no-multi --layout=reverse --height=40% --header "Searching: $search"
+        fzf --no-multi --layout=reverse --header "Searching: $search"
 
     if (-not $selection) { return }
 
