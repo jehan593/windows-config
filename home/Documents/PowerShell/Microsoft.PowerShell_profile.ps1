@@ -373,12 +373,20 @@ function upp
 {
     param([switch]$all)
 
-    $updates = @(Get-WinGetPackage | Where-Object { $_.IsUpdateAvailable })
+    $updates = @(Get-WinGetPackage -Source winget | Where-Object { $_.IsUpdateAvailable })
     if (-not $updates.Count) { Write-Host "Up to date" -ForegroundColor Green; return }
 
     $allIds = $updates | Select-Object -ExpandProperty Id
-    $ids = _FzfWingetPicker -Ids $allIds -Header "[Ctrl-P]: Preview | [Tab]: Multi-select | [Ctrl-A]: Toggle All" -Height "70%" -Prompt "Upgrade › "
-    if (-not $ids.Count) { return }
+
+    if ($all)
+    {
+        $ids = $allIds
+    }
+    else
+    {
+        $ids = _FzfWingetPicker -Ids $allIds -Header "[Ctrl-P]: Preview | [Tab]: Multi-select | [Ctrl-A]: Toggle All" -Height "70%" -Prompt "Upgrade › "
+        if (-not $ids.Count) { return }
+    }
 
     Write-Host ""
     Write-Host "Selected to update:" -ForegroundColor Yellow
@@ -404,7 +412,7 @@ function upall
     Write-Host "`n>Winget Updates" -ForegroundColor Blue
     winget source update
     Write-Host ""
-    upp
+    upp -all
     upf
     ups
     upwp
@@ -482,7 +490,12 @@ function ff
     $search = (Resolve-Path $Path -ErrorAction SilentlyContinue).Path
     if (-not $search) { Write-Host "Path not found: $Path" -ForegroundColor Red; return }
 
+    # ForEach-Object forces PowerShell to mediate this pipe with its own text
+    # marshalling instead of connecting fd.exe/fzf.exe via a raw OS pipe. The raw
+    # fast path (PS 7.4+) throws "The pipe is being closed" when fzf exits early
+    # (e.g. a selection made before fd finishes) - see PowerShell/PowerShell#20827.
     $selection = fd . $search --hidden --color never --exclude "Windows" |
+        ForEach-Object { $_ } |
         fzf --no-multi --layout=reverse --header "Searching: $search"
 
     if (-not $selection) { return }
