@@ -2,7 +2,9 @@
 # wgm-helper.ps1
 # ==============================================================================
 function Get-WgmActiveTunnel {
-    return (wg show interfaces 2>$null | Select-Object -First 1)?.Trim()
+    $tunnel = wg show interfaces 2>$null | Select-Object -First 1
+    if ($null -eq $tunnel) { return $null }
+    return $tunnel.Trim()
 }
 
 function Wait-WgmTunnelState {
