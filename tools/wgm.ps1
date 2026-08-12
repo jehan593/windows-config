@@ -266,6 +266,31 @@ function _WgStatus
     }
 }
 
+function _WgList
+{
+    $configs = _GetAllConfigs
+    if ($configs.Count -eq 0) {
+        Write-Host "No profiles available." -ForegroundColor Yellow
+        return
+    }
+
+    $active = Get-WgmActiveTunnel
+    $nameWidth = ($configs | ForEach-Object { $_.Name.Length } | Measure-Object -Maximum).Maximum
+
+    Write-Host ""
+    foreach ($cfg in $configs) {
+        $isActive = ($cfg.Name -eq $active)
+        $paddedName = $cfg.Name.PadRight($nameWidth)
+
+        if ($isActive) {
+            Write-Host -NoNewline $paddedName -ForegroundColor Green
+            Write-Host "  (active)" -ForegroundColor Green
+        } else {
+            Write-Host "$paddedName"
+        }
+    }
+}
+
 # ==============================================================================
 # DISPATCH ENTRY
 # ==============================================================================
@@ -276,6 +301,7 @@ switch ($Action) {
     "add"    { _WgAdd -Name $Name -SourcePath $SourcePath }
     "rm"     { _WgRemove } 
     "status" { _WgStatus }
+    "ls"     { _WgList }
     default {
         Write-Host ">WireGuard Manager" -ForegroundColor Blue
         Write-Host "Usage: wgm <action> [arguments]" -ForegroundColor Yellow
@@ -286,6 +312,7 @@ switch ($Action) {
         Write-Host "  add      - Add a new profile (wgm add <name> <path>)"
         Write-Host "  rm       - Remove a WireGuard Profile"
         Write-Host "  status   - Show tunnel status and all profiles"
+        Write-Host "  ls       - List profile names (* marks the active one)"
         Write-Host ""
     }
 }
