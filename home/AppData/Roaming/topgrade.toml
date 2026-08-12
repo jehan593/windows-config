@@ -5,10 +5,3 @@ ask_retry = false
 no_self_update = false
 disable = ["system", "winget"]
 set_title = false
-
-
-
-
-
-
- 
