@@ -8,7 +8,7 @@ function Get-WingetApps
         "sharkdp.fd", "aelassas.Servy",
         "WireGuard.WireGuard", "ViRb3.wgcf", "gerardog.gsudo",
         "jurplel.qView", "mpv.net", "Neovim.Neovim", "topgrade-rs.topgrade",
-        "Microsoft.WindowsTerminal"
+        "Microsoft.WindowsTerminal", "BurntSushi.ripgrep.MSVC"
     )
 }
 
