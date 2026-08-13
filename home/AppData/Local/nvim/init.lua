@@ -24,6 +24,16 @@ require("lazy").setup({
             vim.cmd.colorscheme("nord")
         end,
     },
+
+    -- Telescope (fuzzy finder)
+    {
+        "nvim-telescope/telescope.nvim",
+        tag = "0.1.8",
+        dependencies = { "nvim-lua/plenary.nvim" },
+        config = function()
+            require("telescope").setup({})
+        end,
+    },
 })
 
 -- 4. Options
@@ -47,3 +57,10 @@ vim.keymap.set("i", "jk", "<Esc>")
 vim.keymap.set("n", "<Esc>", "<cmd>nohlsearch<CR>")
 vim.keymap.set("n", "<leader>q",  "<cmd>qa!<CR>", { desc = "Quit All" })
 vim.keymap.set("n", "<leader>wq", "<cmd>wq<CR>",  { desc = "Save and Quit" })
+
+-- Telescope
+local telescope_builtin = require("telescope.builtin")
+vim.keymap.set("n", "<leader>ff", telescope_builtin.find_files, { desc = "Find Files" })
+vim.keymap.set("n", "<leader>fg", telescope_builtin.live_grep,  { desc = "Live Grep" })
+vim.keymap.set("n", "<leader>fb", telescope_builtin.buffers,    { desc = "Find Buffers" })
+vim.keymap.set("n", "<leader>fh", telescope_builtin.help_tags,  { desc = "Help Tags" })
