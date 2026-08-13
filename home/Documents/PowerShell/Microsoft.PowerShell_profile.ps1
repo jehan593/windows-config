@@ -415,7 +415,6 @@ function upall
     upp -all
     upf
     ups
-    upwp
     Write-Host "`n>Wireproxy Update" -ForegroundColor Blue
     wpm update
     upc
@@ -561,19 +560,7 @@ function keepawake
 }
 
 # ==============================================================================
-# 11. MEDIA
-# ==============================================================================
-function upwp
-{
-    $dir = Join-Path ([Environment]::GetFolderPath("MyPictures")) "windows-config-wallpapers"
-    Write-Host "`n>Wallpaper Repo Update" -ForegroundColor Blue
-    if (-not (Test-Path $dir))
-    { Write-Host "Wallpaper Folder not found: $dir" -ForegroundColor Red; return }
-    git -C $dir pull --rebase --autostash                  
-}
-
-# ==============================================================================
-# 12. THIRD PARTY TOOLS
+# 11. THIRD PARTY TOOLS
 # ==============================================================================
 function ctt
 {

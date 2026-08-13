@@ -12,6 +12,7 @@ Assert-Elevated -ScriptPath $PSCommandPath -Title "Reset"
 . "$ConfigPath\helpers\wgm-helper.ps1"
 . "$ConfigPath\helpers\wpm-helper.ps1"
 . "$ConfigPath\helpers\registry-value.ps1"
+. "$ConfigPath\helpers\repo-list.ps1"
 
 # ==============================================================================
 # 2. PRE-FLIGHT (CONFIRMATION BANNERS)
@@ -182,18 +183,40 @@ else
     Write-Host "Nord theme fragment not found (Skipped)" -ForegroundColor Gray
 }
 
-Write-Host "`n> Removing Wallpapers" -ForegroundColor Blue
-$wallpaperDst = Join-Path ([Environment]::GetFolderPath("MyPictures")) "windows-config-wallpapers"
+Write-Host "`n> Removing Cloned Repos" -ForegroundColor Blue
 
-if (-not (Test-Path $wallpaperDst)) {
-    Write-Host "Wallpapers directory not found (Skipped)" -ForegroundColor Gray
-} else {
-    $confirm = Read-Host "Remove local cloned wallpapers folder? (y/N)"
+foreach ($entry in (Get-RepoList)) {
+    $repoUrl, $repoDest = $entry -split '\|', 2
+    $repoDest = Join-Path $HOME ($repoDest -replace '^~/', '')
+    $repoName = [System.IO.Path]::GetFileNameWithoutExtension($repoUrl)
+    $repoPath = Join-Path $repoDest $repoName
+
+    if (-not (Test-Path $repoPath)) {
+        Write-Host "$repoName not found, skipping." -ForegroundColor Yellow
+        continue
+    }
+
+    $confirm = Read-Host "Remove $repoName ($($repoPath -replace [regex]::Escape($HOME), '~'))? (y/N)"
     if ($confirm.Trim().ToLower() -in @("y", "yes")) {
-        Remove-Item $wallpaperDst -Recurse -Force
-        Write-Host "Successfully deleted local wallpapers repository" -ForegroundColor Green
+        Remove-Item $repoPath -Recurse -Force -ErrorAction SilentlyContinue
+        Write-Host "Removed $repoName." -ForegroundColor Green
     } else {
-        Write-Host "Wallpaper removal skipped" -ForegroundColor Yellow
+        Write-Host "Skipping removal of $repoName." -ForegroundColor Yellow
+    }
+}
+
+Write-Host "`n> Removing Legacy Wallpaper Clone" -ForegroundColor Blue
+$legacyWallpaper = Join-Path $HOME "Pictures\windows-config-wallpapers"
+
+if (-not (Test-Path $legacyWallpaper)) {
+    Write-Host "Legacy wallpapers directory not found (Skipped)" -ForegroundColor Gray
+} else {
+    $confirm = Read-Host "Remove old wallpaper clone (Pictures\windows-config-wallpapers)? (y/N)"
+    if ($confirm.Trim().ToLower() -in @("y", "yes")) {
+        Remove-Item $legacyWallpaper -Recurse -Force
+        Write-Host "Successfully deleted legacy wallpapers repository" -ForegroundColor Green
+    } else {
+        Write-Host "Legacy wallpaper removal skipped" -ForegroundColor Yellow
     }
 }
 

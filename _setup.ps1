@@ -22,6 +22,7 @@ Write-Host ""
 . "$ConfigPath\helpers\packages.ps1"
 . "$ConfigPath\helpers\registry-value.ps1"
 . "$ConfigPath\helpers\wireproxy-install.ps1"
+. "$ConfigPath\helpers\repo-list.ps1"
 
 Write-Host "`n>Winget Packages" -ForegroundColor Blue
 
@@ -199,17 +200,31 @@ catch {
     Write-Host "Failed to deploy Nord theme fragment: $($_.Exception.Message)" -ForegroundColor Red
 }
 
-Write-Host "`n> Syncing Wallpapers" -ForegroundColor Blue
+Write-Host "`n> Cloning Repos" -ForegroundColor Blue
 
-$wallpaperDst = Join-Path ([Environment]::GetFolderPath("MyPictures")) "windows-config-wallpapers"
-$repoUrl      = "https://github.com/jehan593/my-wallpapers.git"
+foreach ($entry in (Get-RepoList)) {
+    $repoUrl, $repoDest = $entry -split '\|', 2
+    $repoDest   = Join-Path $HOME ($repoDest -replace '^~/', '')
+    $repoName   = [System.IO.Path]::GetFileNameWithoutExtension($repoUrl)
+    $repoPath   = Join-Path $repoDest $repoName
+    $displayPath = $repoPath -replace [regex]::Escape($HOME), '~'
 
-if (-not (Test-Path $wallpaperDst)) {
-    Write-Host "Cloning repository..." -ForegroundColor Gray
-    git clone --depth 1 $repoUrl $wallpaperDst
-} else {
-    Write-Host "Updating repository..." -ForegroundColor Gray
-    git -C $wallpaperDst pull --rebase --autostash
+    if (Test-Path (Join-Path $repoPath ".git")) {
+        Write-Host "$repoName already cloned at $displayPath" -ForegroundColor Green
+    }
+    elseif (Test-Path $repoPath) {
+        Write-Host "Destination $displayPath already exists, skipping $repoName" -ForegroundColor Yellow
+    }
+    else {
+        Write-Host "Cloning $repoName..." -ForegroundColor Yellow
+        git clone --depth 1 $repoUrl $repoPath
+        if ($LASTEXITCODE -eq 0) {
+            Write-Host "Cloned $repoName to $displayPath" -ForegroundColor Green
+        }
+        else {
+            Write-Host "Failed to clone $repoUrl" -ForegroundColor Red
+        }
+    }
 }
 
 # ==============================================================================
@@ -308,7 +323,7 @@ Write-Host " ┌─────────────────────�
 Write-Host " │              SETUP COMPLETE              │" -ForegroundColor Cyan
 Write-Host " └──────────────────────────────────────────┘" -ForegroundColor Cyan
 Write-Host ""
-Write-Host " • Wallpapers cloned to: Pictures\windows-config-wallpapers" -ForegroundColor Gray
+Write-Host " • Repos cloned to: ~\Pictures, ~\browser-extensions" -ForegroundColor Gray
 Write-Host " • Please restart your terminal application to apply active PATH environment changes." -ForegroundColor Gray
 Write-Host " • Restart Explorer or sign out and sign back in to apply some registry tweaks." -ForegroundColor Gray
 Write-Host ""
