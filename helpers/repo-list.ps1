@@ -1,12 +1,11 @@
 # ==============================================================================
 # REPO LIST — cloned by _setup.ps1 into ~, removed by _reset.ps1, upgraded by
-# topgrade via home\AppData\Roaming\topgrade.toml [git] repos.
+# the profile's uprep function.
 # Format: "url|dest"
 #   url  — git clone source (HTTPS)
 #   dest — destination path relative to $HOME (leading ~/ expands to $HOME\)
 #
-# Add/remove lines here and setup/reset pick them up. Keep topgrade.toml's
-# [git] repos globs in sync (one entry per dest directory).
+# Add/remove lines here and setup/reset/uprep pick them up.
 # ==============================================================================
 function Get-RepoList
 {
