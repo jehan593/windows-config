@@ -205,21 +205,6 @@ foreach ($entry in (Get-RepoList)) {
     }
 }
 
-Write-Host "`n> Removing Legacy Wallpaper Clone" -ForegroundColor Blue
-$legacyWallpaper = Join-Path $HOME "Pictures\windows-config-wallpapers"
-
-if (-not (Test-Path $legacyWallpaper)) {
-    Write-Host "Legacy wallpapers directory not found (Skipped)" -ForegroundColor Gray
-} else {
-    $confirm = Read-Host "Remove old wallpaper clone (Pictures\windows-config-wallpapers)? (y/N)"
-    if ($confirm.Trim().ToLower() -in @("y", "yes")) {
-        Remove-Item $legacyWallpaper -Recurse -Force
-        Write-Host "Successfully deleted legacy wallpapers repository" -ForegroundColor Green
-    } else {
-        Write-Host "Legacy wallpaper removal skipped" -ForegroundColor Yellow
-    }
-}
-
 # ==============================================================================
 # 5. WIREGUARD MANAGER ROLLBACK
 # ==============================================================================
