@@ -11,6 +11,7 @@ if (-not (_TestDependencies -Commands "starship", "fzf", "git", "fd", "gsudo", "
 }
 
 . "$ConfigPath\helpers\keep-awake.ps1"
+. "$ConfigPath\helpers\repo-list.ps1"
 
 $env:FZF_DEFAULT_OPTS = '--exact --cycle --border=rounded --color=bg+:#3b4252,bg:#2e3440,spinner:#81a1c1,hl:#c2a166,fg:#d8dee9,header:#5e81ac,info:#b48ead,pointer:#88c0d0,marker:#ebcb8b,fg+:#e5e9f0,prompt:#81a1c1,hl+:#ebcb8b,border:#4c566a --bind "ctrl-a:toggle-all"'
 
@@ -417,6 +418,7 @@ function upall
     ups
     Write-Host "`n>Wireproxy Update" -ForegroundColor Blue
     wpm update
+    uprep
     upc
 }
 
@@ -473,6 +475,31 @@ function upc
     Write-Host "`n>Windows Config Update" -ForegroundColor Blue
     git -C $ConfigPath pull --rebase --autostash
     Write-Host "`n'reload' to apply changes" -ForegroundColor Yellow
+}
+
+function uprep
+{
+    Write-Host "`n>Repo Updates" -ForegroundColor Blue
+    foreach ($entry in (Get-RepoList)) {
+        $repoUrl, $repoDest = $entry -split '\|', 2
+        $repoDest   = Join-Path $HOME ($repoDest -replace '^~/', '')
+        $repoName   = [System.IO.Path]::GetFileNameWithoutExtension($repoUrl)
+        $repoPath   = Join-Path $repoDest $repoName
+        $displayPath = $repoPath -replace [regex]::Escape($HOME), '~'
+
+        if (-not (Test-Path $repoPath)) {
+            Write-Host "$repoName not found, skipping." -ForegroundColor Yellow
+            continue
+        }
+
+        Write-Host "$repoName ($displayPath)" -ForegroundColor Yellow
+        try {
+            git -C $repoPath pull --rebase --autostash
+        }
+        catch {
+            Write-Host "Failed: $_" -ForegroundColor Red
+        }
+    }
 }
 
 function topgrade {gsudo topgrade $args }

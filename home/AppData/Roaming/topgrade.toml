@@ -5,12 +5,3 @@ ask_retry = false
 no_self_update = false
 disable = ["system", "winget"]
 set_title = false
-
-[git]
-repos = [
-    "~/browser-extensions/*",
-    "~/Pictures/my-wallpapers"
-]
-
-max_concurrency = 5
-arguments = "--rebase --autostash"
