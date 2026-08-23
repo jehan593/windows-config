@@ -3,8 +3,10 @@ param([string]$Action, [string]$Arg1, [string]$Arg2, [string]$Arg3)
 $ConfigPath = $env:WINDOWS_CONFIG_PATH
 . "$ConfigPath\helpers\dep-checker.ps1"
 
-if (-not (_TestDependencies -Commands "gsudo", "fzf", "wireproxy", "servy-cli"))
+$missingDeps = @(_TestDependencies -Commands "gsudo", "fzf", "wireproxy", "servy-cli")
+if ($missingDeps.Count -gt 0)
 {
+    foreach ($dep in $missingDeps) { Write-Host "$dep not found" -ForegroundColor Red }
     Write-Host "Script stopped due to missing dependencies.`n" -ForegroundColor Red
     return
 }
@@ -284,6 +286,19 @@ function _RestartSocks
 
 function _UpdateWireproxy
 {
+    try {
+        $check = Install-Wireproxy -CheckOnly
+    }
+    catch {
+        Write-Host "Failed to check for wireproxy updates: $($_.Exception.Message)" -ForegroundColor Red
+        return
+    }
+
+    if ($check.UpToDate) {
+        Write-Host "wireproxy is already up to date." -ForegroundColor Green
+        return
+    }
+
     $running = @(Get-Service -ErrorAction SilentlyContinue |
         Where-Object { $_.Name -like "*-wpm" -and $_.Status -eq "Running" } |
         ForEach-Object { $_.Name })
@@ -297,8 +312,9 @@ function _UpdateWireproxy
     }
 
     try {
-        $wireproxyExe = Install-Wireproxy
-        Write-Host "wireproxy updated: $wireproxyExe" -ForegroundColor Green
+        $r = Install-Wireproxy
+        if ($r.UpToDate) { Write-Host "wireproxy already up to date: $($r.Path)" -ForegroundColor Green }
+        else             { Write-Host "wireproxy updated: $($r.Path)" -ForegroundColor Green }
     }
     catch {
         Write-Host "Failed to update wireproxy: $($_.Exception.Message)" -ForegroundColor Red

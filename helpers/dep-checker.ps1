@@ -1,6 +1,8 @@
 # ==============================================================================
 # DEPENDENCY CHECKING
 # ==============================================================================
+# Silent by design - returns the missing command names as a string array
+# (empty when everything is present); callers own the reporting.
 function _TestDependencies
 {
     param(
@@ -17,13 +19,5 @@ function _TestDependencies
             $missing += $cmd
         }
     }
-    if ($missing.Count -gt 0)
-    {
-        foreach ($app in $missing)
-        {
-            Write-Host "$app not found" -ForegroundColor Red
-        }
-        return $false
-    }
-    return $true
+    return $missing
 }

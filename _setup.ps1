@@ -22,6 +22,7 @@ Write-Host ""
 . "$ConfigPath\helpers\packages.ps1"
 . "$ConfigPath\helpers\registry-value.ps1"
 . "$ConfigPath\helpers\wireproxy-install.ps1"
+. "$ConfigPath\helpers\font-install.ps1"
 . "$ConfigPath\helpers\repo-list.ps1"
 
 Write-Host "`n>Winget Packages" -ForegroundColor Blue
@@ -150,40 +151,19 @@ foreach ($hive in $RegistryHives) {
 # ==============================================================================
 Write-Host "`n> Installing Martian Mono Nerd Font" -ForegroundColor Blue
 
-try {
-    $fontZipUrl  = "https://github.com/ryanoasis/nerd-fonts/releases/latest/download/MartianMono.zip"
-    $fontTempDir = Join-Path $env:TEMP "MartianMonoNerdFont"
-    $fontZipPath = Join-Path $env:TEMP "MartianMono.zip"
-
-    Invoke-WebRequest -Uri $fontZipUrl -OutFile $fontZipPath -UseBasicParsing
-    Expand-Archive -Path $fontZipPath -DestinationPath $fontTempDir -Force
-
-    $fontsRegPath   = "HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Fonts"
-    $windowsFontDir = "$env:WINDIR\Fonts"
-    $fontFiles      = Get-ChildItem -Path $fontTempDir -Include "*.ttf", "*.otf" -Recurse
-
-    foreach ($font in $fontFiles) {
-        $destPath = Join-Path $windowsFontDir $font.Name
-        
-        if (-not (Test-Path $destPath)) {
-            Copy-Item -Path $font.FullName -Destination $destPath -Force
-        }
-
-        $fontName = [System.IO.Path]::GetFileNameWithoutExtension($font.Name)
-        $fontType = if ($font.Extension -eq ".otf") { "OpenType" } else { "TrueType" }
-        $regName  = "$fontName ($fontType)"
-
-        if (-not (Get-ItemProperty -Path $fontsRegPath -Name $regName -ErrorAction SilentlyContinue)) {
-            New-ItemProperty -Path $fontsRegPath -Name $regName -Value $font.Name -PropertyType String -Force | Out-Null
-            Write-Host "Registered: $($font.Name)" -ForegroundColor Gray
-        }
-    }
-
-    Remove-Item $fontZipPath, $fontTempDir -Recurse -Force
-    Write-Host "Martian Mono Nerd Font setup complete." -ForegroundColor Green
+$fontResult = Install-MartianMonoFont
+if (-not $fontResult.Success) {
+    Write-Host "Martian Mono Nerd Font installation failed: $($fontResult.Error)" -ForegroundColor Red
 }
-catch {
-    Write-Host "Font installation failed: $($_.Exception.Message)" -ForegroundColor Red
+elseif ($fontResult.UpToDate) {
+    Write-Host "Martian Mono Nerd Font already up to date." -ForegroundColor Green
+}
+else {
+    foreach ($name in $fontResult.Installed)     { Write-Host "Installed: $name" -ForegroundColor Gray }
+    foreach ($name in $fontResult.Updated)       { Write-Host "Updated: $name" -ForegroundColor Gray }
+    foreach ($name in $fontResult.SkippedInUse)  { Write-Host "In use, skipped: $name" -ForegroundColor Yellow }
+    if ($fontResult.RebootCleanup.Count -gt 0)   { Write-Host "Old copies pending deletion at next reboot." -ForegroundColor Yellow }
+    Write-Host "Martian Mono Nerd Font setup complete." -ForegroundColor Green
 }
 
 Write-Host "`n> Windows Terminal Nord Theme" -ForegroundColor Blue
@@ -233,8 +213,13 @@ foreach ($entry in (Get-RepoList)) {
 Write-Host "`n> Wireproxy Manager" -ForegroundColor Blue
 
 try {
-    $wireproxyExe = Install-Wireproxy
-    Write-Host "wireproxy installed successfully: $wireproxyExe" -ForegroundColor Green
+    $wireproxyResult = Install-Wireproxy
+    if ($wireproxyResult.UpToDate) {
+        Write-Host "wireproxy already up to date: $($wireproxyResult.Path)" -ForegroundColor Green
+    }
+    else {
+        Write-Host "wireproxy installed successfully: $($wireproxyResult.Path)" -ForegroundColor Green
+    }
 }
 catch {
     Write-Host "Failed to install wireproxy: $($_.Exception.Message)" -ForegroundColor Red

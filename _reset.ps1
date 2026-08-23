@@ -170,6 +170,8 @@ foreach ($font in Get-ChildItem -Path $windowsFontDir -Filter "MartianMono*" -Er
     }
 }
 
+Remove-Item "$env:LOCALAPPDATA\windows-config-files\martianmono.version" -Force -ErrorAction SilentlyContinue
+
 Write-Host "`n>Windows Terminal Nord Theme" -ForegroundColor Blue
 $wtFragmentPath = "$env:LOCALAPPDATA\Microsoft\Windows Terminal\Fragments\nord"
 
@@ -309,6 +311,8 @@ else {
             Write-Host "Failed to delete wireproxy binary. File might be locked." -ForegroundColor Red
         }
     }
+
+    Remove-Item "$wireproxyBinDir\wireproxy.version" -Force -ErrorAction SilentlyContinue
 
     if ((Test-Path $wireproxyBinDir) -and -not (Get-ChildItem $wireproxyBinDir -Force -ErrorAction SilentlyContinue)) {
         Remove-Item $wireproxyBinDir -Force -ErrorAction SilentlyContinue

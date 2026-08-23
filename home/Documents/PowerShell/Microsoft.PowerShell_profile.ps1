@@ -4,8 +4,10 @@
 $ConfigPath = $env:WINDOWS_CONFIG_PATH
 . "$ConfigPath\helpers\dep-checker.ps1"
 
-if (-not (_TestDependencies -Commands "starship", "fzf", "git", "fd", "gsudo", "winget"))
+$missingDeps = @(_TestDependencies -Commands "starship", "fzf", "git", "fd", "gsudo", "winget")
+if ($missingDeps.Count -gt 0)
 {
+    foreach ($dep in $missingDeps) { Write-Host "$dep not found" -ForegroundColor Red }
     Write-Host "Profile loading failed due to missing dependencies." -ForegroundColor Red
     return
 }
@@ -416,6 +418,7 @@ function upall
     upp -all
     upf
     ups
+    upfont
     Write-Host "`n>Wireproxy Update" -ForegroundColor Blue
     wpm update
     uprep
@@ -468,6 +471,30 @@ function upf
   } catch{
     Write-Host "Failed: $($_.Exception.Message)" -ForegroundColor Red
   }
+}
+
+function upfont
+{
+    Write-Host "`n>Martian Mono Nerd Font Update" -ForegroundColor Blue
+    gsudo {
+        param($configPath)
+        . "$configPath\helpers\font-install.ps1"
+        $r = Install-MartianMonoFont -Update
+        if (-not $r.Success) {
+            Write-Host "Martian Mono Nerd Font update failed: $($r.Error)" -ForegroundColor Red
+        }
+        elseif ($r.UpToDate) {
+            Write-Host "Martian Mono Nerd Font already up to date." -ForegroundColor Green
+        }
+        else {
+            foreach ($name in $r.Installed)     { Write-Host "Installed: $name" -ForegroundColor Gray }
+            foreach ($name in $r.Updated)       { Write-Host "Updated: $name" -ForegroundColor Gray }
+            foreach ($name in $r.SkippedInUse)  { Write-Host "In use, skipped: $name" -ForegroundColor Yellow }
+            if ($r.RebootCleanup.Count -gt 0)   { Write-Host "Old copies pending deletion at next reboot." -ForegroundColor Yellow }
+            Write-Host "Martian Mono Nerd Font update complete." -ForegroundColor Green
+        }
+    } -args $ConfigPath
+    Write-Host "Restart terminal apps to pick up new font glyphs" -ForegroundColor Yellow
 }
 
 function upc
