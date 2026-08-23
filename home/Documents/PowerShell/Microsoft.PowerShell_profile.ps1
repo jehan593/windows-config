@@ -403,14 +403,14 @@ function upp
 # ==============================================================================
 # 8. UPDATES & MAINTENANCE
 # ==============================================================================
-function _Get-Sha256([string]$Text)
+function _GetSha256([string]$Text)
 {
     $sha = [System.Security.Cryptography.SHA256]::Create()
     [System.Convert]::ToHexString($sha.ComputeHash([System.Text.Encoding]::UTF8.GetBytes($Text)))
 }
 
 # Shared by 'cup' (check) and 'upf' (apply) so both hash the exact same content.
-function _Get-BetterfoxUserJs
+function _GetBetterfoxUserJs
 {
     $url           = "https://raw.githubusercontent.com/yokoffing/Betterfox/main/user.js"
     $removalsPath  = "$ConfigPath\data\firefox\user-removals.txt"
@@ -434,7 +434,7 @@ function _Get-BetterfoxUserJs
     return $content
 }
 
-function _Show-GitUpdateStatus
+function _ShowGitUpdateStatus
 {
     param([string]$RepoPath, [string]$Label, [string]$Hint)
 
@@ -472,7 +472,7 @@ function cup
         # Hash of the last-deployed content (after removals/overrides), so local
         # config edits show up here just like a new upstream release does.
         $hashFile = "$env:LOCALAPPDATA\windows-config-files\betterfox_hash.txt"
-        $newHash  = _Get-Sha256 (_Get-BetterfoxUserJs)
+        $newHash  = _GetSha256 (_GetBetterfoxUserJs)
         if ((Test-Path $hashFile) -and ((Get-Content $hashFile -Raw).Trim() -eq $newHash))
         { Write-Host "Up to date" -ForegroundColor Green }
         else
@@ -507,11 +507,11 @@ function cup
         $repoDest = Join-Path $HOME ($repoDest -replace '^~/', '')
         $repoName = [System.IO.Path]::GetFileNameWithoutExtension($repoUrl)
         $repoPath = Join-Path $repoDest $repoName
-        _Show-GitUpdateStatus -RepoPath $repoPath -Label $repoName -Hint "uprep"
+        _ShowGitUpdateStatus -RepoPath $repoPath -Label $repoName -Hint "uprep"
     }
 
     Write-Host "`n>Windows Config" -ForegroundColor Blue
-    _Show-GitUpdateStatus -RepoPath $ConfigPath -Label "windows-config" -Hint "upc"
+    _ShowGitUpdateStatus -RepoPath $ConfigPath -Label "windows-config" -Hint "upc"
 }
 
 function upall
@@ -546,9 +546,9 @@ function upf
 
     # Hash of the last-deployed content (after removals/overrides), so local
     # config edits trigger a redeploy just like a new upstream release does.
-    $content  = _Get-BetterfoxUserJs
+    $content  = _GetBetterfoxUserJs
     $hashFile = "$env:LOCALAPPDATA\windows-config-files\betterfox_hash.txt"
-    $newHash  = _Get-Sha256 $content
+    $newHash  = _GetSha256 $content
     if ((Test-Path $hashFile) -and (Get-Content $hashFile -Raw).Trim() -eq $newHash)
     { Write-Host "Betterfox already up to date" -ForegroundColor Green; return }
 
