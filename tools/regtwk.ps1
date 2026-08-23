@@ -4,8 +4,10 @@
 $ConfigPath = $env:WINDOWS_CONFIG_PATH
 . "$ConfigPath\helpers\dep-checker.ps1"
 
-if (-not (_TestDependencies -Commands "gsudo", "fzf"))
+$missingDeps = @(_TestDependencies -Commands "gsudo", "fzf")
+if ($missingDeps.Count -gt 0)
 {
+    foreach ($dep in $missingDeps) { Write-Host "$dep not found" -ForegroundColor Red }
     Write-Host "Script stopped due to missing dependencies." -ForegroundColor Red
     return
 }

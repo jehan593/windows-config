@@ -13,7 +13,6 @@ function Assert-Elevated
         return
     }
 
-    Write-Host "Requesting admin privileges..." -ForegroundColor Yellow
     $currentRuntime = (Get-Process -Id $PID).Path
     $psArgs = "-NoProfile -ExecutionPolicy Bypass -File `"$ScriptPath`""
 
