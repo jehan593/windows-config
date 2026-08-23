@@ -14,6 +14,8 @@ if ($missingDeps.Count -gt 0)
 
 . "$ConfigPath\helpers\keep-awake.ps1"
 . "$ConfigPath\helpers\repo-list.ps1"
+. "$ConfigPath\helpers\wireproxy-install.ps1"
+. "$ConfigPath\helpers\font-install.ps1"
 
 $env:FZF_DEFAULT_OPTS = '--exact --cycle --border=rounded --color=bg+:#3b4252,bg:#2e3440,spinner:#81a1c1,hl:#c2a166,fg:#d8dee9,header:#5e81ac,info:#b48ead,pointer:#88c0d0,marker:#ebcb8b,fg+:#e5e9f0,prompt:#81a1c1,hl+:#ebcb8b,border:#4c566a --bind "ctrl-a:toggle-all"'
 
@@ -401,6 +403,61 @@ function upp
 # ==============================================================================
 # 8. UPDATES & MAINTENANCE
 # ==============================================================================
+function _Get-Sha256([string]$Text)
+{
+    $sha = [System.Security.Cryptography.SHA256]::Create()
+    [System.Convert]::ToHexString($sha.ComputeHash([System.Text.Encoding]::UTF8.GetBytes($Text)))
+}
+
+# Shared by 'cup' (check) and 'upf' (apply) so both hash the exact same content.
+function _Get-BetterfoxUserJs
+{
+    $url           = "https://raw.githubusercontent.com/yokoffing/Betterfox/main/user.js"
+    $removalsPath  = "$ConfigPath\data\firefox\user-removals.txt"
+    $overridesPath = "$ConfigPath\data\firefox\overrides.txt"
+
+    $lines = (Invoke-WebRequest -Uri $url -UseBasicParsing -ErrorAction Stop).Content -split "`n"
+
+    $removals = Get-Content $removalsPath | Where-Object { $_.Trim() -ne "" }
+    foreach ($key in $removals)
+    {
+        $escaped = [regex]::Escape($key.Trim())
+        $lines   = $lines | Where-Object { $_ -notmatch "user_pref\(`"$escaped`"" }
+    }
+
+    $content = $lines -join "`n"
+
+    $overrides = (Get-Content $overridesPath -Raw).Trim()
+    if ($overrides)
+    { $content = $content.TrimEnd() + "`n`n// overrides.txt`n" + $overrides + "`n" }
+
+    return $content
+}
+
+function _Show-GitUpdateStatus
+{
+    param([string]$RepoPath, [string]$Label, [string]$Hint)
+
+    if (-not (Test-Path (Join-Path $RepoPath ".git")))
+    { Write-Host "$Label not found" -ForegroundColor Yellow; return }
+
+    git -C $RepoPath fetch --quiet 2>$null
+    if ($LASTEXITCODE -ne 0)
+    { Write-Host "$Label fetch failed" -ForegroundColor Red; return }
+
+    $behind = git -C $RepoPath rev-list --count 'HEAD..@{u}' 2>$null
+    if ($LASTEXITCODE -ne 0)
+    { Write-Host "$Label has no upstream branch" -ForegroundColor Yellow; return }
+
+    if ([int]$behind -gt 0)
+    {
+        $msg = "$Label $behind commit(s) behind"
+        if ($Hint) { $msg += ", run '$Hint'" }
+        Write-Host $msg -ForegroundColor Yellow
+    }
+    else { Write-Host "$Label up to date" -ForegroundColor Green }
+}
+
 function cup
 {
     Write-Host "`n>Winget" -ForegroundColor Blue
@@ -408,6 +465,53 @@ function cup
 
     Write-Host "`n>Microsoft Store" -ForegroundColor Blue
     'n' | store updates
+
+    Write-Host "`n>Betterfox" -ForegroundColor Blue
+    try
+    {
+        # Hash of the last-deployed content (after removals/overrides), so local
+        # config edits show up here just like a new upstream release does.
+        $hashFile = "$env:LOCALAPPDATA\windows-config-files\betterfox_hash.txt"
+        $newHash  = _Get-Sha256 (_Get-BetterfoxUserJs)
+        if ((Test-Path $hashFile) -and ((Get-Content $hashFile -Raw).Trim() -eq $newHash))
+        { Write-Host "Up to date" -ForegroundColor Green }
+        else
+        { Write-Host "Update available, run 'upf'" -ForegroundColor Yellow }
+    }
+    catch { Write-Host "Check failed: $($_.Exception.Message)" -ForegroundColor Red }
+
+    Write-Host "`n>Martian Mono Nerd Font" -ForegroundColor Blue
+    try
+    {
+        $r = Install-MartianMonoFont -CheckOnly
+        if     ($r.UpToDate) { Write-Host "Up to date" -ForegroundColor Green }
+        elseif ($r.Success)  { Write-Host "Update available, run 'upfont'" -ForegroundColor Yellow }
+        else                 { Write-Host "Check failed: $($r.Error)" -ForegroundColor Red }
+    }
+    catch { Write-Host "Check failed: $($_.Exception.Message)" -ForegroundColor Red }
+
+    Write-Host "`n>Wireproxy" -ForegroundColor Blue
+    try
+    {
+        if ((Install-Wireproxy -CheckOnly).UpToDate)
+        { Write-Host "Up to date" -ForegroundColor Green }
+        else
+        { Write-Host "Update available, run 'wpm update'" -ForegroundColor Yellow }
+    }
+    catch { Write-Host "Check failed: $($_.Exception.Message)" -ForegroundColor Red }
+
+    Write-Host "`n>Cloned Repos" -ForegroundColor Blue
+    foreach ($entry in (Get-RepoList))
+    {
+        $repoUrl, $repoDest = $entry -split '\|', 2
+        $repoDest = Join-Path $HOME ($repoDest -replace '^~/', '')
+        $repoName = [System.IO.Path]::GetFileNameWithoutExtension($repoUrl)
+        $repoPath = Join-Path $repoDest $repoName
+        _Show-GitUpdateStatus -RepoPath $repoPath -Label $repoName -Hint "uprep"
+    }
+
+    Write-Host "`n>Windows Config" -ForegroundColor Blue
+    _Show-GitUpdateStatus -RepoPath $ConfigPath -Label "windows-config" -Hint "upc"
 }
 
 function upall
@@ -434,34 +538,17 @@ function ups
 function upf
 {
   try{
-    $url           = "https://raw.githubusercontent.com/yokoffing/Betterfox/main/user.js"
-    $removalsPath  = "$ConfigPath\data\firefox\user-removals.txt"
-    $overridesPath = "$ConfigPath\data\firefox\overrides.txt"
-    $profilesPath  = "$env:APPDATA\Mozilla\Firefox\Profiles"
+    $profilesPath = "$env:APPDATA\Mozilla\Firefox\Profiles"
     Write-Host "`n>Betterfox - Firefox user.js Update" -ForegroundColor Blue
     $profiles = Get-ChildItem $profilesPath -Directory
     if ($profiles.Count -eq 0)
     { Write-Host "No profiles found" -ForegroundColor Red; return }
-    $lines = (Invoke-WebRequest -Uri $url -UseBasicParsing -ErrorAction Stop).Content -split "`n"
-
-    $removals = Get-Content $removalsPath | Where-Object { $_.Trim() -ne "" }
-    foreach ($key in $removals)
-    {
-        $escaped = [regex]::Escape($key.Trim())
-        $lines   = $lines | Where-Object { $_ -notmatch "user_pref\(`"$escaped`"" }
-    }
-
-    $content = $lines -join "`n"
-
-    $overrides = (Get-Content $overridesPath -Raw).Trim()
-    if ($overrides)
-    { $content = $content.TrimEnd() + "`n`n// overrides.txt`n" + $overrides + "`n" }
 
     # Hash of the last-deployed content (after removals/overrides), so local
     # config edits trigger a redeploy just like a new upstream release does.
+    $content  = _Get-BetterfoxUserJs
     $hashFile = "$env:LOCALAPPDATA\windows-config-files\betterfox_hash.txt"
-    $sha     = [System.Security.Cryptography.SHA256]::Create()
-    $newHash = [System.Convert]::ToHexString($sha.ComputeHash([System.Text.Encoding]::UTF8.GetBytes($content)))
+    $newHash  = _Get-Sha256 $content
     if ((Test-Path $hashFile) -and (Get-Content $hashFile -Raw).Trim() -eq $newHash)
     { Write-Host "Betterfox already up to date" -ForegroundColor Green; return }
 

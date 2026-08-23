@@ -13,7 +13,13 @@ function Install-MartianMonoFont
 {
     # -Update overwrites already-installed font files with the freshly downloaded
     # ones; without it (plain setup run) existing files are left untouched.
-    param([switch]$Update)
+    # -CheckOnly resolves the release tag and compares it against the local
+    # version marker without downloading anything; Success + UpToDate means
+    # installed, Success without UpToDate means an update is pending.
+    param(
+        [switch]$Update,
+        [switch]$CheckOnly
+    )
 
     $result = [pscustomobject]@{
         Success       = $true
@@ -63,6 +69,19 @@ namespace Win32 {
             (Test-Path (Join-Path $windowsFontDir "MartianMono*")))
         {
             $result.UpToDate = $true
+            return $result
+        }
+
+        # Without a resolved tag there is nothing to compare against, so a check
+        # is inconclusive rather than "update pending" (the install path can
+        # still proceed via the /releases/latest/ alias).
+        if ($CheckOnly)
+        {
+            if (-not $latestTag)
+            {
+                $result.Success = $false
+                $result.Error   = "Could not resolve latest nerd-fonts release"
+            }
             return $result
         }
 
