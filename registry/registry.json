@@ -104,7 +104,9 @@
       "values": [
         { "name": "HideFileExt", "type": "DWord", "value": "0", "default": "1" },
         { "name": "Hidden", "type": "DWord", "value": "1", "default": "0" },
-        { "name": "LaunchTo", "type": "DWord", "value": "1" }
+        { "name": "LaunchTo", "type": "DWord", "value": "1" },
+        { "name": "AutoCheckSelect", "type": "DWord", "value": "1", "default": "0" },
+        { "name": "UseCompactMode", "type": "DWord", "value": "1", "default": "0" }
       ]
     },
     {
