@@ -457,16 +457,32 @@ function upf
     if ($overrides)
     { $content = $content.TrimEnd() + "`n`n// overrides.txt`n" + $overrides + "`n" }
 
+    # Hash of the last-deployed content (after removals/overrides), so local
+    # config edits trigger a redeploy just like a new upstream release does.
+    $hashFile = "$env:LOCALAPPDATA\windows-config-files\betterfox_hash.txt"
+    $sha     = [System.Security.Cryptography.SHA256]::Create()
+    $newHash = [System.Convert]::ToHexString($sha.ComputeHash([System.Text.Encoding]::UTF8.GetBytes($content)))
+    if ((Test-Path $hashFile) -and (Get-Content $hashFile -Raw).Trim() -eq $newHash)
+    { Write-Host "Betterfox already up to date" -ForegroundColor Green; return }
+
+    $updated = 0
     foreach ($prof in $profiles)
     {
         try
         {
             Set-Content -Path (Join-Path $prof.FullName "user.js") -Value $content -ErrorAction Stop
             Write-Host "Added to profile: $($prof.Name)" -ForegroundColor Green
+            $updated++
         } catch
         {
             Write-Host "Failed to add to profile: $($prof.Name)" -ForegroundColor Red
         }
+    }
+
+    if ($updated -gt 0)
+    {
+        $null = New-Item -ItemType Directory -Path (Split-Path $hashFile) -Force
+        Set-Content -Path $hashFile -Value $newHash -ErrorAction SilentlyContinue
     }
   } catch{
     Write-Host "Failed: $($_.Exception.Message)" -ForegroundColor Red
