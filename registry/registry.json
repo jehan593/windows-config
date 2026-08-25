@@ -144,7 +144,7 @@
       "values": [
         { "name": "SystemUsesLightTheme", "type": "DWord", "value": "0", "default": "0" },
         { "name": "AppsUseLightTheme", "type": "DWord", "value": "0", "default": "0" },
-        { "name": "EnableTransparency", "type": "DWord", "value": "1", "default": "1" }
+        { "name": "EnableTransparency", "type": "DWord", "value": "0", "default": "1" }
       ]
     }
   ]
