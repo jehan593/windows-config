@@ -80,6 +80,14 @@ function _WingetAction
     }
 }
 
+function _WingetUpgradeIds
+{
+    $packages = Get-WinGetPackage -Source winget | Where-Object { $_.IsUpdateAvailable }
+    if ($packages) {
+        $packages | ForEach-Object { $_.Id }
+    }
+}
+
 # ==============================================================================
 # 4. PROFILE MANAGEMENT
 # ==============================================================================
@@ -461,7 +469,12 @@ function _ShowGitUpdateStatus
 function cup
 {
     Write-Host "`n>Winget" -ForegroundColor Blue
-    winget upgrade
+    $ids = @(_WingetUpgradeIds)
+    if ($ids.Count -gt 0) {
+        $ids | ForEach-Object { Write-Host "$_" -ForegroundColor Yellow }
+    } else {
+        Write-Host "Up to date" -ForegroundColor Green
+    }
 
     Write-Host "`n>Microsoft Store" -ForegroundColor Blue
     'n' | store updates
