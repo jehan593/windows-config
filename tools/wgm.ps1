@@ -216,7 +216,7 @@ function _WgRemove
         }
 
         $userDocs = [Environment]::GetFolderPath("MyDocuments")
-        $backupRoot = Join-Path $userDocs "wgm-backup"
+        $backupRoot = Join-Path $userDocs "windows-config-backup\wgm"
         $backupFile = Join-Path $backupRoot "$selected.conf"
         
         if (Backup-Configs -SourcePath $target -BackupDir $backupRoot) {
