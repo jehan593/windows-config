@@ -187,7 +187,7 @@ function _RemoveSocks
     $selected = _SelectTunnelsInteractively "TAB to select, ENTER to confirm removal"
     if (-not $selected) { return }
 
-    $backupDir = Join-Path ([Environment]::GetFolderPath("MyDocuments")) "wpm-backup"
+    $backupDir = Join-Path ([Environment]::GetFolderPath("MyDocuments")) "windows-config-backup\wpm"
 
     $allOk = $true
     foreach ($entry in $selected)

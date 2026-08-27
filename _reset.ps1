@@ -214,7 +214,7 @@ Write-Host "`n> WireGuard Manager Rollback" -ForegroundColor Blue
 
 $wgmConfDir = "$env:LOCALAPPDATA\windows-config-files\wgm\configs"
 $wgmDir     = "$env:LOCALAPPDATA\windows-config-files\wgm"
-$wgmBackup  = Join-Path ([Environment]::GetFolderPath("MyDocuments")) "wgm-backup"
+$wgmBackup  = Join-Path ([Environment]::GetFolderPath("MyDocuments")) "windows-config-backup\wgm"
 
 if (Get-Command wg -ErrorAction SilentlyContinue) {
     $activeTunnel = Get-WgmActiveTunnel
@@ -236,7 +236,7 @@ $wgmConfFiles = if (Test-Path $wgmConfDir) { Get-ChildItem -Path $wgmConfDir -Fi
 if ($wgmConfFiles) {
     Write-Host "Found configuration files. Creating backup..." -ForegroundColor Gray
     if (Backup-Configs -SourcePath $wgmConfDir -BackupDir $wgmBackup) {
-        Write-Host "Configurations backed up safely to: Documents\wgm-backup" -ForegroundColor Green
+        Write-Host "Configurations backed up safely to: Documents\windows-config-backup\wgm" -ForegroundColor Green
     } else {
         Write-Host "Warning: Failed to backup configs." -ForegroundColor Red
     }
@@ -259,7 +259,7 @@ Write-Host "`n>Wireproxy Manager Rollback" -ForegroundColor Blue
 $configScriptsDir = "$env:LOCALAPPDATA\windows-config-files"
 $wpmDir           = "$configScriptsDir\wpm"
 $wpmConf          = "$wpmDir\configs"
-$backupDir        = Join-Path ([Environment]::GetFolderPath("MyDocuments")) "wpm-backup"
+$backupDir        = Join-Path ([Environment]::GetFolderPath("MyDocuments")) "windows-config-backup\wpm"
 
 $services = Get-Service -ErrorAction SilentlyContinue | Where-Object { $_.Name -like "*-wpm" }
 $skipWpmCleanup = $false
@@ -275,7 +275,7 @@ if ($services) {
         if ($wpmConfFiles) {
             Write-Host "Backing up Wireproxy configuration files..." -ForegroundColor Gray
             if (Backup-Configs -SourcePath $wpmConf -BackupDir $backupDir) {
-                Write-Host "WPM configurations backed up safely to: Documents\wpm-backup" -ForegroundColor Green
+                Write-Host "WPM configurations backed up safely to: Documents\windows-config-backup\wpm" -ForegroundColor Green
             }
             else {
                 Write-Host "Failed to back up WPM configs" -ForegroundColor Red
@@ -328,6 +328,23 @@ else {
     if ((Test-Path $configScriptsDir) -and -not (Get-ChildItem $configScriptsDir -Force)) {
         Remove-Item $configScriptsDir -Force -ErrorAction SilentlyContinue
         Write-Host "Cleaned empty root config directory" -ForegroundColor Gray
+    }
+}
+
+# ==============================================================================
+# 6b. GITGET CONFIG BACKUP
+# ==============================================================================
+$gitgetConf = "$env:LOCALAPPDATA\windows-config-files\gitget\config.json"
+if (Test-Path $gitgetConf) {
+    $gitgetBackupDir = Join-Path ([Environment]::GetFolderPath("MyDocuments")) "windows-config-backup\gitget"
+    New-Item -ItemType Directory -Force -Path $gitgetBackupDir | Out-Null
+    $gitgetBackup = Join-Path $gitgetBackupDir "config.json"
+    try {
+        Copy-Item -LiteralPath $gitgetConf -Destination $gitgetBackup -Force -ErrorAction Stop
+        Write-Host "GitGet config backed up to: Documents\windows-config-backup\gitget\config.json" -ForegroundColor Green
+    }
+    catch {
+        Write-Host "Failed to back up GitGet config: $($_.Exception.Message)" -ForegroundColor Red
     }
 }
 

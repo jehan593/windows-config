@@ -444,26 +444,45 @@ function _GetBetterfoxUserJs
 
 function _ShowGitUpdateStatus
 {
-    param([string]$RepoPath, [string]$Label, [string]$Hint)
+    param(
+        [string]$RepoPath,
+        [string]$Label,
+        [string]$Hint,
+        [switch]$AsObject
+    )
 
     if (-not (Test-Path (Join-Path $RepoPath ".git")))
-    { Write-Host "$Label not found" -ForegroundColor Yellow; return }
+    {
+        if ($AsObject) { return [pscustomobject]@{ Status = "missing"; Label = $Label; Message = "$Label not found" } }
+        Write-Host "$Label not found" -ForegroundColor Yellow; return
+    }
 
     git -C $RepoPath fetch --quiet 2>$null
     if ($LASTEXITCODE -ne 0)
-    { Write-Host "$Label fetch failed" -ForegroundColor Red; return }
+    {
+        if ($AsObject) { return [pscustomobject]@{ Status = "error"; Label = $Label; Message = "$Label fetch failed" } }
+        Write-Host "$Label fetch failed" -ForegroundColor Red; return
+    }
 
     $behind = git -C $RepoPath rev-list --count 'HEAD..@{u}' 2>$null
     if ($LASTEXITCODE -ne 0)
-    { Write-Host "$Label has no upstream branch" -ForegroundColor Yellow; return }
+    {
+        if ($AsObject) { return [pscustomobject]@{ Status = "error"; Label = $Label; Message = "$Label has no upstream branch" } }
+        Write-Host "$Label has no upstream branch" -ForegroundColor Yellow; return
+    }
 
     if ([int]$behind -gt 0)
     {
         $msg = "$Label $behind commit(s) behind"
         if ($Hint) { $msg += ", run '$Hint'" }
+        if ($AsObject) { return [pscustomobject]@{ Status = "update"; Label = $Label; Message = $msg } }
         Write-Host $msg -ForegroundColor Yellow
     }
-    else { Write-Host "$Label up to date" -ForegroundColor Green }
+    else
+    {
+        if ($AsObject) { return [pscustomobject]@{ Status = "ok"; Label = $Label; Message = "$Label up to date" } }
+        Write-Host "$Label up to date" -ForegroundColor Green
+    }
 }
 
 function cup
@@ -472,6 +491,8 @@ function cup
     $ids = @(_WingetUpgradeIds)
     if ($ids.Count -gt 0) {
         $ids | ForEach-Object { Write-Host "$_" -ForegroundColor Yellow }
+        Write-Host ""
+        Write-Host "$($ids.Count) update(s) available" -ForegroundColor Yellow
     } else {
         Write-Host "Up to date" -ForegroundColor Green
     }
@@ -513,14 +534,27 @@ function cup
     }
     catch { Write-Host "Check failed: $($_.Exception.Message)" -ForegroundColor Red }
 
+    Write-Host "`n>GitGet" -ForegroundColor Blue
+    gitget check
+
     Write-Host "`n>Cloned Repos" -ForegroundColor Blue
-    foreach ($entry in (Get-RepoList))
+    $repoResults = foreach ($entry in (Get-RepoList))
     {
         $repoUrl, $repoDest = $entry -split '\|', 2
         $repoDest = Join-Path $HOME ($repoDest -replace '^~/', '')
         $repoName = [System.IO.Path]::GetFileNameWithoutExtension($repoUrl)
         $repoPath = Join-Path $repoDest $repoName
-        _ShowGitUpdateStatus -RepoPath $repoPath -Label $repoName -Hint "uprep"
+        _ShowGitUpdateStatus -RepoPath $repoPath -Label $repoName -Hint "uprep" -AsObject
+    }
+    $repoUpdates = @($repoResults | Where-Object { $_.Status -eq "update" })
+    $repoErrors  = @($repoResults | Where-Object { $_.Status -ne "update" -and $_.Status -ne "ok" })
+    if ($repoUpdates.Count -gt 0 -or $repoErrors.Count -gt 0) {
+        $repoResults | Where-Object { $_.Status -ne "ok" } | ForEach-Object {
+            $color = if ($_.Status -eq "update") { "Yellow" } else { if ($_.Status -eq "missing") { "Yellow" } else { "Red" } }
+            Write-Host $_.Message -ForegroundColor $color
+        }
+    } else {
+        Write-Host "Up to date" -ForegroundColor Green
     }
 
     Write-Host "`n>Windows Config" -ForegroundColor Blue
@@ -538,6 +572,8 @@ function upall
     upfont
     Write-Host "`n>Wireproxy Update" -ForegroundColor Blue
     wpm update
+    Write-Host "`n>GitGet Update" -ForegroundColor Blue
+    gitget update -All
     uprep
     upc
 }
@@ -608,9 +644,9 @@ function upfont
             foreach ($name in $r.SkippedInUse)  { Write-Host "In use, skipped: $name" -ForegroundColor Yellow }
             if ($r.RebootCleanup.Count -gt 0)   { Write-Host "Old copies pending deletion at next reboot." -ForegroundColor Yellow }
             Write-Host "Martian Mono Nerd Font update complete." -ForegroundColor Green
+            Write-Host "Restart terminal apps to pick up new font glyphs" -ForegroundColor Yellow
         }
     } -args $ConfigPath
-    Write-Host "Restart terminal apps to pick up new font glyphs" -ForegroundColor Yellow
 }
 
 function upc
@@ -623,6 +659,7 @@ function upc
 function uprep
 {
     Write-Host "`n>Repo Updates" -ForegroundColor Blue
+    $anyUpdated = $false
     foreach ($entry in (Get-RepoList)) {
         $repoUrl, $repoDest = $entry -split '\|', 2
         $repoDest   = Join-Path $HOME ($repoDest -replace '^~/', '')
@@ -635,14 +672,21 @@ function uprep
             continue
         }
 
-        Write-Host "$repoName ($displayPath)" -ForegroundColor Yellow
         try {
-            git -C $repoPath pull --rebase --autostash
+            $output = git -C $repoPath pull --rebase --autostash 2>&1
+            if ($output -match "Already up to date") {
+                continue
+            }
+            Write-Host "$repoName ($displayPath)" -ForegroundColor Yellow
+            $output | ForEach-Object { Write-Host "  $_" -ForegroundColor Gray }
+            $anyUpdated = $true
         }
         catch {
-            Write-Host "Failed: $_" -ForegroundColor Red
+            Write-Host "$repoName pull failed: $_" -ForegroundColor Red
+            $anyUpdated = $true
         }
     }
+    if (-not $anyUpdated) { Write-Host "Up to date" -ForegroundColor Green }
 }
 
 function topgrade {gsudo topgrade $args }
@@ -709,6 +753,11 @@ function wgm
 function timer
 {
     & "$ConfigPath\tools\timer.ps1" @args
+}
+
+function gitget
+{
+    & "$ConfigPath\tools\gitget.ps1" @args
 }
 
 function keepawake
