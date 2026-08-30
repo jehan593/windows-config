@@ -94,6 +94,51 @@ function _Tweak_EditWithNeovim
     } -args $nvimPath, "wt.exe nvim `"%1`""
 }
 
+function _Tweak_OpenWithOpenCode
+{
+    Write-Host "`n04. Add 'Open with Opencode' to Folder Context Menu" -ForegroundColor Blue
+
+    $parents = @(
+        "SOFTWARE\Classes\Directory\shell"
+        "SOFTWARE\Classes\Directory\Background\shell"
+    )
+    $cmdFolder     = "wt.exe -d `"%1`" opencode"
+    $cmdBackground = "wt.exe -d `"%V`" opencode"
+    $opencodeExe   = (Get-Command opencode -ErrorAction SilentlyContinue).Source
+
+    foreach ($parent in $parents)
+    {
+        $isBackground = $parent -match "Background"
+        $cmd  = if ($isBackground) { $cmdBackground } else { $cmdFolder }
+        # gsudo flatten/joins array args with spaces, so only pass scalars here.
+        gsudo {
+            param($parent, $cmd, $icon)
+            try {
+                $hklm  = [Microsoft.Win32.Registry]::LocalMachine
+                $parentKey = $hklm.OpenSubKey($parent, $true)
+                if ($parentKey)
+                {
+                    foreach ($sub in @($parentKey.GetSubKeyNames()))
+                    {
+                        if ($sub -like "OpenWithOpenCode*") { $parentKey.DeleteSubKeyTree($sub) }
+                    }
+                    $parentKey.Close()
+                }
+                $shell = $hklm.CreateSubKey("$parent\OpenWithOpenCode")
+                $shell.SetValue("", "Open with Opencode")
+                if ($icon) { $shell.SetValue("Icon", $icon) }
+                $cmdKey = $shell.CreateSubKey("command")
+                $cmdKey.SetValue("", $cmd)
+                $cmdKey.Close(); $shell.Close()
+                $where = if ($parent -match "Background") { "folder background menu" } else { "folder menu" }
+                Write-Host "Added 'Open with Opencode' to the $where." -ForegroundColor Green
+            } catch {
+                Write-Host "Failed to add: $($_.Exception.Message)" -ForegroundColor Red
+            }
+        } -args $parent, $cmd, $opencodeExe
+    }
+}
+
 # ==============================================================================
 # MENU
 # ==============================================================================
@@ -101,6 +146,7 @@ $tweaks = @(
     "01  Remove Git GUI & Bash Here from Context Menu"
     "02  Set Windows Update to Recommended Settings"
     "03  Add 'Edit with Neovim' to File Context Menu"
+    "04  Add 'Open with Opencode' to Folder Context Menu"
 )
 
 $selected = $tweaks | fzf --exact --multi --reverse `
@@ -115,5 +161,6 @@ foreach ($item in $selected)
         "^01" { _Tweak_RemoveGitContextMenu }
         "^02" { _Tweak_WindowsUpdateRecommended }
         "^03" { _Tweak_EditWithNeovim }
+        "^04" { _Tweak_OpenWithOpenCode }
     }
 }
