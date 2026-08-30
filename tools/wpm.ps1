@@ -286,11 +286,9 @@ function _RestartSocks
 
 function _UpdateWireproxy
 {
-    try {
-        $check = Install-Wireproxy -CheckOnly
-    }
-    catch {
-        Write-Host "Failed to check for wireproxy updates: $($_.Exception.Message)" -ForegroundColor Red
+    $check = Install-Wireproxy -CheckOnly
+    if (-not $check.Success) {
+        Write-Host "Failed to check for wireproxy updates: $($check.Error)" -ForegroundColor Red
         return
     }
 
@@ -311,14 +309,10 @@ function _UpdateWireproxy
         }
     }
 
-    try {
-        $r = Install-Wireproxy
-        if ($r.UpToDate) { Write-Host "wireproxy already up to date: $($r.Path)" -ForegroundColor Green }
-        else             { Write-Host "wireproxy updated: $($r.Path)" -ForegroundColor Green }
-    }
-    catch {
-        Write-Host "Failed to update wireproxy: $($_.Exception.Message)" -ForegroundColor Red
-    }
+    $r = Install-Wireproxy
+    if (-not $r.Success) { Write-Host "Failed to update wireproxy: $($r.Error)" -ForegroundColor Red }
+    elseif ($r.UpToDate) { Write-Host "wireproxy already up to date: $($r.Path)" -ForegroundColor Green }
+    else                 { Write-Host "wireproxy updated: $($r.Path)" -ForegroundColor Green }
 
     if ($running.Count -gt 0) {
         Write-Host "Restarting previously active tunnels..." -ForegroundColor Gray

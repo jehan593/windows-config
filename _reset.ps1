@@ -9,6 +9,7 @@ Assert-Elevated -ScriptPath $PSCommandPath -Title "Reset"
 
 . "$ConfigPath\helpers\backup-wg-configs.ps1"
 . "$ConfigPath\helpers\packages.ps1"
+. "$ConfigPath\helpers\font-install.ps1"
 . "$ConfigPath\helpers\wgm-helper.ps1"
 . "$ConfigPath\helpers\wpm-helper.ps1"
 . "$ConfigPath\helpers\registry-value.ps1"
@@ -159,7 +160,7 @@ $fontsRegPath   = "HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Fonts"
 
 foreach ($font in Get-ChildItem -Path $windowsFontDir -Filter "MartianMono*" -ErrorAction SilentlyContinue) {
     try {
-        $regName = "$([System.IO.Path]::GetFileNameWithoutExtension($font.Name)) ($($font.Extension -replace '\.','' | ForEach-Object { if($_ -eq 'otf') { 'OpenType' } else { 'TrueType' } }))"
+        $regName = Get-FontRegistryName $font.Name
         
         Remove-ItemProperty -Path $fontsRegPath -Name $regName -ErrorAction SilentlyContinue
         Remove-Item $font.FullName -Force -ErrorAction Stop
@@ -177,8 +178,13 @@ $wtFragmentPath = "$env:LOCALAPPDATA\Microsoft\Windows Terminal\Fragments\nord"
 
 if (Test-Path $wtFragmentPath)
 {
-    Remove-Item $wtFragmentPath -Recurse -Force -ErrorAction SilentlyContinue
-    Write-Host "Successfully removed Nord theme fragment folder" -ForegroundColor Green
+    try {
+        Remove-Item $wtFragmentPath -Recurse -Force -ErrorAction Stop
+        Write-Host "Successfully removed Nord theme fragment folder" -ForegroundColor Green
+    }
+    catch {
+        Write-Host "Failed to remove Nord theme fragment folder: $($_.Exception.Message)" -ForegroundColor Red
+    }
 }
 else
 {
@@ -188,22 +194,25 @@ else
 Write-Host "`n> Removing Cloned Repos" -ForegroundColor Blue
 
 foreach ($entry in (Get-RepoList)) {
-    $repoUrl, $repoDest = $entry -split '\|', 2
-    $repoDest = Join-Path $HOME ($repoDest -replace '^~/', '')
-    $repoName = [System.IO.Path]::GetFileNameWithoutExtension($repoUrl)
-    $repoPath = Join-Path $repoDest $repoName
+    $repo = Get-RepoEntry $entry
+    $repoPath = $repo.Path
 
     if (-not (Test-Path $repoPath)) {
-        Write-Host "$repoName not found, skipping." -ForegroundColor Yellow
+        Write-Host "$($repo.Name) not found, skipping." -ForegroundColor Yellow
         continue
     }
 
-    $confirm = Read-Host "Remove $repoName ($($repoPath -replace [regex]::Escape($HOME), '~'))? (y/N)"
+    $confirm = Read-Host "Remove $($repo.Name) ($($repo.DisplayPath))? (y/N)"
     if ($confirm.Trim().ToLower() -in @("y", "yes")) {
-        Remove-Item $repoPath -Recurse -Force -ErrorAction SilentlyContinue
-        Write-Host "Removed $repoName." -ForegroundColor Green
+        try {
+            Remove-Item $repoPath -Recurse -Force -ErrorAction Stop
+            Write-Host "Removed $($repo.Name)." -ForegroundColor Green
+        }
+        catch {
+            Write-Host "Failed to remove $($repo.Name): $($_.Exception.Message)" -ForegroundColor Red
+        }
     } else {
-        Write-Host "Skipping removal of $repoName." -ForegroundColor Yellow
+        Write-Host "Skipping removal of $($repo.Name)." -ForegroundColor Yellow
     }
 }
 
@@ -245,8 +254,13 @@ if ($wgmConfFiles) {
 }
 
 if (Test-Path $wgmDir) {
-    Remove-Item $wgmDir -Recurse -Force -ErrorAction SilentlyContinue
-    Write-Host "Successfully purged local WGM data" -ForegroundColor Green
+    try {
+        Remove-Item $wgmDir -Recurse -Force -ErrorAction Stop
+        Write-Host "Successfully purged local WGM data" -ForegroundColor Green
+    }
+    catch {
+        Write-Host "Failed to purge local WGM data: $($_.Exception.Message)" -ForegroundColor Red
+    }
 } else {
     Write-Host "WGM directory not found (Skipped)" -ForegroundColor Gray
 }
@@ -296,8 +310,13 @@ if ($skipWpmCleanup) {
 }
 else {
     if (Test-Path $wpmDir) {
-        Remove-Item $wpmDir -Recurse -Force -ErrorAction SilentlyContinue
-        Write-Host "Successfully removed WPM application directory data" -ForegroundColor Green
+        try {
+            Remove-Item $wpmDir -Recurse -Force -ErrorAction Stop
+            Write-Host "Successfully removed WPM application directory data" -ForegroundColor Green
+        }
+        catch {
+            Write-Host "Failed to remove WPM application directory data: $($_.Exception.Message)" -ForegroundColor Red
+        }
     }
 
     $wireproxyBinDir = "$env:LOCALAPPDATA\windows-config-files\bin"
@@ -361,8 +380,13 @@ $cacheFiles = @(
 
 foreach ($cache in $cacheFiles) {
     if (Test-Path $cache) {
-        Remove-Item $cache -Force -ErrorAction SilentlyContinue
-        Write-Host "Cleared: $(Split-Path $cache -Leaf)" -ForegroundColor Green
+        try {
+            Remove-Item $cache -Force -ErrorAction Stop
+            Write-Host "Cleared: $(Split-Path $cache -Leaf)" -ForegroundColor Green
+        }
+        catch {
+            Write-Host "Failed to clear: $(Split-Path $cache -Leaf)" -ForegroundColor Red
+        }
     }else{
         Write-Host "Not found: $(Split-Path $cache -Leaf)" -ForegroundColor Gray
     }

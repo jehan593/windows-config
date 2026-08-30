@@ -31,6 +31,11 @@ foreach ($app in (Get-WingetApps))
 {
     Write-Host "`n--- $app ---" -ForegroundColor DarkGray
     winget install --id $app --source winget --silent --accept-package-agreements --accept-source-agreements
+    if ($LASTEXITCODE -eq 0) {
+        Write-Host "Installed: $app" -ForegroundColor Green
+    } else {
+        Write-Host "Failed to install $app (winget exit code $LASTEXITCODE)" -ForegroundColor Red
+    }
 }
 
 Write-Host "`n>PowerShell Modules" -ForegroundColor Blue
@@ -183,26 +188,24 @@ catch {
 Write-Host "`n> Cloning Repos" -ForegroundColor Blue
 
 foreach ($entry in (Get-RepoList)) {
-    $repoUrl, $repoDest = $entry -split '\|', 2
-    $repoDest   = Join-Path $HOME ($repoDest -replace '^~/', '')
-    $repoName   = [System.IO.Path]::GetFileNameWithoutExtension($repoUrl)
-    $repoPath   = Join-Path $repoDest $repoName
-    $displayPath = $repoPath -replace [regex]::Escape($HOME), '~'
+    $repo = Get-RepoEntry $entry
+    $repoPath = $repo.Path
+    $displayPath = $repo.DisplayPath
 
     if (Test-Path (Join-Path $repoPath ".git")) {
-        Write-Host "$repoName already cloned at $displayPath" -ForegroundColor Green
+        Write-Host "$($repo.Name) already cloned at $displayPath" -ForegroundColor Green
     }
     elseif (Test-Path $repoPath) {
-        Write-Host "Destination $displayPath already exists, skipping $repoName" -ForegroundColor Yellow
+        Write-Host "Destination $displayPath already exists, skipping $($repo.Name)" -ForegroundColor Yellow
     }
     else {
-        Write-Host "Cloning $repoName..." -ForegroundColor Yellow
-        git clone --depth 1 $repoUrl $repoPath
+        Write-Host "Cloning $($repo.Name)..." -ForegroundColor Yellow
+        git clone --depth 1 $repo.Url $repoPath
         if ($LASTEXITCODE -eq 0) {
-            Write-Host "Cloned $repoName to $displayPath" -ForegroundColor Green
+            Write-Host "Cloned $($repo.Name) to $displayPath" -ForegroundColor Green
         }
         else {
-            Write-Host "Failed to clone $repoUrl" -ForegroundColor Red
+            Write-Host "Failed to clone $($repo.Url)" -ForegroundColor Red
         }
     }
 }
@@ -214,7 +217,10 @@ Write-Host "`n> Wireproxy Manager" -ForegroundColor Blue
 
 try {
     $wireproxyResult = Install-Wireproxy
-    if ($wireproxyResult.UpToDate) {
+    if (-not $wireproxyResult.Success) {
+        Write-Host "Failed to install wireproxy: $($wireproxyResult.Error)" -ForegroundColor Red
+    }
+    elseif ($wireproxyResult.UpToDate) {
         Write-Host "wireproxy already up to date: $($wireproxyResult.Path)" -ForegroundColor Green
     }
     else {

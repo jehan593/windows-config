@@ -1,10 +1,13 @@
 # ==============================================================================
 # WIREPROXY BINARY INSTALL
 # ==============================================================================
-# Silent by design - returns a result object for the caller to report on:
+# Silent by design - returns a result object for the caller to report on,
+# matching Install-MartianMonoFont's contract:
+#   Success  $true unless the install failed (never throws)
+#   UpToDate $true when the binary already matches the latest release tag, i.e.
+#            nothing was downloaded or written this run
+#   Error    exception message, only meaningful when Success is $false
 #   Path     full path of wireproxy.exe (pre-existing or freshly installed)
-#   UpToDate $true when the binary already matches the latest release tag,
-#            i.e. nothing was downloaded or written this run
 function Install-Wireproxy
 {
     # -CheckOnly resolves the release tag and compares it against the local
@@ -16,49 +19,68 @@ function Install-Wireproxy
     $wireproxyExe     = Join-Path $wireproxyBinDir "wireproxy.exe"
     $versionFile      = Join-Path $wireproxyBinDir "wireproxy.version"
 
-    New-Item -ItemType Directory -Path $wireproxyBinDir -Force | Out-Null
-
-    # Resolve the current release tag so the download can be skipped entirely
-    # when the installed binary already matches; on API failure we lose the
-    # shortcut but not the ability to (re)install.
-    $latestTag = $null
-    try {
-        $latestTag = (Invoke-RestMethod -Uri "https://api.github.com/repos/windtf/wireproxy/releases/latest" -ErrorAction Stop).tag_name
-    }
-    catch { }
-
-    # Marker matches AND binary still present => up to date. The second check
-    # covers manual deletion while the marker survived.
-    $upToDate = [bool]($latestTag -and
-        (Test-Path $versionFile) -and
-        ((Get-Content $versionFile -Raw).Trim() -eq $latestTag) -and
-        (Test-Path $wireproxyExe))
-
-    if (-not $upToDate -and -not $CheckOnly)
-    {
-        $wireproxyTarUrl  = if ($latestTag) { "https://github.com/windtf/wireproxy/releases/download/$latestTag/wireproxy_windows_amd64.tar.gz" }
-                            else            { "https://github.com/windtf/wireproxy/releases/latest/download/wireproxy_windows_amd64.tar.gz" }
-        $wireproxyTarPath = Join-Path $env:TEMP "wireproxy.tar.gz"
-
-        Invoke-WebRequest -Uri $wireproxyTarUrl -OutFile $wireproxyTarPath -UseBasicParsing
-        tar -xzf $wireproxyTarPath -C $wireproxyBinDir wireproxy.exe
-        Remove-Item $wireproxyTarPath -Force
-
-        if ($latestTag) { Set-Content -Path $versionFile -Value $latestTag -NoNewline }
-    }
-
-    if (-not $CheckOnly)
-    {
-        $userPath = [Environment]::GetEnvironmentVariable("Path", "User")
-        if ($userPath -notlike "*$wireproxyBinDir*")
-        {
-            [Environment]::SetEnvironmentVariable("Path", "$userPath;$wireproxyBinDir", "User")
-        }
-        $env:Path += ";$wireproxyBinDir"
-    }
-
-    return [pscustomobject]@{
+    # Like font-install, never throw - surface failure through the object so
+    # command scripts and setup/reporting stay uniform.
+    $result = [pscustomobject]@{
+        Success  = $true
+        UpToDate = $false
+        Error    = $null
         Path     = $wireproxyExe
-        UpToDate = $upToDate
+    }
+
+    try
+    {
+        New-Item -ItemType Directory -Path $wireproxyBinDir -Force | Out-Null
+
+        # Resolve the current release tag so the download can be skipped entirely
+        # when the installed binary already matches; on API failure we lose the
+        # shortcut but not the ability to (re)install.
+        $latestTag = $null
+        try {
+            $latestTag = (Invoke-RestMethod -Uri "https://api.github.com/repos/windtf/wireproxy/releases/latest" -ErrorAction Stop).tag_name
+        }
+        catch { }
+
+        # Marker matches AND binary still present => up to date. The second check
+        # covers manual deletion while the marker survived.
+        $upToDate = [bool]($latestTag -and
+            (Test-Path $versionFile) -and
+            ((Get-Content $versionFile -Raw).Trim() -eq $latestTag) -and
+            (Test-Path $wireproxyExe))
+
+        if (-not $upToDate -and -not $CheckOnly)
+        {
+            $wireproxyTarUrl  = if ($latestTag) { "https://github.com/windtf/wireproxy/releases/download/$latestTag/wireproxy_windows_amd64.tar.gz" }
+                                else            { "https://github.com/windtf/wireproxy/releases/latest/download/wireproxy_windows_amd64.tar.gz" }
+            $wireproxyTarPath = Join-Path $env:TEMP "wireproxy.tar.gz"
+
+            Invoke-WebRequest -Uri $wireproxyTarUrl -OutFile $wireproxyTarPath -UseBasicParsing -ErrorAction Stop
+            tar -xzf $wireproxyTarPath -C $wireproxyBinDir wireproxy.exe
+            if ($LASTEXITCODE -ne 0) { throw "tar extraction of wireproxy failed (exit code $LASTEXITCODE)" }
+            Remove-Item $wireproxyTarPath -Force
+
+            if ($latestTag) { Set-Content -Path $versionFile -Value $latestTag -NoNewline }
+        }
+
+        if (-not $CheckOnly -and -not (Test-Path $wireproxyExe))
+        { throw "wireproxy.exe not found at '$wireproxyExe' after install" }
+
+        if (-not $CheckOnly)
+        {
+            $userPath = [Environment]::GetEnvironmentVariable("Path", "User")
+            if ($userPath -notlike "*$wireproxyBinDir*")
+            {
+                [Environment]::SetEnvironmentVariable("Path", "$userPath;$wireproxyBinDir", "User")
+            }
+            $env:Path += ";$wireproxyBinDir"
+        }
+
+        $result.UpToDate = $upToDate
+        return $result
+    }
+    catch {
+        $result.Success = $false
+        $result.Error   = $_.Exception.Message
+        return $result
     }
 }

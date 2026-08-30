@@ -9,6 +9,18 @@
 #   Updated       existing font files overwritten this run
 #   SkippedInUse  files left untouched because a running app holds them open
 #   RebootCleanup stale copies queued for deletion at next reboot
+# Silent by design - returns the registry value name used for a font file,
+# e.g. "MartianMono (OpenType)". Shared so setup/install and reset compute the
+# exact same key name instead of each re-deriving it.
+function Get-FontRegistryName
+{
+    param([Parameter(Mandatory)][string]$FontName)
+
+    $baseName = [System.IO.Path]::GetFileNameWithoutExtension($FontName)
+    $type     = if ($FontName -like "*.otf") { "OpenType" } else { "TrueType" }
+    return "$baseName ($type)"
+}
+
 function Install-MartianMonoFont
 {
     # -Update overwrites already-installed font files with the freshly downloaded
@@ -27,6 +39,7 @@ function Install-MartianMonoFont
         Error         = $null
         Installed     = @()
         Updated       = @()
+        Registered    = @()
         SkippedInUse  = @()
         RebootCleanup = @()
     }
@@ -133,13 +146,11 @@ namespace Win32 {
                 }
             }
             elseif (-not (Test-Path $destPath)) {
-                Copy-Item -Path $font.FullName -Destination $destPath -Force
+                Copy-Item -Path $font.FullName -Destination $destPath -Force -ErrorAction Stop
                 $result.Installed += $font.Name
             }
 
-            $fontName = [System.IO.Path]::GetFileNameWithoutExtension($font.Name)
-            $fontType = if ($font.Extension -eq ".otf") { "OpenType" } else { "TrueType" }
-            $regName  = "$fontName ($fontType)"
+            $regName  = Get-FontRegistryName $font.Name
 
             if (-not (Get-ItemProperty -Path $fontsRegPath -Name $regName -ErrorAction SilentlyContinue)) {
                 New-ItemProperty -Path $fontsRegPath -Name $regName -Value $font.Name -PropertyType String -Force | Out-Null
