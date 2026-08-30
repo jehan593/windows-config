@@ -442,6 +442,23 @@ function _GetBetterfoxUserJs
     return $content
 }
 
+# Hash of the last-deployed content (after removals/overrides), so local config
+# edits show up for 'cup' and retrigger 'upf' just like a new upstream release
+# does. Returns the computed hash, the hash-file path, and whether they match,
+# so both 'cup' (report) and 'upf' (deploy then stamp) share one implementation.
+function Test-BetterfoxUpToDate
+{
+    $hashFile = "$env:LOCALAPPDATA\windows-config-files\betterfox_hash.txt"
+    $newHash  = _GetSha256 (_GetBetterfoxUserJs)
+    $upToDate = (Test-Path $hashFile) -and ((Get-Content $hashFile -Raw).Trim() -eq $newHash)
+
+    return [pscustomobject]@{
+        HashFile = $hashFile
+        NewHash  = $newHash
+        UpToDate = $upToDate
+    }
+}
+
 function _ShowGitUpdateStatus
 {
     param(
@@ -503,11 +520,7 @@ function cup
     Write-Host "`n>Betterfox" -ForegroundColor Blue
     try
     {
-        # Hash of the last-deployed content (after removals/overrides), so local
-        # config edits show up here just like a new upstream release does.
-        $hashFile = "$env:LOCALAPPDATA\windows-config-files\betterfox_hash.txt"
-        $newHash  = _GetSha256 (_GetBetterfoxUserJs)
-        if ((Test-Path $hashFile) -and ((Get-Content $hashFile -Raw).Trim() -eq $newHash))
+        if ((Test-BetterfoxUpToDate).UpToDate)
         { Write-Host "Up to date" -ForegroundColor Green }
         else
         { Write-Host "Update available, run 'upf'" -ForegroundColor Yellow }
@@ -527,10 +540,10 @@ function cup
     Write-Host "`n>Wireproxy" -ForegroundColor Blue
     try
     {
-        if ((Install-Wireproxy -CheckOnly).UpToDate)
-        { Write-Host "Up to date" -ForegroundColor Green }
-        else
-        { Write-Host "Update available, run 'wpm update'" -ForegroundColor Yellow }
+        $r = Install-Wireproxy -CheckOnly
+        if     ($r.UpToDate) { Write-Host "Up to date" -ForegroundColor Green }
+        elseif ($r.Success)  { Write-Host "Update available, run 'wpm update'" -ForegroundColor Yellow }
+        else                 { Write-Host "Check failed: $($r.Error)" -ForegroundColor Red }
     }
     catch { Write-Host "Check failed: $($_.Exception.Message)" -ForegroundColor Red }
 
@@ -540,11 +553,8 @@ function cup
     Write-Host "`n>Cloned Repos" -ForegroundColor Blue
     $repoResults = foreach ($entry in (Get-RepoList))
     {
-        $repoUrl, $repoDest = $entry -split '\|', 2
-        $repoDest = Join-Path $HOME ($repoDest -replace '^~/', '')
-        $repoName = [System.IO.Path]::GetFileNameWithoutExtension($repoUrl)
-        $repoPath = Join-Path $repoDest $repoName
-        _ShowGitUpdateStatus -RepoPath $repoPath -Label $repoName -Hint "uprep" -AsObject
+        $repo = Get-RepoEntry $entry
+        _ShowGitUpdateStatus -RepoPath $repo.Path -Label $repo.Name -Hint "uprep" -AsObject
     }
     $repoUpdates = @($repoResults | Where-Object { $_.Status -eq "update" })
     $repoErrors  = @($repoResults | Where-Object { $_.Status -ne "update" -and $_.Status -ne "ok" })
@@ -558,7 +568,9 @@ function cup
     }
 
     Write-Host "`n>Windows Config" -ForegroundColor Blue
-    _ShowGitUpdateStatus -RepoPath $ConfigPath -Label "windows-config" -Hint "upc"
+    $r = _ShowGitUpdateStatus -RepoPath $ConfigPath -Label "windows-config" -Hint "upc" -AsObject
+    if ($r.Status -eq "ok") { Write-Host "Up to date" -ForegroundColor Green }
+    else                    { Write-Host $r.Message -ForegroundColor $(if ($r.Status -eq "missing") { "Yellow" } else { "Red" }) }
 }
 
 function upall
@@ -595,11 +607,13 @@ function upf
 
     # Hash of the last-deployed content (after removals/overrides), so local
     # config edits trigger a redeploy just like a new upstream release does.
-    $content  = _GetBetterfoxUserJs
-    $hashFile = "$env:LOCALAPPDATA\windows-config-files\betterfox_hash.txt"
-    $newHash  = _GetSha256 $content
-    if ((Test-Path $hashFile) -and (Get-Content $hashFile -Raw).Trim() -eq $newHash)
+    $bf  = Test-BetterfoxUpToDate
+    if ($bf.UpToDate)
     { Write-Host "Betterfox already up to date" -ForegroundColor Green; return }
+
+    $content  = _GetBetterfoxUserJs
+    $hashFile = $bf.HashFile
+    $newHash  = $bf.NewHash
 
     $updated = 0
     foreach ($prof in $profiles)
@@ -661,14 +675,12 @@ function uprep
     Write-Host "`n>Repo Updates" -ForegroundColor Blue
     $anyUpdated = $false
     foreach ($entry in (Get-RepoList)) {
-        $repoUrl, $repoDest = $entry -split '\|', 2
-        $repoDest   = Join-Path $HOME ($repoDest -replace '^~/', '')
-        $repoName   = [System.IO.Path]::GetFileNameWithoutExtension($repoUrl)
-        $repoPath   = Join-Path $repoDest $repoName
-        $displayPath = $repoPath -replace [regex]::Escape($HOME), '~'
+        $repo = Get-RepoEntry $entry
+        $repoPath    = $repo.Path
+        $displayPath = $repo.DisplayPath
 
         if (-not (Test-Path $repoPath)) {
-            Write-Host "$repoName not found, skipping." -ForegroundColor Yellow
+            Write-Host "$($repo.Name) not found, skipping." -ForegroundColor Yellow
             continue
         }
 
@@ -677,12 +689,12 @@ function uprep
             if ($output -match "Already up to date") {
                 continue
             }
-            Write-Host "$repoName ($displayPath)" -ForegroundColor Yellow
+            Write-Host "$($repo.Name) ($displayPath)" -ForegroundColor Yellow
             $output | ForEach-Object { Write-Host "  $_" -ForegroundColor Gray }
             $anyUpdated = $true
         }
         catch {
-            Write-Host "$repoName pull failed: $_" -ForegroundColor Red
+            Write-Host "$($repo.Name) pull failed: $_" -ForegroundColor Red
             $anyUpdated = $true
         }
     }
