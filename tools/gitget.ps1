@@ -1002,16 +1002,27 @@ function _Update {
         $latestVersion = $item.latest
 
         $asset = $null
+        $newTypeNeeded = $false
         if ($app.current_asset) {
             $asset = @($release.assets | Where-Object { $_.name -eq $app.current_asset }) | Select-Object -First 1
             if (-not $asset) {
+                $newTypeNeeded = $true
                 Write-Host "$appName new type needed:" -ForegroundColor Yellow
             }
         }
         if (-not $asset) {
             $asset = _SelectAsset $release.assets $app.pattern -Interactive
         }
-        if (-not $asset) { continue }
+        if (-not $asset) {
+            if ($newTypeNeeded) {
+                # The new release exists but ships no Windows installer at all
+                # (e.g. a Linux/macOS-only release, or only archives) - so
+                # there's nothing to download or pick. Don't bump the recorded
+                # version; it'll be offered again once a real Windows build lands.
+                Write-Host "$appName $latestVersion ($($release.name)) has no Windows installer - skipping." -ForegroundColor Yellow
+            }
+            continue
+        }
 
         $path = _SaveAsset $asset $app.install_dir $proxyUrl
         $app.current_version = $latestVersion
