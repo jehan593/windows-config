@@ -30,11 +30,16 @@ Write-Host "`n>Winget Packages" -ForegroundColor Blue
 foreach ($app in (Get-WingetApps))
 {
     Write-Host "`n--- $app ---" -ForegroundColor DarkGray
-    winget install --id $app --source winget --silent --accept-package-agreements --accept-source-agreements
-    if ($LASTEXITCODE -eq 0) {
-        Write-Host "Installed: $app" -ForegroundColor Green
+    $installed = winget list --id $app --source winget --exact 2>$null | Select-String -Pattern $app
+    if ($installed) {
+        Write-Host "Already installed: $app" -ForegroundColor Green
     } else {
-        Write-Host "Failed to install $app (winget exit code $LASTEXITCODE)" -ForegroundColor Red
+        winget install --id $app --source winget --silent --accept-package-agreements --accept-source-agreements
+        if ($LASTEXITCODE -eq 0) {
+            Write-Host "Installed: $app" -ForegroundColor Green
+        } else {
+            Write-Host "Failed to install $app (winget exit code $LASTEXITCODE)" -ForegroundColor Red
+        }
     }
 }
 
