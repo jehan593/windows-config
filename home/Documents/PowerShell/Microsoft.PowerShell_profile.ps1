@@ -607,8 +607,14 @@ function upf
 
     # Hash of the last-deployed content (after removals/overrides), so local
     # config edits trigger a redeploy just like a new upstream release does.
-    $bf  = Test-BetterfoxUpToDate
-    if ($bf.UpToDate)
+    # Also redeploy if any profile is missing/outdated user.js (e.g. a newly
+    # created Firefox profile) even though the hash itself hasn't changed.
+    $bf    = Test-BetterfoxUpToDate
+    $stale = @($profiles | Where-Object {
+        $path = Join-Path $_.FullName "user.js"
+        -not (Test-Path $path) -or ((Get-Content $path -Raw).Trim() -ne $bf.NewHash)
+    })
+    if ($bf.UpToDate -and $stale.Count -eq 0)
     { Write-Host "Betterfox already up to date" -ForegroundColor Green; return }
 
     $content  = _GetBetterfoxUserJs
