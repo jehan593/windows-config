@@ -66,8 +66,8 @@ namespace Win32 {
         $windowsFontDir = "$env:WINDIR\Fonts"
 
         # Resolve the current release tag so we can skip the download entirely
-        # when the installed version already matches; if the API call fails we
-        # lose the shortcut but not the ability to install/update.
+        # when the installed version already matches; abort if the API call
+        # fails so we don't download unconditionally.
         $latestTag = $null
         try {
             $latestTag = (Invoke-RestMethod -Uri "https://api.github.com/repos/ryanoasis/nerd-fonts/releases/latest" -ErrorAction Stop).tag_name
@@ -85,21 +85,16 @@ namespace Win32 {
             return $result
         }
 
-        # Without a resolved tag there is nothing to compare against, so a check
-        # is inconclusive rather than "update pending" (the install path can
-        # still proceed via the /releases/latest/ alias).
-        if ($CheckOnly)
+        # Without a resolved tag there is nothing to compare against, so abort
+        # rather than downloading unconditionally via the /releases/latest/ alias.
+        if (-not $latestTag)
         {
-            if (-not $latestTag)
-            {
-                $result.Success = $false
-                $result.Error   = "Could not resolve latest nerd-fonts release"
-            }
+            $result.Success = $false
+            $result.Error   = "Could not resolve latest nerd-fonts release"
             return $result
         }
 
-        $fontZipUrl  = if ($latestTag) { "https://github.com/ryanoasis/nerd-fonts/releases/download/$latestTag/MartianMono.zip" }
-                       else            { "https://github.com/ryanoasis/nerd-fonts/releases/latest/download/MartianMono.zip" }
+        $fontZipUrl = "https://github.com/ryanoasis/nerd-fonts/releases/download/$latestTag/MartianMono.zip"
         $fontTempDir = Join-Path $env:TEMP "MartianMonoNerdFont"
         $fontZipPath = Join-Path $env:TEMP "MartianMono.zip"
 

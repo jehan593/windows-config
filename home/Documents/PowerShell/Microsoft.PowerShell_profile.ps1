@@ -439,7 +439,7 @@ function _GetBetterfoxUserJs
     if ($overrides)
     { $content = $content.TrimEnd() + "`n`n// overrides.txt`n" + $overrides + "`n" }
 
-    return $content
+    return ($content -replace "`r`n", "`n").TrimEnd()
 }
 
 # Hash of the last-deployed content (after removals/overrides), so local config
@@ -527,7 +527,7 @@ function cup
         foreach ($prof in $profiles)
         {
             $jsPath = Join-Path $prof.FullName "user.js"
-            $current = (Test-Path $jsPath) -and (_GetSha256 (Get-Content $jsPath -Raw)) -eq $bf.NewHash
+            $current = (Test-Path $jsPath) -and (_GetSha256 ((Get-Content $jsPath -Raw) -replace "`r`n", "`n").TrimEnd()) -eq $bf.NewHash
             if (-not $current)
             { $behind += $prof.Name }
         }
@@ -629,7 +629,7 @@ function upf
         foreach ($prof in $profiles)
         {
             $jsPath = Join-Path $prof.FullName "user.js"
-            if ((Test-Path $jsPath) -and ((_GetSha256 (Get-Content $jsPath -Raw)) -eq $newHash))
+            if ((Test-Path $jsPath) -and ((_GetSha256 ((Get-Content $jsPath -Raw) -replace "`r`n", "`n").TrimEnd()) -eq $newHash))
             { $current++; continue }
 
             try
