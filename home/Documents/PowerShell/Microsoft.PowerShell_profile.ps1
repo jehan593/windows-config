@@ -527,13 +527,12 @@ function cup
         foreach ($prof in $profiles)
         {
             $jsPath = Join-Path $prof.FullName "user.js"
-            if (-not (Test-Path $jsPath) -or ((Get-Content $jsPath -Raw).Trim() -ne $bf.NewHash))
+            $current = (Test-Path $jsPath) -and (_GetSha256 (Get-Content $jsPath -Raw)) -eq $bf.NewHash
+            if (-not $current)
             { $behind += $prof.Name }
         }
         if ($behind.Count -eq 0)
         { Write-Host "Up to date" -ForegroundColor Green }
-        elseif (-not $bf.UpToDate)
-        { Write-Host "Update available, run 'upf'" -ForegroundColor Yellow }
         else
         {
             Write-Host "New or outdated profile(s), run 'upf'" -ForegroundColor Yellow
@@ -630,12 +629,12 @@ function upf
         foreach ($prof in $profiles)
         {
             $jsPath = Join-Path $prof.FullName "user.js"
-            if ((Test-Path $jsPath) -and ((Get-Content $jsPath -Raw).Trim() -eq $newHash))
+            if ((Test-Path $jsPath) -and ((_GetSha256 (Get-Content $jsPath -Raw)) -eq $newHash))
             { $current++; continue }
 
             try
             {
-                Set-Content -Path $jsPath -Value $content -ErrorAction Stop
+                [System.IO.File]::WriteAllText($jsPath, $content, (New-Object System.Text.UTF8Encoding($false)))
                 Write-Host "Updated profile: $($prof.Name)" -ForegroundColor Green
                 $updated++
             }
