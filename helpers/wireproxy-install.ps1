@@ -48,7 +48,21 @@ function Install-Wireproxy
             ((Get-Content $versionFile -Raw).Trim() -eq $latestTag) -and
             (Test-Path $wireproxyExe))
 
-        if (-not $upToDate -and -not $CheckOnly)
+        # Without a resolved tag there is nothing to compare against, so a check
+        # is inconclusive rather than "update pending" (the install path can
+        # still proceed via the /releases/latest/ alias).
+        if ($CheckOnly)
+        {
+            if (-not $latestTag)
+            {
+                $result.Success = $false
+                $result.Error   = "Could not resolve latest wireproxy release"
+            }
+            $result.UpToDate = $upToDate
+            return $result
+        }
+
+        if (-not $upToDate)
         {
             $wireproxyTarUrl  = if ($latestTag) { "https://github.com/windtf/wireproxy/releases/download/$latestTag/wireproxy_windows_amd64.tar.gz" }
                                 else            { "https://github.com/windtf/wireproxy/releases/latest/download/wireproxy_windows_amd64.tar.gz" }
