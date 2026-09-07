@@ -692,7 +692,9 @@ function upfont
 function upc
 {
     Write-Host "`n>Windows Config Update" -ForegroundColor Blue
-    git -C $ConfigPath pull --rebase --autostash
+    git -C $ConfigPath pull --rebase --autostash 2>&1 | ForEach-Object { Write-Host "$_" }
+    if ($LASTEXITCODE -ne 0)
+    { Write-Host "Windows Config update failed" -ForegroundColor Red; return }
     Write-Host "`n'reload' to apply changes" -ForegroundColor Yellow
 }
 
@@ -700,6 +702,7 @@ function uprep
 {
     Write-Host "`n>Repo Updates" -ForegroundColor Blue
     $anyUpdated = $false
+    $failed = $false
     foreach ($entry in (Get-RepoList)) {
         $repo = Get-RepoEntry $entry
         $repoPath    = $repo.Path
@@ -710,21 +713,19 @@ function uprep
             continue
         }
 
-        try {
-            $output = git -C $repoPath pull --rebase --autostash 2>&1
-            if ($output -match "Already up to date") {
-                continue
-            }
-            Write-Host "$($repo.Name) ($displayPath)" -ForegroundColor Yellow
-            $output | ForEach-Object { Write-Host "  $_" -ForegroundColor Gray }
-            $anyUpdated = $true
+        $output = git -C $repoPath pull --rebase --autostash 2>&1
+        if ($LASTEXITCODE -ne 0) {
+            Write-Host "$($repo.Name) pull failed:" -ForegroundColor Red
+            $output | ForEach-Object { Write-Host "  $_" -ForegroundColor Red }
+            $failed = $true
+            continue
         }
-        catch {
-            Write-Host "$($repo.Name) pull failed: $_" -ForegroundColor Red
-            $anyUpdated = $true
-        }
+        if ($output -match "Already up to date") { continue }
+        Write-Host "$($repo.Name) ($displayPath)" -ForegroundColor Yellow
+        $output | ForEach-Object { Write-Host "  $_" -ForegroundColor Gray }
+        $anyUpdated = $true
     }
-    if (-not $anyUpdated) { Write-Host "Up to date" -ForegroundColor Green }
+    if (-not $anyUpdated -and -not $failed) { Write-Host "Up to date" -ForegroundColor Green }
 }
 
 function topgrade {gsudo topgrade $args }

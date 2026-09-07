@@ -910,15 +910,20 @@ function _Check {
 
     $proxyUrl = _ResolveProxy
     $updateCount = 0
+    $errorCount = 0
     $configChanged = $false
     foreach ($prop in $targets) {
         $result = _CheckOne $prop.Name $prop.Value $proxyUrl
-        if ($result -and $result.hasUpdate) { $updateCount++ }
-        if ($result -and $result.configChanged) { $configChanged = $true }
+        if ($null -eq $result) { $errorCount++; continue }
+        if ($result.hasUpdate) { $updateCount++ }
+        if ($result.configChanged) { $configChanged = $true }
     }
     if ($configChanged) { _SaveConfig $config }
 
-    if ($updateCount -eq 0) {
+    if ($errorCount -gt 0 -and $updateCount -eq 0) {
+        Write-Host "$errorCount check(s) failed, results inconclusive" -ForegroundColor Red
+    }
+    elseif ($updateCount -eq 0) {
         Write-Host "Up to date" -ForegroundColor Green
     }
     else {
@@ -934,6 +939,7 @@ function _Update {
 
     $proxyUrl = _ResolveProxy
     $updatable = [System.Collections.Generic.List[PSCustomObject]]::new()
+    $errorCount = 0
     foreach ($prop in $entries) {
         $appName = $prop.Name
         $app = $prop.Value
@@ -943,6 +949,7 @@ function _Update {
         }
         catch {
             Write-Host "$appName error: $($_.Exception.Message)" -ForegroundColor Red
+            $errorCount++
             continue
         }
 
@@ -971,6 +978,10 @@ function _Update {
         })
     }
 
+    if ($errorCount -gt 0 -and $updatable.Count -eq 0) {
+        Write-Host "$errorCount check(s) failed, update aborted" -ForegroundColor Red
+        return
+    }
     if ($updatable.Count -eq 0) {
         Write-Host "Up to date" -ForegroundColor Green
         return
