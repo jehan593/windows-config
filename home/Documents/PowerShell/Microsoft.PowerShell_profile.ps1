@@ -520,10 +520,25 @@ function cup
     Write-Host "`n>Betterfox" -ForegroundColor Blue
     try
     {
-        if ((Test-BetterfoxUpToDate).UpToDate)
+        $profilesPath = "$env:APPDATA\Mozilla\Firefox\Profiles"
+        $bf        = Test-BetterfoxUpToDate
+        $behind    = @()
+        $profiles  = Get-ChildItem $profilesPath -Directory -ErrorAction SilentlyContinue
+        foreach ($prof in $profiles)
+        {
+            $jsPath = Join-Path $prof.FullName "user.js"
+            if (-not (Test-Path $jsPath) -or ((Get-Content $jsPath -Raw).Trim() -ne $bf.NewHash))
+            { $behind += $prof.Name }
+        }
+        if ($behind.Count -eq 0)
         { Write-Host "Up to date" -ForegroundColor Green }
-        else
+        elseif (-not $bf.UpToDate)
         { Write-Host "Update available, run 'upf'" -ForegroundColor Yellow }
+        else
+        {
+            Write-Host "New or outdated profile(s), run 'upf'" -ForegroundColor Yellow
+            foreach ($p in $behind) { Write-Host "  $p" -ForegroundColor Yellow }
+        }
     }
     catch { Write-Host "Check failed: $($_.Exception.Message)" -ForegroundColor Red }
 
@@ -598,51 +613,57 @@ function ups
 
 function upf
 {
-  try{
-    $profilesPath = "$env:APPDATA\Mozilla\Firefox\Profiles"
     Write-Host "`n>Betterfox - Firefox user.js Update" -ForegroundColor Blue
-    $profiles = Get-ChildItem $profilesPath -Directory
-    if ($profiles.Count -eq 0)
-    { Write-Host "No profiles found" -ForegroundColor Red; return }
-
-    # Hash of the last-deployed content (after removals/overrides), so local
-    # config edits trigger a redeploy just like a new upstream release does.
-    # Also redeploy if any profile is missing/outdated user.js (e.g. a newly
-    # created Firefox profile) even though the hash itself hasn't changed.
-    $bf    = Test-BetterfoxUpToDate
-    $stale = @($profiles | Where-Object {
-        $path = Join-Path $_.FullName "user.js"
-        -not (Test-Path $path) -or ((Get-Content $path -Raw).Trim() -ne $bf.NewHash)
-    })
-    if ($bf.UpToDate -and $stale.Count -eq 0)
-    { Write-Host "Betterfox already up to date" -ForegroundColor Green; return }
-
-    $content  = _GetBetterfoxUserJs
-    $hashFile = $bf.HashFile
-    $newHash  = $bf.NewHash
-
-    $updated = 0
-    foreach ($prof in $profiles)
+    try
     {
-        try
+        $profilesPath = "$env:APPDATA\Mozilla\Firefox\Profiles"
+        $profiles = Get-ChildItem $profilesPath -Directory -ErrorAction SilentlyContinue
+        if ($profiles.Count -eq 0)
+        { Write-Host "No Firefox profiles found" -ForegroundColor Red; return }
+
+        $bf = Test-BetterfoxUpToDate
+        $content  = _GetBetterfoxUserJs
+        $hashFile = $bf.HashFile
+        $newHash  = $bf.NewHash
+
+        $updated = 0; $current = 0; $failed = 0
+        foreach ($prof in $profiles)
         {
-            Set-Content -Path (Join-Path $prof.FullName "user.js") -Value $content -ErrorAction Stop
-            Write-Host "Added to profile: $($prof.Name)" -ForegroundColor Green
-            $updated++
-        } catch
-        {
-            Write-Host "Failed to add to profile: $($prof.Name)" -ForegroundColor Red
+            $jsPath = Join-Path $prof.FullName "user.js"
+            if ((Test-Path $jsPath) -and ((Get-Content $jsPath -Raw).Trim() -eq $newHash))
+            { $current++; continue }
+
+            try
+            {
+                Set-Content -Path $jsPath -Value $content -ErrorAction Stop
+                Write-Host "Updated profile: $($prof.Name)" -ForegroundColor Green
+                $updated++
+            }
+            catch
+            {
+                Write-Host "Failed profile: $($prof.Name)" -ForegroundColor Red
+                $failed++
+            }
         }
-    }
 
-    if ($updated -gt 0)
-    {
-        $null = New-Item -ItemType Directory -Path (Split-Path $hashFile) -Force
-        Set-Content -Path $hashFile -Value $newHash -ErrorAction SilentlyContinue
+        $total = $updated + $current + $failed
+        if ($total -eq 0)
+        { Write-Host "No Firefox profiles found" -ForegroundColor Red; return }
+
+        if ($current -gt 0)
+        { Write-Host "$current profile(s) already up to date" -ForegroundColor Green }
+
+        if ($updated -gt 0)
+        {
+            $null = New-Item -ItemType Directory -Path (Split-Path $hashFile) -Force
+            Set-Content -Path $hashFile -Value $newHash -ErrorAction SilentlyContinue
+        }
+
+        if ($updated -eq 0 -and $failed -gt 0)
+        { Write-Host "Failed to update profile(s)" -ForegroundColor Red }
     }
-  } catch{
-    Write-Host "Failed: $($_.Exception.Message)" -ForegroundColor Red
-  }
+    catch
+    { Write-Host "Failed: $($_.Exception.Message)" -ForegroundColor Red }
 }
 
 function upfont
