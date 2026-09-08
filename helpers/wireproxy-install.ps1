@@ -1,26 +1,21 @@
 # ==============================================================================
 # WIREPROXY BINARY INSTALL
 # ==============================================================================
-# Silent by design - returns a result object for the caller to report on,
-# matching Install-MartianMonoFont's contract:
-#   Success  $true unless the install failed (never throws)
-#   UpToDate $true when the binary already matches the latest release tag, i.e.
-#            nothing was downloaded or written this run
-#   Error    exception message, only meaningful when Success is $false
-#   Path     full path of wireproxy.exe (pre-existing or freshly installed)
+# Silent by design - returns a result object:
+#   Success  install succeeded (never throws)
+#   UpToDate already at latest release
+#   Error    exception message (when Success is $false)
+#   Path     path to wireproxy.exe
 function Install-Wireproxy
 {
-    # -CheckOnly resolves the release tag and compares it against the local
-    # marker without downloading anything, so callers can decide whether an
-    # update is worth disrupting running services.
+    # -CheckOnly compares release tags only, no download.
     param([switch]$CheckOnly)
 
     $wireproxyBinDir  = "$env:LOCALAPPDATA\windows-config-files\bin"
     $wireproxyExe     = Join-Path $wireproxyBinDir "wireproxy.exe"
     $versionFile      = Join-Path $wireproxyBinDir "wireproxy.version"
 
-    # Like font-install, never throw - surface failure through the object so
-    # command scripts and setup/reporting stay uniform.
+    # Never throw - surface failures through the result object.
     $result = [pscustomobject]@{
         Success  = $true
         UpToDate = $false
@@ -32,25 +27,20 @@ function Install-Wireproxy
     {
         New-Item -ItemType Directory -Path $wireproxyBinDir -Force | Out-Null
 
-        # Resolve the current release tag so the download can be skipped entirely
-        # when the installed binary already matches; on API failure we lose the
-        # shortcut but not the ability to (re)install.
+        # Resolve the latest tag to skip the download when already up to date.
         $latestTag = $null
         try {
             $latestTag = (Invoke-RestMethod -Uri "https://api.github.com/repos/windtf/wireproxy/releases/latest" -ErrorAction Stop).tag_name
         }
         catch { }
 
-        # Marker matches AND binary still present => up to date. The second check
-        # covers manual deletion while the marker survived.
+        # Marker + binary present => up to date. Second check covers manual deletion.
         $upToDate = [bool]($latestTag -and
             (Test-Path $versionFile) -and
             ((Get-Content $versionFile -Raw).Trim() -eq $latestTag) -and
             (Test-Path $wireproxyExe))
 
-        # Without a resolved tag there is nothing to compare against, so a check
-        # is inconclusive rather than "update pending" (the install path can
-        # still proceed via the /releases/latest/ alias).
+        # Without a resolved tag a check is inconclusive, not "update pending".
         if ($CheckOnly)
         {
             if (-not $latestTag)

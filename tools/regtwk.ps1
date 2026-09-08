@@ -49,8 +49,7 @@ function _Tweak_WindowsUpdateRecommended
 
     gsudo {
         try{
-        # New-Item -Force on a path that already exists wipes ALL of that key's
-        # existing values and subkeys - only call it when the key is genuinely new.
+        # New-Item -Force on an existing key wipes its values/subkeys - only use on new keys.
         if (-not (Test-Path "HKLM:\SOFTWARE\Microsoft\WindowsUpdate\UX\Settings")) {
             New-Item -Path "HKLM:\SOFTWARE\Microsoft\WindowsUpdate\UX\Settings" -Force | Out-Null
         }

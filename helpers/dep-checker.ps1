@@ -1,8 +1,7 @@
 # ==============================================================================
 # DEPENDENCY CHECKING
 # ==============================================================================
-# Silent by design - returns the missing command names as a string array
-# (empty when everything is present); callers own the reporting.
+# Silent - returns missing command names as a string array (empty = all present).
 function _TestDependencies
 {
     param(

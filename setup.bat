@@ -9,7 +9,7 @@ if %errorlevel% neq 0 (
     echo PowerShell 7 not found. Installing...
     winget install --id Microsoft.PowerShell --source winget --silent --accept-package-agreements --accept-source-agreements
 
-    :: Post-install path resolution fallback since current PATH won't update dynamically
+    :: Current PATH won't reflect the new install - resolve pwsh directly
     if exist "%PROGRAMFILES%\PowerShell\7\pwsh.exe" (
         set "PWSH=%PROGRAMFILES%\PowerShell\7\pwsh.exe"
     ) else (

@@ -165,7 +165,7 @@ function _WriteAt
     $bufH = [Console]::BufferHeight
     $bufW = [Console]::BufferWidth
     
-    # Secure absolute clamping constraints for layout shifts
+    # Clamp to buffer bounds in case the layout shifts.
     $safeY = [math]::Max(0, [math]::Min($Y, $bufH - 1))
     $safeX = [math]::Max(0, [math]::Min($X, $bufW - 1))
     [Console]::SetCursorPosition($safeX, $safeY)

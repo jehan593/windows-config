@@ -1,11 +1,6 @@
 # ==============================================================================
-# REPO LIST — cloned by _setup.ps1 into ~, removed by _reset.ps1, upgraded by
-# the profile's uprep function.
-# Format: "url|dest"
-#   url  — git clone source (HTTPS)
-#   dest — destination path relative to $HOME (leading ~/ expands to $HOME\)
-#
-# Add/remove lines here and setup/reset/uprep pick them up.
+# REPO LIST — cloned into ~ by setup, removed by reset, upgraded by uprep.
+# Format: "url|dest" (dest relative to $HOME, ~/ expands to $HOME\)
 # ==============================================================================
 function Get-RepoList
 {
@@ -17,11 +12,7 @@ function Get-RepoList
     )
 }
 
-# Parses a "url|dest" repo-list entry into a synthetic object with the derived
-# fields every consumer needs: Url, Name, Path (absolute), and DisplayPath
-# (absolute path with $HOME collapsed to ~). Single source of truth for the
-# url-split/dest-join/name-derive logic that setup, reset, cup and uprep used
-# to each re-implement.
+# Parses a "url|dest" entry into Url, Name, Path, and DisplayPath (~ collapsed).
 function Get-RepoEntry
 {
     param([string]$Entry)

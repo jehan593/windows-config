@@ -1,17 +1,15 @@
 # ==============================================================================
 # MARTIAN MONO NERD FONT INSTALL
 # ==============================================================================
-# Silent by design - returns a result object for the caller to report on:
-#   Success       $true unless the install failed
-#   UpToDate      $true when the version marker already matches (nothing done)
-#   Error         exception message, only meaningful when Success is $false
-#   Installed     font files newly copied into \Windows\Fonts
-#   Updated       existing font files overwritten this run
-#   SkippedInUse  files left untouched because a running app holds them open
-#   RebootCleanup stale copies queued for deletion at next reboot
-# Silent by design - returns the registry value name used for a font file,
-# e.g. "MartianMono (OpenType)". Shared so setup/install and reset compute the
-# exact same key name instead of each re-deriving it.
+# Silent by design - returns a result object:
+#   Success       install succeeded
+#   UpToDate      already at latest version
+#   Error         exception message (when Success is $false)
+#   Installed     newly copied to \Windows\Fonts
+#   Updated       existing files overwritten
+#   SkippedInUse  held open by a running app, left alone
+#   RebootCleanup queued for deletion at next reboot
+# Also exposes Get-FontRegistryName so setup/reset compute the same key name.
 function Get-FontRegistryName
 {
     param([Parameter(Mandatory)][string]$FontName)
@@ -23,11 +21,8 @@ function Get-FontRegistryName
 
 function Install-MartianMonoFont
 {
-    # -Update overwrites already-installed font files with the freshly downloaded
-    # ones; without it (plain setup run) existing files are left untouched.
-    # -CheckOnly resolves the release tag and compares it against the local
-    # version marker without downloading anything; Success + UpToDate means
-    # installed, Success without UpToDate means an update is pending.
+    # -Update overwrites existing font files; without it they're untouched.
+    # -CheckOnly compares release tags only, no download.
     param(
         [switch]$Update,
         [switch]$CheckOnly
@@ -65,17 +60,14 @@ namespace Win32 {
         $fontsRegPath   = "HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Fonts"
         $windowsFontDir = "$env:WINDIR\Fonts"
 
-        # Resolve the current release tag so we can skip the download entirely
-        # when the installed version already matches; abort if the API call
-        # fails so we don't download unconditionally.
+        # Resolve the latest tag to skip the download when already up to date.
         $latestTag = $null
         try {
             $latestTag = (Invoke-RestMethod -Uri "https://api.github.com/repos/ryanoasis/nerd-fonts/releases/latest" -ErrorAction Stop).tag_name
         }
         catch { }
 
-        # Marker matches AND font files still present => nothing to do. The
-        # second check covers manual deletion while the marker survived.
+        # Marker + font files present => nothing to do. Second check covers manual deletion.
         if ($latestTag -and
             (Test-Path $versionFile) -and
             ((Get-Content $versionFile -Raw).Trim() -eq $latestTag) -and
@@ -85,8 +77,7 @@ namespace Win32 {
             return $result
         }
 
-        # Without a resolved tag there is nothing to compare against, so abort
-        # rather than downloading unconditionally via the /releases/latest/ alias.
+        # No resolved tag -> abort rather than download unconditionally.
         if (-not $latestTag)
         {
             $result.Success = $false
@@ -107,8 +98,7 @@ namespace Win32 {
             $destPath  = Join-Path $windowsFontDir $font.Name
             $stalePath = "$destPath.old"
 
-            # Leftover from a previous in-use swap whose reboot-delete hasn't
-            # happened yet (or that survived because the machine wasn't rebooted).
+            # Leftover from a previous in-use swap whose reboot-delete hasn't happened.
             if ($Update) { Remove-Item $stalePath -Force -ErrorAction SilentlyContinue }
 
             if ($Update -and (Test-Path $destPath)) {
@@ -117,10 +107,8 @@ namespace Win32 {
                     $result.Updated += $font.Name
                 }
                 catch [System.IO.IOException] {
-                    # Loaded by a running app (possibly this very terminal), so a
-                    # direct overwrite can never succeed. Renaming an in-use file
-                    # IS permitted though - move it aside, drop the new copy into
-                    # the original name, and queue the stale one for reboot-deletion.
+                    # File in use - can't overwrite, but CAN rename. Move it aside, put the
+                    # new copy in place, and queue the stale one for reboot-delete.
                     try {
                         Move-Item -Path $destPath -Destination $stalePath -Force -ErrorAction Stop
                         Copy-Item -Path $font.FullName -Destination $destPath -Force -ErrorAction Stop

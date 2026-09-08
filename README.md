@@ -1,36 +1,36 @@
 # Windows Config
 
-Personal Windows machine setup: idempotent install/reset scripts, dotfiles, declarative registry tweaks, and a handful of PowerShell CLI tools — all restorable to a clean state.
+My personal Windows setup — install everything, reset everything.
 
-## What it does
+> **This project is fully vibe coded.**
 
-- **Setup/reset** — installs winget packages and PowerShell modules, symlinks dotfiles into `$HOME`, applies registry tweaks, configures fonts/theme/wallpaper, and installs supporting tools. `reset.bat` undoes all of it.
-- **Dotfiles** — Starship prompt, Neovim, mpv.net, Windows Terminal, topgrade, and the PowerShell profile, deployed via symlink so edits here take effect immediately.
-- **Registry tweaks** — declared in `registry/registry.json`, applied on setup and reverted on reset.
-- **CLI tools**, installed into the PowerShell profile:
+## What's in here
+
+- **`setup.bat`** — installs packages, symlinks dotfiles, applies registry tweaks, sets up fonts/themes
+- **`reset.bat`** — undoes everything setup did
+- **CLI tools** (installed into your PowerShell profile):
   - `wgm` — WireGuard tunnel manager
   - `wpm` — Wireproxy SOCKS5 tunnel manager
-  - `regtwk` — fzf menu for one-off registry tweaks
+  - `gitget` — track GitHub repos and install their Windows releases
+  - `regtwk` — quick registry tweaks via fzf
   - `timer` — full-screen countdown timer
+- **Dotfiles** — Starship, Neovim, mpv.net, Windows Terminal, PowerShell profile
+- **Registry tweaks** — declared in `registry/registry.json`, applied/reverted automatically
 
 ## Requirements
 
 - Windows 10/11
 - [winget](https://learn.microsoft.com/windows/package-manager/winget/)
-- PowerShell 7 (installed automatically by `setup.bat` if missing)
+- PowerShell 7 (auto-installed by `setup.bat` if missing)
 
 ## Usage
 
-```
+```bat
 git clone https://github.com/jehan593/windows-config.git
 cd windows-config
 setup.bat
 ```
 
-To undo everything setup did:
+Undo with `reset.bat`.
 
-```
-reset.bat
-```
-
-Both scripts self-elevate and mutate real machine state (installed packages, `HKLM`/`HKCU` values, symlinks under `$HOME`, Windows services) — review before running on a machine you care about.
+Both scripts self-elevate and mutate real machine state — review before running.

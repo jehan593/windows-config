@@ -130,9 +130,8 @@ function sz {
         [string]$path = "."
     )
 
-    # -Strict surfaces access-denied instead of swallowing it, so the
-    # un-elevated attempt can detect the need to escalate rather than
-    # spawning gsudo unconditionally for every call.
+    # -Strict surfaces access-denied instead of swallowing it, so un-elevated
+    # attempts detect when to escalate without spawning gsudo every call.
     $sizeScript = {
         param($targetPath, [switch]$Strict)
         $eap = if ($Strict) { 'Stop' } else { 'SilentlyContinue' }
@@ -417,7 +416,7 @@ function _GetSha256([string]$Text)
     [System.Convert]::ToHexString($sha.ComputeHash([System.Text.Encoding]::UTF8.GetBytes($Text)))
 }
 
-# Shared by 'cup' (check) and 'upf' (apply) so both hash the exact same content.
+# Shared by 'cup' (check) and 'upf' (apply) so both hash the same content.
 function _GetBetterfoxUserJs
 {
     $url           = "https://raw.githubusercontent.com/yokoffing/Betterfox/main/user.js"
@@ -442,10 +441,7 @@ function _GetBetterfoxUserJs
     return ($content -replace "`r`n", "`n").TrimEnd()
 }
 
-# Hash of the last-deployed content (after removals/overrides), so local config
-# edits show up for 'cup' and retrigger 'upf' just like a new upstream release
-# does. Returns the computed hash, the hash-file path, and whether they match,
-# so both 'cup' (report) and 'upf' (deploy then stamp) share one implementation.
+# Hash of last-deployed content - local edits retrigger 'upf' like a new release.
 function Test-BetterfoxUpToDate
 {
     $hashFile = "$env:LOCALAPPDATA\windows-config-files\betterfox_hash.txt"
@@ -742,10 +738,8 @@ function ff
     $search = (Resolve-Path $Path -ErrorAction SilentlyContinue).Path
     if (-not $search) { Write-Host "Path not found: $Path" -ForegroundColor Red; return }
 
-    # ForEach-Object forces PowerShell to mediate this pipe with its own text
-    # marshalling instead of connecting fd.exe/fzf.exe via a raw OS pipe. The raw
-    # fast path (PS 7.4+) throws "The pipe is being closed" when fzf exits early
-    # (e.g. a selection made before fd finishes) - see PowerShell/PowerShell#20827.
+    # ForEach-Object avoids the raw OS pipe that throws "pipe is being closed"
+    # when fzf exits before fd finishes (PowerShell/PowerShell#20827).
     $selection = fd . $search --hidden --color never --exclude "Windows" |
         ForEach-Object { $_ } |
         fzf --no-multi --layout=reverse --header "Searching: $search"

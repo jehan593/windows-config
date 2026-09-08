@@ -86,8 +86,7 @@ function Remove-RegistryValues {
         foreach ($entry in $Values) {
             $isDefaultValue = $entry.name -eq '(Default)'
 
-            # No "default" field -> just delete it. "default" present -> an
-            # important value; restore it to its declared default instead of deleting it.
+            # No "default" field -> delete. "default" present -> restore it instead.
             if ($null -ne $entry.default) {
                 $propType, $propValue = ConvertTo-RegistryTypedValue -Type $entry.type -RawValue $entry.default -EntryName $entry.name
 
@@ -99,9 +98,7 @@ function Remove-RegistryValues {
                 Write-Host "Restored default value: $($entry.name)" -ForegroundColor Gray
             }
             elseif ($isDefaultValue) {
-                # The registry provider can't remove a key's default value via
-                # Remove-ItemProperty (no valid -Name maps to it) - reg.exe /ve is
-                # the only way to actually delete it rather than leave it blank.
+                # reg.exe /ve is the only way to delete a key's default value.
                 $regExePath = $RegPath -replace '^([A-Z]+):\\', '$1\'
                 reg.exe delete $regExePath /ve /f 2>$null | Out-Null
             }
@@ -111,8 +108,7 @@ function Remove-RegistryValues {
         }
         Write-Host "Reverted managed values at: $RegPath" -ForegroundColor Green
 
-        # Only remove the key itself (and climb up) if nothing other than what
-        # we just cleared/restored ever lived here - never touch pre-existing/foreign content.
+        # Only remove keys we created - never touch pre-existing content.
         $current = $RegPath
         while ($current -and $current -ne $StopAt -and (Test-Path $current)) {
             $item = Get-Item -Path $current
@@ -139,8 +135,7 @@ foreach ($hive in $RegistryHives) {
     if (-not $entries) { continue }
 
     $hiveStopAt = "${hive}:\"
-    # Deepest keys first, so a child key is cleared (and possibly removed)
-    # before its parent's own now-empty check runs.
+    # Deepest keys first so children are cleared before parents.
     $sortedEntries = $entries | Sort-Object { ($_.path -split '\\').Count } -Descending
 
     foreach ($entry in $sortedEntries) {
