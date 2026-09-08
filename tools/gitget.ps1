@@ -1,79 +1,25 @@
 <#
 .SYNOPSIS
-    GitGet — a simple terminal-based Windows installer tracker.
+    GitGet — track GitHub repos and install their Windows releases.
 
 .DESCRIPTION
-    Tracks apps by their GitHub repo, checks for new releases, and downloads
-    + runs the matching Windows installer (.exe/.msi/.msix/.msixbundle).
-    Only real installers are tracked - portable binaries and archives
-    (.zip/.tar.gz) are not supported. Pure PowerShell, no dependencies
-    beyond what ships with Windows 11.
+    Downloads + runs the matching Windows installer (.exe/.msi/.msix/.msixbundle).
+    No portable binaries or archives. Pure PowerShell, no extra dependencies.
 
 .EXAMPLE
     gitget add sharkdp/bat
-
-.EXAMPLE
     gitget add alacritty/alacritty -Pattern "*x64*.msi"
-
-.EXAMPLE
-    # Adding software you already have installed? Tell it the version, or it
-    # won't know what you're on and 'check' will (correctly) flag an update.
     gitget add sharkdp/bat -CurrentVersion v0.24.0
-
-.EXAMPLE
     gitget check
-
-.EXAMPLE
     gitget update
-
-.EXAMPLE
-    gitget update -All
-
-.EXAMPLE
     gitget ls
-
-.EXAMPLE
     gitget proxy 127.0.0.1:1080
-
-.EXAMPLE
-    gitget proxy socks5h://127.0.0.1:1080
-
-.EXAMPLE
     gitget proxy clear
 
 .NOTES
-    Config and downloads live in:
-      $env:LOCALAPPDATA\windows-config-files\gitget\config.json
-      $env:LOCALAPPDATA\windows-config-files\gitget\downloads\<app_name>\
-
-    Set $env:GITHUB_TOKEN to raise the GitHub API rate limit
-    (60/hr unauthenticated -> 5000/hr authenticated). Not required for normal use.
-
-    Asset picking: when you're prompted to pick (during 'add', or during
-    'update' if a release no longer has the previously-picked file), only
-    files that look like Windows installers (.exe, .msi, .msix,
-    .msixbundle) are ever offered - everything else on a release (archives,
-    checksums, portable binaries for other OSes, etc.) is filtered out
-    before you see the picker. Your CPU arch is preferred automatically.
-    'add' asks you to pick the installer once (fzf menu if installed,
-    numbered menu otherwise) and remembers that choice. Routine 'check'/
-    'update' runs after that just reuse the remembered file name/pattern
-    directly - no re-filtering.
-
-    Not every .exe on a release is actually an installer - some projects
-    ship a plain portable binary alongside (or instead of) a real
-    installer, and GitGet can't tell the difference by filename alone.
-    The picker warns about this; pick the one that's actually an installer
-    (typically named things like "*-setup.exe", "*-installer.exe", or a
-    .msi/.msix), not a bare portable .exe.
-
-    After downloading, the installer is run automatically (.msi via
-    'msiexec /passive', .msix/.msixbundle via Add-AppxPackage, .exe run
-    directly) and the downloaded file is deleted once it exits cleanly /
-    installs successfully.
-
-    You may need to allow local scripts to run:
-      Set-ExecutionPolicy -Scope CurrentUser RemoteSigned
+    Config: $env:LOCALAPPDATA\windows-config-files\gitget\config.json
+    Set $env:GITHUB_TOKEN for higher API rate limits (60/hr -> 5000/hr).
+    Allow local scripts: Set-ExecutionPolicy -Scope CurrentUser RemoteSigned
 #>
 
 param(
@@ -223,21 +169,34 @@ function _GetReleases($Repo, $Count = 40, $ProxyUrl) {
 
 }
 
-# Some projects split their releases per platform into separate tags instead
-# of one release with all assets (streetwriters/notesnook keeps desktop
-# installers under "v3.4.6"-style tags and APKs under "3.4.9-android"). Which
-# of those GitHub marks as "latest" just depends on what was published/marked
-# last, so it can be a tag with no Windows installer at all. Instead of
-# trusting /releases/latest, track the newest release that actually ships our
-# kind of installer.
+# Some repos split releases per platform into separate tags. /releases/latest
+# can point to a tag with no Windows installer. Track the newest release that
+# actually ships our kind of installer instead.
 function _GetTagFamily($Tag) {
-    # Non-numeric skeleton of a tag - identifies the product/platform release
-    # line inside repos that publish several in parallel (ente/ente ships
-    # auth-, photos-, locker-, ensu-, cli- lines; notesnook splits desktop
-    # vs "-android"). "auth-v4.4.25" -> "auth-v", "v3.4.6" -> "v",
-    # "3.4.9-android" -> "-android".
+    # Non-numeric skeleton of a tag - e.g. "auth-v4.4.25" -> "auth-v",
+    # "v3.4.6" -> "v", "3.4.9-android" -> "-android".
     if (-not $Tag) { return $null }
     return ($Tag.Trim() -replace '[\d\.]', '')
+}
+
+function _GetReleaseChannel($Rel) {
+    # Some repos use a trailing parenthetical in the release NAME to mark
+    # channels (e.g. "v2.34.0 (Stable)" vs "v2.35.4 (Dev)").
+    $knownChannels = @("dev", "stable", "beta", "rc", "rc2", "release candidate",
+                       "alpha", "preview", "nightly", "canary", "stable2")
+    if (-not $Rel -or -not $Rel.name) { return $null }
+    if ($Rel.name -match '\(([^)]+)\)\s*$') {
+        $marker = $Matches[1].Trim().ToLower()
+        if ($knownChannels -contains $marker) { return $marker }
+    }
+    return $null
+}
+
+function _GetReleaseKey($Rel) {
+    # Family + optional channel - pins to a specific release line.
+    $ch = _GetReleaseChannel $Rel
+    if ($ch) { return "$(_GetTagFamily $Rel.tag_name) [$ch]" }
+    return _GetTagFamily $Rel.tag_name
 }
 
 function _GetTrackedRelease($AppName, $App, $ProxyUrl) {
@@ -247,18 +206,14 @@ function _GetTrackedRelease($AppName, $App, $ProxyUrl) {
     }
     $stable = @($releases | Where-Object { -not $_.prerelease })
 
-    # Monorepo product line (ente/ente publishes auth-/photos-/locker-/cli-
-    # lines on one releases page): stay inside the family the app was added
-    # from, no matter how much more active its sibling products are.
+    # Stay inside the family/channel the app was added from.
     if ($App.tag_family) {
         foreach ($rel in $stable) {
-            if ((_GetTagFamily $rel.tag_name) -eq $App.tag_family) { return $rel }
+            if ((_GetReleaseKey $rel) -eq $App.tag_family) { return $rel }
         }
     }
 
-    # Newest stable release still carrying exactly the file we track (by
-    # remembered name or pattern). This pins us to our platform's tag family
-    # even when sibling platform releases get published more often.
+    # Newest stable release still carrying the file we track.
     foreach ($rel in $stable) {
         $assets         = @($rel.assets)
         $matchByName    = $App.current_asset -and ($assets.name -contains $App.current_asset)
@@ -266,21 +221,20 @@ function _GetTrackedRelease($AppName, $App, $ProxyUrl) {
         if ($matchByName -or $matchByPattern) { return $rel }
     }
 
-    # Otherwise: newest stable release carrying any installer-type asset.
+    # Otherwise: newest stable release with any installer-type asset.
     foreach ($rel in $stable) {
         if (@($rel.assets | Where-Object { _TestIsInstallerAsset $_.name }).Count -gt 0) { return $rel }
     }
 
-    # Last resort: old behavior.
+    # Last resort: fall back to /releases/latest.
     return (_GetLatestRelease $App.repo $ProxyUrl)
 }
 
 function _GetReleaseLines($InstallableReleases) {
-    # Group installer-bearing releases by their tag family (release line),
-    # keeping each group's newest release first. Returns Group-Object output.
+    # Group by tag family + channel, keeping each group's newest first.
     return @(@($InstallableReleases | ForEach-Object {
-        [PSCustomObject]@{ rel = $_; family = _GetTagFamily $_.tag_name }
-    } | Group-Object family))
+        [PSCustomObject]@{ rel = $_; key = _GetReleaseKey $_ }
+    } | Group-Object key))
 }
 
 function _SelectReleaseLine($FamilyGroups) {
@@ -307,32 +261,20 @@ function _GetNativeArch {
 }
 
 # --------------------------------------------------------------------------
-# Installed-version detection
-#
-# The config's "current_version" is only ever a claim - it's whatever was
-# true the last time GitGet itself downloaded/installed something, or
-# whatever you typed via -CurrentVersion / set-version. If the app got
-# updated (or reinstalled, or removed) through some other means, that claim
-# goes stale silently. These functions try to find the *actual* installed
-# version by other means, in order of trustworthiness, before ever falling
-# back to the recorded value.
+# Installed-version detection - probe the real install before trusting config
 # --------------------------------------------------------------------------
 
 function _NormalizeVersion($v) {
     if (-not $v) { return $v }
     $t = $v.Trim()
-    # Strip non-numeric scheme prefixes so "auth-v4.4.25" (monorepo product
-    # tags, e.g. ente/ente), "ver1.2" and "v9.8" all compare as "4.4.25".
-    # Also drop "+build" metadata ("4.4.25+1072") - semver ignores it too.
+    # Drop prefixes ("auth-v4.4.25" -> "4.4.25") and "+build" metadata.
     $stripped = (($t -replace '^[^\d]+', '') -replace '\+.*$', '')
     return $(if ($stripped) { $stripped } else { $t })
 }
 
 function _TestSameVersion($a, $b) {
-    # Chromium-family browsers write "<chromium-major>.<real-version>" into
-    # the registry (Brave 1.93.138 -> 151.1.93.138) while their GitHub tags
-    # are just "v<real-version>". Two versions are the same release when
-    # they match exactly or differ by exactly one extra leading segment.
+    # Match exactly, or differ by one extra leading segment (Chromium browsers
+    # write "<chromium-major>.<real-version>" into the registry).
     $na = _NormalizeVersion $a
     $nb = _NormalizeVersion $b
     if ($na -eq $nb) { return $true }
@@ -359,10 +301,7 @@ function _FindInstalledExe($App) {
 }
 
 function _InvokeWithTimeout($ExePath, $Arg, $TimeoutMs = 4000) {
-    # Some exe won't recognize --version/-v and may just hang (waiting on
-    # stdin, opening a GUI, etc.) instead of erroring. Run it out-of-line
-    # with redirected output and a hard kill after $TimeoutMs so a single
-    # misbehaving app can't freeze 'check'/'list -Verify'.
+    # Some exes hang instead of erroring; kill after the timeout.
     $outFile = [System.IO.Path]::GetTempFileName()
     $errFile = [System.IO.Path]::GetTempFileName()
     try {
@@ -407,11 +346,8 @@ function _GetVersionFromFileMetadata($ExePath) {
 }
 
 function _GetVersionSearchNeedles($App, $AppName) {
-    # What's recorded as the app name/repo often isn't literally what shows
-    # up in the registry or winget (e.g. tracked as "brave-browser" but the
-    # installed DisplayName is just "Brave"). Try the full name first, then
-    # fall back to the repo owner and individual word-tokens split out of
-    # the name, so a partial/marketing-name match still succeeds.
+    # Recorded name/repo often differs from the installed DisplayName,
+    # so try the full name, repo owner, and word/camelCase tokens.
     $repoName  = ($App.repo -split '/')[1]
     $repoOwner = ($App.repo -split '/')[0]
     $whole     = @($AppName, $repoName, $repoOwner) | Where-Object { $_ }
@@ -422,9 +358,7 @@ function _GetVersionSearchNeedles($App, $AppName) {
         $tokens += ($w -split '[-_\s]+' | Where-Object { $_.Length -ge 3 })
     }
 
-    # CamelCase / PascalCase splitting: "LenovoLegionToolkit" -> "Lenovo",
-    # "Legion", "Toolkit" so the unspaced repo name still matches the
-    # spaced DisplayName ("Lenovo Legion Toolkit") in registry/winget.
+    # CamelCase split: "LenovoLegionToolkit" -> "Lenovo", "Legion", "Toolkit"
     $splitTokens = @()
     foreach ($w in @($AppName, $repoName)) {
         if (-not $w) { continue }
@@ -436,10 +370,8 @@ function _GetVersionSearchNeedles($App, $AppName) {
 }
 
 function _TestDisplayNameMatch($DisplayName, $Needle) {
-    # Exact name wins outright; otherwise the needle must appear delimited by
-    # non-alphanumerics (or string edges). Plain substring matching was too
-    # loose - tracking "ente" used to match "Microsoft 365 Apps for
-    # enterprise" and read Office's 16.0.x as the installed version.
+    # Exact match wins; otherwise the needle must be delimited by
+    # non-alphanumerics. Plain substring matching was too loose.
     if (-not $DisplayName) { return $false }
     if ($DisplayName -eq $Needle) { return $true }
     return ($DisplayName -match "(?i)(^|[^a-z0-9])$([regex]::Escape($Needle))([^a-z0-9]|$)")
@@ -476,9 +408,7 @@ function _GetVersionFromWinget($App, $AppName) {
         catch { continue }
         if (-not $lines) { continue }
 
-        # winget prints a fixed-width table: "Name  Id  Version  ...". Find
-        # the header row so we know where the Version column starts/ends,
-        # since names/ids can themselves contain spaces.
+        # Find the Version column in winget's fixed-width table.
         $headerIdx = -1
         for ($i = 0; $i -lt $lines.Count; $i++) {
             if ($lines[$i] -match '^Name\s+Id\s+Version') { $headerIdx = $i; break }
@@ -503,9 +433,7 @@ function _GetVersionFromWinget($App, $AppName) {
 }
 
 function _GetInstalledVersion($AppName, $App) {
-    # Returns @{ version = <string-or-null>; source = <string> }, trying
-    # progressively less-direct sources. Anything above "recorded" is an
-    # independent check of reality; "recorded" is just trusting the config.
+    # Try progressively less-direct sources; "recorded" only trusts the config.
     $exePath = _FindInstalledExe $App
 
     if ($App.version_command) {
@@ -577,11 +505,8 @@ function _SelectAsset($Assets, $GlobPattern, [switch]$Interactive) {
     if (-not $Assets -or @($Assets).Count -eq 0) { return $null }
 
     if ($Interactive) {
-        # Only the interactive picker (used by 'add', and by 'update' when
-        # it needs you to re-pick a type) restricts to installer extensions.
-        # Automatic matching below (check/update reusing an already-tracked
-        # pattern) doesn't need this - the stored pattern already pins down
-        # exactly the file that was picked before.
+        # Interactive pickers only offer installer extensions; automatic
+        # matching below reuses the already-stored pattern.
         $installers = @($Assets | Where-Object { _TestIsInstallerAsset $_.name })
         if ($installers.Count -eq 0) { return $null }
 
@@ -598,11 +523,8 @@ function _SelectAsset($Assets, $GlobPattern, [switch]$Interactive) {
         $topScore = $scored[0].score
         $final    = @($scored | Where-Object { $_.score -eq $topScore } | ForEach-Object { $_.asset })
 
-        # Always offer the picker over the FULL list of installer-type
-        # assets when there's more than one - even if the arch-narrowing
-        # above landed on a single "best guess". That guess can be wrong
-        # (bad arch detection), and previously that meant you'd never even
-        # see the file you wanted.
+        # Always show the full installer list when there's more than one -
+        # arch scoring is just a guess and can be wrong.
         if ($installers.Count -gt 1) {
             $recommendedName = if ($final.Count -gt 0) { $final[0].name } else { $null }
             return _SelectAssetFromList $installers $recommendedName
@@ -646,9 +568,8 @@ function _SaveAsset($Asset, $DestDir, $ProxyUrl) {
 }
 
 function _NewAssetPattern($FileName) {
-    # Turns a concrete asset name into a reusable glob by dropping
-    # version-ish tokens: bat-v0.26.1-x86_64-pc-windows-msvc.zip ->
-    # *x86_64*pc*windows*msvc.zip
+    # Turn a concrete asset name into a reusable glob by dropping version
+    # tokens: bat-v0.26.1-x86_64-pc-windows-msvc.zip -> *x86_64*pc*windows*msvc.zip
     $kept = @($FileName -split '[\s-]+' | Where-Object { $_ } | Where-Object {
         $_ -notmatch '^v?\d+$' -and $_ -notmatch '^v?\d+(\.\d+)+$' -and $_ -notmatch '\d\.\d'
     })
@@ -706,8 +627,7 @@ function _InstallDownloadedAsset($Path) {
             }
         }
         default {
-            # Shouldn't normally happen - _SelectAsset only ever returns
-            # installer-extension assets - but kept as a safety net.
+            # Safety net - _SelectAsset only returns installer extensions.
             Write-Host "Unrecognized installer type ($ext); kept for manual install at $Path" -ForegroundColor Yellow
         }
     }
@@ -718,8 +638,7 @@ function _InstallDownloadedAsset($Path) {
 # --------------------------------------------------------------------------
 
 function _ConvertToRepoSlug($Raw) {
-    # Accepts 'owner/repo', a full https://github.com/owner/repo URL, or
-    # git@github.com:owner/repo.git, and returns 'owner/repo' (or $null).
+    # Accepts 'owner/repo', a github.com URL, or git@github.com:owner/repo.git.
     $s = $Raw.Trim().Trim('/')
 
     if ($s.StartsWith("git@github.com:")) {
@@ -813,7 +732,7 @@ function _Add {
 
     $entry = [PSCustomObject]@{
         repo             = $repo
-        tag_family       = _GetTagFamily $release.tag_name
+        tag_family       = _GetReleaseKey $release
         pattern          = if ($Pattern) { $Pattern } else { _NewAssetPattern $asset.name }
         install_dir      = $installDir
         current_version  = if ($CurrentVersion) { $CurrentVersion } else { $null }
@@ -1026,10 +945,8 @@ function _Update {
         }
         if (-not $asset) {
             if ($newTypeNeeded) {
-                # The new release exists but ships no Windows installer at all
-                # (e.g. a Linux/macOS-only release, or only archives) - so
-                # there's nothing to download or pick. Don't bump the recorded
-                # version; it'll be offered again once a real Windows build lands.
+                # No Windows installer in this release - don't bump the
+                # recorded version; it'll come up again once one lands.
                 Write-Host "$appName $latestVersion ($($release.name)) has no Windows installer - skipping." -ForegroundColor Yellow
             }
             continue
@@ -1049,7 +966,6 @@ function _Proxy {
     $config = _GetConfig
 
     if (-not $Target -or $Target.Trim() -eq "") {
-        # Show current proxy
         if ($config.proxy) {
             Write-Host "Proxy: $($config.proxy)" -ForegroundColor Green
         }
@@ -1072,9 +988,9 @@ function _Proxy {
     }
 
     # Set proxy
-    $url = $Target.Trim()
+$url = $Target.Trim()
     if (-not (_TestIsSocks5 $url)) {
-        # Bare host:port — prepend socks5://
+        # Bare host:port - prepend socks5://
         if ($url -match '^[\w.\-]+:\d+$') {
             $url = "socks5://$url"
         }
