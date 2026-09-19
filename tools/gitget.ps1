@@ -27,7 +27,7 @@ param(
     [string]$Command,
 
     [Parameter(Position = 1)]
-    [string]$Target,          # repo (for add), app name (for rm/check), or proxy URL/clear (for proxy)
+    [string]$Target,          # repo (for add), app name (for rm/check/update), or proxy URL/clear (for proxy)
 
     [string]$RestorePath,     # path to config file to restore (for 'restore')
 
@@ -42,7 +42,9 @@ param(
 
     [string]$Proxy,             # socks5://host:port for one-off override (not persisted)
 
-    [switch]$All                # for 'update': update all without fzf picker
+    [switch]$All,               # for 'update': update all without fzf picker
+
+    [switch]$Force              # for 'check'/'update': ignore cache, always hit the API
 )
 
 $ErrorActionPreference = "Stop"
@@ -66,6 +68,8 @@ if ($missingDeps.Count -gt 0)
 $AppDir         = Join-Path $env:LOCALAPPDATA "windows-config-files\gitget"
 $ConfFilePath   = Join-Path $AppDir "config.json"
 $DownloadsDir   = Join-Path $AppDir "downloads"
+$CacheDir        = Join-Path $AppDir "cache"
+$CacheTtlMinutes = if ($env:GITGET_CACHE_TTL_MINUTES) { [int]$env:GITGET_CACHE_TTL_MINUTES } else { 10 }
 
 # Only these are ever offered/tracked - this script only handles Windows
 # installers, not portable binaries or archives.
@@ -142,9 +146,11 @@ function _InvokeGitHubApi($Url, $ProxyUrl) {
             $curlArgs += $Url
             $out = & curl.exe @curlArgs 2>&1
             if ($LASTEXITCODE -ne 0) { throw "curl exited with code $LASTEXITCODE" }
-            return ($out -join "`n") | ConvertFrom-Json
+            $result = ($out -join "`n") | ConvertFrom-Json
+            return $result
         }
-        return Invoke-RestMethod -Uri $Url -Headers $headers -Method Get
+        $result = Invoke-RestMethod -Uri $Url -Headers $headers -Method Get
+        return $result
     }
     catch {
         $status = $_.Exception.Response.StatusCode.value__
@@ -160,13 +166,78 @@ function _InvokeGitHubApi($Url, $ProxyUrl) {
     }
 }
 
-function _GetLatestRelease($Repo, $ProxyUrl) {
-    return _InvokeGitHubApi "https://api.github.com/repos/$Repo/releases/latest" $ProxyUrl
+function _ProjectRelease($Rel) {
+    if ($null -eq $Rel) { return $null }
+    $assets = @()
+    if ($Rel.assets) {
+        $assets = @(@($Rel.assets) | ForEach-Object {
+            [PSCustomObject]@{
+                name                 = $_.name
+                size                 = $_.size
+                browser_download_url = $_.browser_download_url
+            }
+        })
+    }
+    return [PSCustomObject]@{
+        tag_name   = $Rel.tag_name
+        name       = $Rel.name
+        prerelease = [bool]$Rel.prerelease
+        assets     = $assets
+    }
 }
 
-function _GetReleases($Repo, $Count = 40, $ProxyUrl) {
-    return @(_InvokeGitHubApi "https://api.github.com/repos/$Repo/releases?per_page=$Count" $ProxyUrl)
+function _GetCachePath($Repo, $Endpoint) {
+    $safe = $Repo -replace '[^a-zA-Z0-9._-]', '_'
+    $hash = [System.BitConverter]::ToString([System.Security.Cryptography.MD5]::Create().ComputeHash([Text.Encoding]::UTF8.GetBytes($Endpoint))).Replace("-", "").Substring(0, 8)
+    return Join-Path $CacheDir "$safe-$hash.json"
+}
 
+function _ReadCache($Repo, $Endpoint) {
+    $path = _GetCachePath $Repo $Endpoint
+    if (-not (Test-Path $path)) { return $null }
+    try {
+        $raw = Get-Content $path -Raw | ConvertFrom-Json
+    }
+    catch { return $null }
+    if ((-not $raw) -or (-not $raw.cached_at) -or ($raw.endpoint -ne $Endpoint)) { return $null }
+    $age = [DateTimeOffset]::UtcNow - ([DateTimeOffset]$raw.cached_at).ToUniversalTime()
+    if ($age.TotalMinutes -gt $CacheTtlMinutes) {
+        Remove-Item $path -Force -ErrorAction SilentlyContinue
+        return $null
+    }
+    return $raw.data
+}
+
+function _WriteCache($Repo, $Endpoint, $Data) {
+    New-Item -ItemType Directory -Force -Path $CacheDir | Out-Null
+    $payload = [PSCustomObject]@{
+        endpoint  = $Endpoint
+        cached_at = (Get-Date).ToUniversalTime().ToString("o")
+        data      = $Data
+    }
+    $payload | ConvertTo-Json -Depth 12 | Set-Content -Path (_GetCachePath $Repo $Endpoint) -Encoding UTF8
+}
+
+function _GetLatestRelease($Repo, $ProxyUrl, [switch]$Force) {
+    $endpoint = "https://api.github.com/repos/$Repo/releases/latest"
+    if (-not $Force) {
+        $cached = _ReadCache $Repo $endpoint
+        if ($null -ne $cached) { return $cached }
+    }
+    $result = _ProjectRelease (_InvokeGitHubApi $endpoint $ProxyUrl)
+    _WriteCache $Repo $endpoint $result
+    return $result
+}
+
+function _GetReleases($Repo, $Count = 40, $ProxyUrl, [switch]$Force) {
+    $endpoint = "https://api.github.com/repos/$Repo/releases?per_page=$Count"
+    if (-not $Force) {
+        $cached = _ReadCache $Repo $endpoint
+        if ($null -ne $cached) { return @($cached) }
+    }
+    $result = @(@(_InvokeGitHubApi $endpoint $ProxyUrl) | ForEach-Object { _ProjectRelease $_ })
+    _WriteCache $Repo $endpoint $result
+    return $result
 }
 
 # Some repos split releases per platform into separate tags. /releases/latest
@@ -199,10 +270,10 @@ function _GetReleaseKey($Rel) {
     return _GetTagFamily $Rel.tag_name
 }
 
-function _GetTrackedRelease($AppName, $App, $ProxyUrl) {
-    $releases = _GetReleases $App.repo 40 $ProxyUrl
+function _GetTrackedRelease($AppName, $App, $ProxyUrl, [switch]$Force) {
+    $releases = _GetReleases $App.repo 40 $ProxyUrl -Force:$Force
     if (-not $releases -or $releases.Count -eq 0) {
-        return (_GetLatestRelease $App.repo $ProxyUrl)
+        return (_GetLatestRelease $App.repo $ProxyUrl -Force:$Force)
     }
     $stable = @($releases | Where-Object { -not $_.prerelease })
 
@@ -227,7 +298,7 @@ function _GetTrackedRelease($AppName, $App, $ProxyUrl) {
     }
 
     # Last resort: fall back to /releases/latest.
-    return (_GetLatestRelease $App.repo $ProxyUrl)
+    return (_GetLatestRelease $App.repo $ProxyUrl -Force:$Force)
 }
 
 function _GetReleaseLines($InstallableReleases) {
@@ -782,9 +853,9 @@ function _List {
     }
 }
 
-function _CheckOne($appName, $app, $ProxyUrl) {
+function _CheckOne($appName, $app, $ProxyUrl, [switch]$Force) {
     try {
-        $release = _GetTrackedRelease $appName $app $ProxyUrl
+        $release = _GetTrackedRelease $appName $app $ProxyUrl -Force:$Force
     }
     catch {
         Write-Host "$appName error: $($_.Exception.Message)" -ForegroundColor Red
@@ -832,7 +903,7 @@ function _Check {
     $errorCount = 0
     $configChanged = $false
     foreach ($prop in $targets) {
-        $result = _CheckOne $prop.Name $prop.Value $proxyUrl
+        $result = _CheckOne $prop.Name $prop.Value $proxyUrl -Force:$Force
         if ($null -eq $result) { $errorCount++; continue }
         if ($result.hasUpdate) { $updateCount++ }
         if ($result.configChanged) { $configChanged = $true }
@@ -856,15 +927,20 @@ function _Update {
     $entries = $config.apps.PSObject.Properties
     if (-not $entries -or $entries.Count -eq 0) { Write-Host "Nothing tracked." -ForegroundColor Yellow; return }
 
+    if ($Target -and -not (_GetAppEntry $config $Target)) {
+        Write-Host "'$Target' is not tracked." -ForegroundColor Yellow; return
+    }
+    $targets = if ($Target) { $entries | Where-Object { $_.Name -eq $Target } } else { $entries }
+
     $proxyUrl = _ResolveProxy
     $updatable = [System.Collections.Generic.List[PSCustomObject]]::new()
     $errorCount = 0
-    foreach ($prop in $entries) {
+    foreach ($prop in $targets) {
         $appName = $prop.Name
         $app = $prop.Value
 
         try {
-            $release = _GetTrackedRelease $appName $app $proxyUrl
+            $release = _GetTrackedRelease $appName $app $proxyUrl -Force:$Force
         }
         catch {
             Write-Host "$appName error: $($_.Exception.Message)" -ForegroundColor Red
@@ -1030,8 +1106,8 @@ switch ($Command) {
         Write-Host "  add         - Track a GitHub repo (gitget add owner/repo)"
         Write-Host "  ls          - List tracked apps"
         Write-Host "  rm          - Remove tracked apps (fzf picker)"
-        Write-Host "  check       - Check for updates"
-        Write-Host "  update      - Download and install available updates (fzf picker, -All to skip)"
+        Write-Host "  check       - Check for updates (-Force skips cache)"
+        Write-Host "  update      - Download and install available updates (fzf picker, name to limit, -All to skip, -Force to skip cache)"
         Write-Host "  backup      - Backup config to Documents\windows-config-backup\gitget"
         Write-Host "  restore     - Restore config from a file path"
         Write-Host "  proxy       - Set/show/clear SOCKS5 proxy (gitget proxy host:port)"
