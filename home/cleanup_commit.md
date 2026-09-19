@@ -1,5 +1,4 @@
-Please perform a complete code and text review of all changes made since the last commit. Clean up UI strings, code comments, GitHub metadata, tags, and documentation according to the following guidelines:
-(ONLY FOR UNCOMITTED CHANGES)
+Please review and clean up uncommitted changes only. Check UI strings, code comments, GitHub metadata, tags, and documentation according to the following guidelines. Do not review or modify anything that is already committed.
 ---
 
 ### General Writing Style
@@ -11,17 +10,17 @@ Please perform a complete code and text review of all changes made since the las
 ### Scope of Review & Cleanup
 
 1. **UI Text & Labels (App UI)**
-   * Review all user-visible strings, toggle descriptions, settings options, and dialog text added or modified since the last commit.
+   * Review all user-visible strings, toggle descriptions, settings options, and dialog text added or modified in the current uncommitted changes.
    * Rewrite any verbose or technical copy to be clear, concise, and user-friendly (e.g., replace "Disable OS Battery Saver Throttling" with "Ignore Battery Optimization").
 
 2. **Code Comments**
-   * Audit all added or modified source files.
+   * Audit only source files included in the current uncommitted changes.
    * Remove redundant, obvious, or outdated comments.
    * Rewrite necessary comments to be short, plain, and direct, explaining *why* something exists rather than describing self-explanatory code.
 
 3. **GitHub Documentation & Metadata**
-   * **README.md:** Update or refine project summaries, feature lists, and setup steps so they are simple to read for any developer or user.
-   * **Repository Tags & Description:** Review and suggest (or update) short, clear repository descriptions and relevant tags/topics that accurately represent the app without fluff.
+   * **README.md:** Update or refine only the uncommitted README changes so project summaries, feature lists, and setup steps are simple to read for any developer or user.
+   * **Repository Tags & Description:** Review and suggest (or update) only uncommitted changes to repository descriptions and relevant tags/topics. Keep them short, clear, accurate, and free of fluff.
 
 4. **Diff Audit (Since Last Commit)**
-   * Perform a full pass across all uncommitted/recent changes to remove debug code, temporary strings, or leftover placeholders.
+   * Perform a full pass across all current uncommitted changes to remove debug code, temporary strings, or leftover placeholders.
