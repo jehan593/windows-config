@@ -51,7 +51,7 @@ foreach ($module in (Get-PsModules))
     {
         Write-Host "`n--- $module ---" -ForegroundColor DarkGray
         Install-Module -Name $module -Force -Scope CurrentUser -AllowClobber -AcceptLicense -SkipPublisherCheck -ErrorAction Stop
-        Write-Host "Module installed successfully" -ForegroundColor Green
+        Write-Host "Installed: $module" -ForegroundColor Green
     }
     catch
     {
@@ -133,7 +133,7 @@ function Set-RegistryValues {
                 New-ItemProperty -Path $RegPath -Name $entry.name -Value $propValue -PropertyType $propType -Force | Out-Null
             }
         }
-        Write-Host "Registry values applied successfully to: $RegPath" -ForegroundColor Green
+        Write-Host "Registry values applied to: $RegPath" -ForegroundColor Green
     }
     catch {
         Write-Host "Failed to apply registry values to ${RegPath}: $($_.Exception.Message)" -ForegroundColor Red
@@ -184,7 +184,7 @@ $wtFragmentPath = "$env:LOCALAPPDATA\Microsoft\Windows Terminal\Fragments\nord"
 try {
     New-Item -ItemType Directory -Path $wtFragmentPath -Force | Out-Null
     Copy-Item -Path $nordJson -Destination (Join-Path $wtFragmentPath "nord.json") -Force -ErrorAction Stop
-    Write-Host "Nord theme fragment deployed successfully" -ForegroundColor Green
+    Write-Host "Nord theme fragment deployed" -ForegroundColor Green
 }
 catch {
     Write-Host "Failed to deploy Nord theme fragment: $($_.Exception.Message)" -ForegroundColor Red
@@ -229,7 +229,7 @@ try {
         Write-Host "wireproxy already up to date: $($wireproxyResult.Path)" -ForegroundColor Green
     }
     else {
-        Write-Host "wireproxy installed successfully: $($wireproxyResult.Path)" -ForegroundColor Green
+        Write-Host "wireproxy installed: $($wireproxyResult.Path)" -ForegroundColor Green
     }
 }
 catch {
@@ -280,7 +280,7 @@ try
 {
     $env:WINDOWS_CONFIG_PATH = $ConfigPath
     [System.Environment]::SetEnvironmentVariable("WINDOWS_CONFIG_PATH", $ConfigPath, [System.EnvironmentVariableTarget]::Machine)
-    Write-Host "WINDOWS_CONFIG_PATH successfully set to: $ConfigPath" -ForegroundColor Green
+    Write-Host "WINDOWS_CONFIG_PATH set to: $ConfigPath" -ForegroundColor Green
 }
 catch
 {
@@ -303,7 +303,7 @@ else
     try
     {
         Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser -Force -ErrorAction Stop
-        Write-Host "Execution policy successfully set to RemoteSigned (CurrentUser)" -ForegroundColor Green
+        Write-Host "Execution policy set to RemoteSigned (CurrentUser)" -ForegroundColor Green
     }
     catch
     {

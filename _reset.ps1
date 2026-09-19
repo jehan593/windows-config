@@ -48,7 +48,7 @@ function Remove-Symlink {
     $backupPath = "$Path.bak"
     try {
         Remove-Item $item.FullName -Force -ErrorAction Stop
-        Write-Host "Successfully unlinked: $Path" -ForegroundColor Green
+        Write-Host "Unlinked: $Path" -ForegroundColor Green
     }
     catch {
         Write-Host "Failed to remove link: $Path. Error: $_" -ForegroundColor Red
@@ -175,7 +175,7 @@ if (Test-Path $wtFragmentPath)
 {
     try {
         Remove-Item $wtFragmentPath -Recurse -Force -ErrorAction Stop
-        Write-Host "Successfully removed Nord theme fragment folder" -ForegroundColor Green
+        Write-Host "Removed Nord theme fragment folder" -ForegroundColor Green
     }
     catch {
         Write-Host "Failed to remove Nord theme fragment folder: $($_.Exception.Message)" -ForegroundColor Red
@@ -227,7 +227,7 @@ if (Get-Command wg -ErrorAction SilentlyContinue) {
         if (-not (Disconnect-WgmTunnel -TunnelName $activeTunnel)) {
             Write-Host "Warning: Failed to cleanly disconnect tunnel. Proceeding with caution." -ForegroundColor Yellow
         } else {
-            Write-Host "Successfully disconnected tunnel: $activeTunnel" -ForegroundColor Green
+            Write-Host "Disconnected tunnel: $activeTunnel" -ForegroundColor Green
         }
     } else {
         Write-Host "No active WireGuard tunnels detected (Skipped)" -ForegroundColor Gray
@@ -251,7 +251,7 @@ if ($wgmConfFiles) {
 if (Test-Path $wgmDir) {
     try {
         Remove-Item $wgmDir -Recurse -Force -ErrorAction Stop
-        Write-Host "Successfully purged local WGM data" -ForegroundColor Green
+        Write-Host "Removed local WGM data" -ForegroundColor Green
     }
     catch {
         Write-Host "Failed to purge local WGM data: $($_.Exception.Message)" -ForegroundColor Red
@@ -294,7 +294,7 @@ if ($services) {
         }
 
         foreach ($svc in $services) {
-            if (Remove-WpmService -ServiceName $svc.Name) { Write-Host "Successfully removed service: $($svc.Name)" -ForegroundColor Green }
+            if (Remove-WpmService -ServiceName $svc.Name) { Write-Host "Removed service: $($svc.Name)" -ForegroundColor Green }
             else { Write-Host "Failed to remove service: $($svc.Name)" -ForegroundColor Red }
         }
     }
@@ -307,7 +307,7 @@ else {
     if (Test-Path $wpmDir) {
         try {
             Remove-Item $wpmDir -Recurse -Force -ErrorAction Stop
-            Write-Host "Successfully removed WPM application directory data" -ForegroundColor Green
+            Write-Host "Removed WPM application directory data" -ForegroundColor Green
         }
         catch {
             Write-Host "Failed to remove WPM application directory data: $($_.Exception.Message)" -ForegroundColor Red
@@ -319,7 +319,7 @@ else {
     if (Test-Path $wireproxyExe) {
         try {
             Remove-Item $wireproxyExe -Force -ErrorAction Stop
-            Write-Host "Successfully deleted wireproxy binary from: $wireproxyExe" -ForegroundColor Green
+            Write-Host "Deleted wireproxy binary from: $wireproxyExe" -ForegroundColor Green
         }
         catch {
             Write-Host "Failed to delete wireproxy binary. File might be locked." -ForegroundColor Red
@@ -399,7 +399,7 @@ try
     if ($machineVar)
     {
         [System.Environment]::SetEnvironmentVariable("WINDOWS_CONFIG_PATH", $null, [System.EnvironmentVariableTarget]::Machine)
-        Write-Host "Successfully removed WINDOWS_CONFIG_PATH from global Machine registry scope" -ForegroundColor Green
+        Write-Host "Removed WINDOWS_CONFIG_PATH from Machine registry scope" -ForegroundColor Green
     }
     else
     {
@@ -408,7 +408,7 @@ try
 }
 catch
 {
-    Write-Host "Failed to successfully uncommit environment variables from registry: $_" -ForegroundColor Red
+    Write-Host "Failed to remove environment variable: $_" -ForegroundColor Red
 }
 
 # ==============================================================================
@@ -441,7 +441,7 @@ else
         Write-Host "Restored terminal default profile launcher target" -ForegroundColor Green
 
         $settings | ConvertTo-Json -Depth 20 | Set-Content $wtSettingsPath -Encoding UTF8
-        Write-Host "Successfully saved reverted terminal JSON settings" -ForegroundColor Green
+        Write-Host "Saved reverted terminal JSON settings" -ForegroundColor Green
     }
     catch
     {

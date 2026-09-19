@@ -80,6 +80,11 @@ function _TestIsInstallerAsset($AssetName) {
     return $InstallerExtensions -contains $ext
 }
 
+function _TestIsInstallerLike($FileName) {
+    if (-not $FileName) { return $false }
+    return $FileName -match '(?i)setup|installer|install|update|updater|stub'
+}
+
 function _TestIsSocks5($Url) {
     return $Url -and ($Url.StartsWith("socks5://") -or $Url.StartsWith("socks5h://"))
 }
@@ -365,7 +370,10 @@ function _FindInstalledExe($App) {
         if (Test-Path $candidate) { return $candidate }
     }
     if ($App.install_dir -and (Test-Path $App.install_dir)) {
+        # Never probe the app's own downloaded installer (or any installer-like
+        # exe) for a version - launching one would pop up its setup UI.
         return (Get-ChildItem -Path $App.install_dir -Filter *.exe -Recurse -ErrorAction SilentlyContinue |
+                Where-Object { $_.Name -ne $App.current_asset -and -not (_TestIsInstallerLike $_.Name) } |
                 Select-Object -First 1).FullName
     }
     return $null
@@ -560,9 +568,8 @@ function _SelectAssetFromList($Candidates, $RecommendedName) {
         $label
     })
 
-    Write-Host "Warning: not every .exe here is necessarily an installer - some projects also"
-    Write-Host "ship a plain portable binary. Don't pick that; pick the actual installer"
-    Write-Host "(often named like '*-setup.exe'/'*-installer.exe', or a .msi/.msix)."
+    Write-Host "Some .exe assets are plain portable binaries, not installers - pick the actual" -ForegroundColor Yellow
+    Write-Host "installer (often named like '*-setup.exe' or '*-installer.exe', or a .msi/.msix)." -ForegroundColor Yellow
 
     Write-Host "Pick an installer (showing all $($names.Count) installer-type files on this release, esc to cancel):"
     $picked = @($names | fzf --prompt="installer> " --no-sort)[0]
@@ -1029,6 +1036,13 @@ function _Update {
         }
 
         $path = _SaveAsset $asset $app.install_dir $proxyUrl
+        if ($app.current_asset -and $app.current_asset -ne $asset.name) {
+            $stalePath = Join-Path $app.install_dir $app.current_asset
+            if (Test-Path $stalePath) {
+                Remove-Item $stalePath -Force -ErrorAction SilentlyContinue
+                Write-Host "Removed old installer: $($app.current_asset)" -ForegroundColor Gray
+            }
+        }
         $app.current_version = $latestVersion
         $app.current_asset = $asset.name
         $app.pattern = _NewAssetPattern $asset.name
@@ -1064,7 +1078,7 @@ function _Proxy {
     }
 
     # Set proxy
-$url = $Target.Trim()
+    $url = $Target.Trim()
     if (-not (_TestIsSocks5 $url)) {
         # Bare host:port - prepend socks5://
         if ($url -match '^[\w.\-]+:\d+$') {

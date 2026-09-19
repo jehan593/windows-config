@@ -55,9 +55,9 @@ function _Tweak_WindowsUpdateRecommended
         }
         Set-ItemProperty -Path "HKLM:\SOFTWARE\Microsoft\WindowsUpdate\UX\Settings" -Name "BranchReadinessLevel"            -Value 20  -Type DWord -Force -ErrorAction Stop
         Set-ItemProperty -Path "HKLM:\SOFTWARE\Microsoft\WindowsUpdate\UX\Settings" -Name "DeferFeatureUpdatesPeriodInDays" -Value 365 -Type DWord -Force -ErrorAction Stop
-        Write-Host "Feature updates successfully delayed by 365 days." -ForegroundColor Green
+        Write-Host "Feature updates delayed by 365 days." -ForegroundColor Green
         Set-ItemProperty -Path "HKLM:\SOFTWARE\Microsoft\WindowsUpdate\UX\Settings" -Name "DeferQualityUpdatesPeriodInDays" -Value 4   -Type DWord -Force -ErrorAction Stop
-        Write-Host "Quality updates successfully delayed by 4 days." -ForegroundColor Green
+        Write-Host "Quality updates delayed by 4 days." -ForegroundColor Green
 
         if (-not (Test-Path "HKLM:\SOFTWARE\Policies\Microsoft\Windows\WindowsUpdate\AU")) {
             New-Item -Path "HKLM:\SOFTWARE\Policies\Microsoft\Windows\WindowsUpdate\AU" -Force | Out-Null
@@ -86,7 +86,7 @@ function _Tweak_EditWithNeovim
             $cmd = $shell.CreateSubKey("command")
             $cmd.SetValue("", $cmdArgs)
             $cmd.Close(); $shell.Close()
-            Write-Host "Successfully added" -ForegroundColor Green
+            Write-Host "Added" -ForegroundColor Green
         } catch {
             Write-Host "Failed to add : $($_.Exception.Message)" -ForegroundColor Red
         }
