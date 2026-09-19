@@ -99,6 +99,15 @@ $script:Digits = @{
     )
 }
 
+$script:Nord = @{
+    dim    = "`e[38;2;76;86;106m"   # nord3
+    red    = "`e[38;2;191;97;106m"  # nord11
+    orange = "`e[38;2;208;135;112m" # nord12
+    yellow = "`e[38;2;235;203;139m" # nord13
+    green  = "`e[38;2;163;190;140m" # nord14
+    blue   = "`e[38;2;129;161;193m" # nord9
+}
+
 function _BigTextRows
 {
     param([string]$Text)
@@ -178,16 +187,14 @@ function _DrawStatic
 
     [Console]::Write("`e[2J")
 
-    $dimColor = "`e[38;5;240m"
+    $dimColor = $script:Nord.dim
     $reset    = "`e[0m"
 
-    # Label
     $labelLine = "Timer: $Label"
     $lPad      = [math]::Max(0, [math]::Floor(($W - $labelLine.Length) / 2))
     $lTail     = [math]::Max(0, $W - $lPad - $labelLine.Length)
     _WriteAt 0 ($StartRow - 2) (" " * $lPad + "$dimColor$labelLine$reset" + " " * $lTail)
 
-    # Hint
     $hint  = "Space/p to pause  .  Ctrl+C to cancel"
     $hPad  = [math]::Max(0, [math]::Floor(($W - $hint.Length) / 2))
     $hTail = [math]::Max(0, $W - $hPad - $hint.Length)
@@ -203,18 +210,17 @@ function _DrawDynamic
     $barWidth = [math]::Max(20, $W - 8)
     $bar      = _ProgressBar $Remaining $Total $barWidth
 
-    $timeColor = if ($Paused)                   { "`e[93m" }
-                 elseif ($Remaining -le 10)     { "`e[91m" }
-                 elseif ($Remaining -le 60)     { "`e[38;2;208;135;112m" }
-                 else                            { "`e[92m" }
-    $barColor  = if ($Paused)                   { "`e[93m" }
-                 elseif ($Remaining -le 10)     { "`e[91m" }
-                 elseif ($Remaining -le 60)     { "`e[38;2;208;135;112m" }
-                 else                            { "`e[34m" }
-    $dimColor  = "`e[38;5;240m"
+    $timeColor = if ($Paused)               { $script:Nord.yellow }
+                 elseif ($Remaining -le 10) { $script:Nord.red }
+                 elseif ($Remaining -le 60) { $script:Nord.orange }
+                 else                       { $script:Nord.green }
+    $barColor  = if ($Paused)               { $script:Nord.yellow }
+                 elseif ($Remaining -le 10) { $script:Nord.red }
+                 elseif ($Remaining -le 60) { $script:Nord.orange }
+                 else                       { $script:Nord.blue }
+    $dimColor  = $script:Nord.dim
     $reset     = "`e[0m"
 
-    # Big digits
     $rows      = _BigTextRows $timeStr
     $rowWidth = $rows[0].Length
     $tPad      = [math]::Max(0, [math]::Floor(($W - $rowWidth) / 2))
@@ -225,13 +231,11 @@ function _DrawDynamic
         _WriteAt 0 ($StartRow + $r) (" " * $tPad + "$timeColor$($rows[$r])$reset" + " " * $tail)
     }
 
-    # Bar
     $barLine = "  $bar  "
     $bPad    = [math]::Max(0, [math]::Floor(($W - $barLine.Length) / 2))
     $bTail   = [math]::Max(0, $W - $bPad - $barLine.Length)
     _WriteAt 0 $BarRow (" " * $bPad + "$barColor$barLine$reset" + " " * $bTail)
 
-    # Percentage / paused label
     $pctStr = if ($Paused) { "Paused" } else { "$pct%" }
     $pPad   = [math]::Max(0, [math]::Floor(($W - $pctStr.Length) / 2))
     $pTail  = [math]::Max(0, $W - $pPad - $pctStr.Length)
@@ -339,11 +343,11 @@ try
 
     $done = "Timer complete!"
     $dPad = [math]::Max(0, [math]::Floor(($w - $done.Length) / 2))
-    _WriteAt $dPad ($mid - 1) ("`e[92m$done`e[0m")
+    _WriteAt $dPad ($mid - 1) ("$($script:Nord.green)$done`e[0m")
 
     $sub  = _FormatDuration $totalSecs
     $sPad = [math]::Max(0, [math]::Floor(($w - $sub.Length) / 2))
-    _WriteAt $sPad ($mid + 1) ("`e[38;5;240m$sub`e[0m")
+    _WriteAt $sPad ($mid + 1) ("$($script:Nord.dim)$sub`e[0m")
 
     [Console]::Beep(880,  200); Start-Sleep -Milliseconds 100
     [Console]::Beep(880,  200); Start-Sleep -Milliseconds 100

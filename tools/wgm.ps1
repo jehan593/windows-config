@@ -71,7 +71,7 @@ function _WgOn
             Write-Host "Failed to disconnect '$active'. Aborting profile switch." -ForegroundColor Red
             return
         }
-        Write-Host "Successfully disconnected from '$active'." -ForegroundColor Green
+        Write-Host "Disconnected from '$active'." -ForegroundColor Green
         if (-not (Wait-WgmTunnelState -ExpectedTunnel $null)) {
             Write-Host "Warning: '$active' still appears active after waiting." -ForegroundColor Yellow
         }
@@ -107,7 +107,7 @@ function _WgOn
         if (-not (Wait-WgmTunnelState -ExpectedTunnel $wgProfile.Name)) {
             Write-Host "Warning: tunnel service started but '$($wgProfile.Name)' isn't showing as active yet." -ForegroundColor Yellow
         }
-        Write-Host "Connected to $($wgProfile.Name) successfully!" -ForegroundColor Green
+        Write-Host "Connected to $($wgProfile.Name)" -ForegroundColor Green
     } else {
         Write-Host "Failed to connect to $($wgProfile.Name)." -ForegroundColor Red
     }
@@ -175,7 +175,7 @@ function _WgAdd
     }
 
     if ($copySucceeded -and (Test-Path -LiteralPath $dest -PathType Leaf)) {
-        Write-Host "Added profile '$Name' successfully." -ForegroundColor Green
+        Write-Host "Added profile '$Name'." -ForegroundColor Green
         Write-Host "Saved & renamed config to: $dest" -ForegroundColor Green
     } else {
         Write-Host "Failed to copy or rename configuration profile." -ForegroundColor Red
@@ -212,7 +212,7 @@ function _WgRemove
                 return
             }
             
-            Write-Host "Successfully disconnected." -ForegroundColor Green
+            Write-Host "Disconnected." -ForegroundColor Green
         }
 
         $userDocs = [Environment]::GetFolderPath("MyDocuments")

@@ -213,9 +213,9 @@ function _RemoveSocks
     }
 
     if ($allOk) {
-        Write-Host "Selected tunnels removed and configurations backed up." -ForegroundColor Green
+        Write-Host "Selected tunnels removed, configs backed up." -ForegroundColor Green
     } else {
-        Write-Host "Process failed or encountered issues removing service objects." -ForegroundColor Red
+        Write-Host "Removal incomplete - see errors above." -ForegroundColor Red
     }
 }
 
@@ -232,9 +232,9 @@ function _RefreshSocks
     $serviceNames = $services | ForEach-Object { $_.Name }
 
     if (_ServyBatchAction -Verb "restart" -ServiceNames $serviceNames) {
-        Write-Host "All tunnels successfully restarted." -ForegroundColor Green
+        Write-Host "All tunnels restarted." -ForegroundColor Green
     } else {
-        Write-Host "Failed to restart one or more tunnel services." -ForegroundColor Red
+        Write-Host "Failed to restart one or more tunnels." -ForegroundColor Red
     }
 }
 
@@ -250,9 +250,9 @@ function _StartSocks
     $serviceNames = $selected | ForEach-Object { $_.Svc.Name }
 
     if (_ServyBatchAction -Verb "start" -ServiceNames $serviceNames) {
-        Write-Host "Selected tunnels started successfully." -ForegroundColor Green
+        Write-Host "Selected tunnels started." -ForegroundColor Green
     } else {
-        Write-Host "Failed to start one or more tunnel services." -ForegroundColor Red
+        Write-Host "Failed to start one or more tunnels." -ForegroundColor Red
     }
 }
 
@@ -264,9 +264,9 @@ function _StopSocks
     $serviceNames = $selected | ForEach-Object { $_.Svc.Name }
 
     if (_ServyBatchAction -Verb "stop" -ServiceNames $serviceNames) {
-        Write-Host "Selected tunnels stopped successfully." -ForegroundColor Green
+        Write-Host "Selected tunnels stopped." -ForegroundColor Green
     } else {
-        Write-Host "Failed to stop one or more tunnel services." -ForegroundColor Red
+        Write-Host "Failed to stop one or more tunnels." -ForegroundColor Red
     }
 }
 
@@ -278,9 +278,9 @@ function _RestartSocks
     $serviceNames = $selected | ForEach-Object { $_.Svc.Name }
 
     if (_ServyBatchAction -Verb "restart" -ServiceNames $serviceNames) {
-        Write-Host "Selected tunnels restarted successfully." -ForegroundColor Green
+        Write-Host "Selected tunnels restarted." -ForegroundColor Green
     } else {
-        Write-Host "Failed to restart one or more tunnel services." -ForegroundColor Red
+        Write-Host "Failed to restart one or more tunnels." -ForegroundColor Red
     }
 }
 
@@ -317,7 +317,7 @@ function _UpdateWireproxy
     if ($running.Count -gt 0) {
         Write-Host "Restarting previously active tunnels..." -ForegroundColor Gray
         if (_ServyBatchAction -Verb "start" -ServiceNames $running) {
-            Write-Host "Tunnels restarted successfully." -ForegroundColor Green
+            Write-Host "Tunnels restarted." -ForegroundColor Green
         } else {
             Write-Host "Failed to restart one or more tunnels." -ForegroundColor Red
         }
