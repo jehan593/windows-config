@@ -364,6 +364,33 @@ function _TestSameVersion($a, $b) {
     return (($pa -join '.') -eq ($pb -join '.'))
 }
 
+function _CompareVersions($a, $b) {
+    # Numeric compare: -1 (a older), 0 (equal), 1 (a newer), $null if not comparable.
+    $na = _NormalizeVersion $a
+    $nb = _NormalizeVersion $b
+    if (-not $na -or -not $nb) { return $null }
+    if ($na -eq $nb) { return 0 }
+    $numsA = @([regex]::Matches($na, '\d+') | ForEach-Object { $_.Value })
+    $numsB = @([regex]::Matches($nb, '\d+') | ForEach-Object { $_.Value })
+    if ($numsA.Count -eq 0 -or $numsB.Count -eq 0) { return $null }
+    $n = [Math]::Max($numsA.Count, $numsB.Count)
+    for ($i = 0; $i -lt $n; $i++) {
+        $va = if ($i -lt $numsA.Count) { [int64]$numsA[$i] } else { 0 }
+        $vb = if ($i -lt $numsB.Count) { [int64]$numsB[$i] } else { 0 }
+        if ($va -gt $vb) { return 1 }
+        if ($va -lt $vb) { return -1 }
+    }
+    return 0
+}
+
+function _TestIsNewer($Candidate, $Current) {
+    # True only when $Candidate is a strictly higher version than $Current; an app
+    # that self-updated past GitHub (e.g. Mullvad Browser) is NOT an update target.
+    $cmp = _CompareVersions $Candidate $Current
+    if ($null -eq $cmp) { return -not (_TestSameVersion $Candidate $Current) }
+    return ($cmp -gt 0)
+}
+
 function _FindInstalledExe($App) {
     if ($App.version_exe -and $App.install_dir) {
         $candidate = Join-Path $App.install_dir $App.version_exe
@@ -886,7 +913,7 @@ function _CheckOne($appName, $app, $ProxyUrl, [switch]$Force) {
     }
 
     $asset = _SelectAsset $release.assets $app.pattern
-    $hasUpdate = -not (_TestSameVersion $latestVersion $app.current_version)
+    $hasUpdate = _TestIsNewer $latestVersion $app.current_version
 
     if ($hasUpdate) {
         Write-Host $appName -ForegroundColor Yellow
@@ -968,7 +995,7 @@ function _Update {
             $app.current_version = $latestVersion
             _SaveConfig $config
         }
-        if ((_TestSameVersion $latestVersion $app.current_version)) {
+        if (-not (_TestIsNewer $latestVersion $app.current_version)) {
             continue
         }
 
