@@ -40,6 +40,16 @@ param(
     [string]$VersionCommand,    # arg to pass the exe to print its version, e.g. "--version", for 'add'
     [string]$VersionRegex,      # regex (first capture group = version) to pull the version out of that output, for 'add'
 
+    [string]$TagPattern,        # optional glob selecting release tags
+    [string]$ReleaseNamePattern,# optional glob selecting release names
+    [string]$ReleaseVersionRegex, # extract comparable version from release tag
+    [string]$InstalledVersionRegex, # extract comparable version from installed sources
+    [string]$DisplayName,       # exact Windows uninstall display name
+    [string]$DisplayNamePattern,# glob for display names containing a version
+    [Nullable[bool]]$IncludePrerelease,
+    [ValidateRange(1, 1000)]
+    [int]$ReleaseLimit = 40,
+
     [string]$Proxy,             # socks5://host:port for one-off override (not persisted)
 
     [switch]$All,               # for 'update': update all without fzf picker
@@ -49,10 +59,9 @@ param(
 
 $ErrorActionPreference = "Stop"
 
-$ConfigPath = $env:WINDOWS_CONFIG_PATH
-. "$ConfigPath\helpers\dep-checker.ps1"
-
-$missingDeps = @(_TestDependencies -Commands "git", "fzf")
+$requiredCommands = @()
+if ($Command -in @('add', 'rm', 'update')) { $requiredCommands += 'fzf' }
+$missingDeps = @($requiredCommands | Where-Object { -not (Get-Command $_ -ErrorAction SilentlyContinue) })
 if ($Proxy -or $Command -eq "proxy") {
     if (-not (Get-Command curl.exe -ErrorAction SilentlyContinue)) {
         $missingDeps += "curl.exe"
@@ -129,6 +138,38 @@ function _GetAppEntry($config, $name) {
     $config.apps.PSObject.Properties | Where-Object { $_.Name -eq $name } | Select-Object -First 1
 }
 
+function _ExtractConfiguredVersion($Value, $Regex) {
+    if (-not $Regex -or -not $Value) { return $Value }
+    $match = [regex]::Match($Value, $Regex)
+    if (-not $match.Success) { throw "Version '$Value' does not match configured regex '$Regex'." }
+    if ($match.Groups.Count -gt 1 -and $match.Groups[1].Success) { return $match.Groups[1].Value }
+    return $match.Value
+}
+
+function _Configure {
+    $config = _GetConfig
+    $entry = _GetAppEntry $config $Target
+    if (-not $entry) { Write-Host "'$Target' is not tracked." -ForegroundColor Yellow; return }
+    $settings = @{
+        Pattern='pattern'; TagPattern='tag_pattern'; ReleaseNamePattern='release_name_pattern'
+        ReleaseVersionRegex='release_version_regex'; InstalledVersionRegex='installed_version_regex'
+        DisplayName='display_name'; DisplayNamePattern='display_name_pattern'; VersionExe='version_exe'; VersionCommand='version_command'
+        VersionRegex='version_regex'; IncludePrerelease='include_prerelease'; CurrentVersion='current_version'
+        ReleaseLimit='release_limit'
+    }
+    $changed = $false
+    foreach ($key in $settings.Keys) {
+        if (-not $script:PSBoundParameters.ContainsKey($key)) { continue }
+        $value = $script:PSBoundParameters[$key]
+        if ($key -like '*Regex' -and $value) { $null = [regex]::new($value) }
+        $entry.Value | Add-Member -NotePropertyName $settings[$key] -NotePropertyValue $value -Force
+        if ($key -eq 'Pattern') { $entry.Value | Add-Member -NotePropertyName pattern_explicit -NotePropertyValue ([bool]$value) -Force }
+        $changed = $true
+    }
+    if ($changed) { _SaveConfig $config }
+    $entry.Value | ConvertTo-Json -Depth 10
+}
+
 # --------------------------------------------------------------------------
 # GitHub API
 # --------------------------------------------------------------------------
@@ -144,7 +185,7 @@ function _InvokeGitHubApi($Url, $ProxyUrl) {
     try {
         if (_TestIsSocks5 $ProxyUrl) {
             $parsed = _ParseSocks5Url $ProxyUrl
-            $curlArgs = @("--socks5-hostname", "$($parsed.host):$($parsed.port)", "-s", "-f")
+            $curlArgs = @("--socks5-hostname", "$($parsed.host):$($parsed.port)", "--connect-timeout", "10", "--max-time", "30", "-s", "-f")
             foreach ($k in $headers.Keys) {
                 $curlArgs += "-H"; $curlArgs += "${k}: $($headers[$k])"
             }
@@ -154,7 +195,7 @@ function _InvokeGitHubApi($Url, $ProxyUrl) {
             $result = ($out -join "`n") | ConvertFrom-Json
             return $result
         }
-        $result = Invoke-RestMethod -Uri $Url -Headers $headers -Method Get
+        $result = Invoke-RestMethod -Uri $Url -Headers $headers -Method Get -TimeoutSec 30
         return $result
     }
     catch {
@@ -235,6 +276,20 @@ function _GetLatestRelease($Repo, $ProxyUrl, [switch]$Force) {
 }
 
 function _GetReleases($Repo, $Count = 40, $ProxyUrl, [switch]$Force) {
+    if ($Count -gt 100) {
+        $result = @()
+        for ($page = 1; $result.Count -lt $Count; $page++) {
+            $endpoint = "https://api.github.com/repos/$Repo/releases?per_page=100&page=$page"
+            $batch = if (-not $Force) { _ReadCache $Repo $endpoint } else { $null }
+            if ($null -eq $batch) {
+                $batch = @(@(_InvokeGitHubApi $endpoint $ProxyUrl) | ForEach-Object { _ProjectRelease $_ })
+                _WriteCache $Repo $endpoint $batch
+            }
+            $result += @($batch)
+            if (@($batch).Count -lt 100) { break }
+        }
+        return @($result | Select-Object -First $Count)
+    }
     $endpoint = "https://api.github.com/repos/$Repo/releases?per_page=$Count"
     if (-not $Force) {
         $cached = _ReadCache $Repo $endpoint
@@ -256,14 +311,17 @@ function _GetTagFamily($Tag) {
 }
 
 function _GetReleaseChannel($Rel) {
+    # Brave puts its channel before the version, followed by Chromium metadata.
+    # Check this first so changing Chromium versions do not become release lines.
+    if ($Rel -and $Rel.name -match '^(Release|Stable|Beta|Nightly|Dev|Canary)\s+v?\d') {
+        return $Matches[1].ToLower()
+    }
     # Some repos use a trailing parenthetical in the release NAME to mark
     # channels (e.g. "v2.34.0 (Stable)" vs "v2.35.4 (Dev)").
-    $knownChannels = @("dev", "stable", "beta", "rc", "rc2", "release candidate",
-                       "alpha", "preview", "nightly", "canary", "stable2")
     if (-not $Rel -or -not $Rel.name) { return $null }
     if ($Rel.name -match '\(([^)]+)\)\s*$') {
         $marker = $Matches[1].Trim().ToLower()
-        if ($knownChannels -contains $marker) { return $marker }
+        return $marker
     }
     return $null
 }
@@ -276,34 +334,46 @@ function _GetReleaseKey($Rel) {
 }
 
 function _GetTrackedRelease($AppName, $App, $ProxyUrl, [switch]$Force) {
-    $releases = _GetReleases $App.repo 40 $ProxyUrl -Force:$Force
-    if (-not $releases -or $releases.Count -eq 0) {
-        return (_GetLatestRelease $App.repo $ProxyUrl -Force:$Force)
-    }
-    $stable = @($releases | Where-Object { -not $_.prerelease })
+    $limit = if ($App.release_limit) { $App.release_limit } else { 40 }
+    $releases = _GetReleases $App.repo $limit $ProxyUrl -Force:$Force
+    $stable = @($releases | Where-Object { -not $_.prerelease -or $App.include_prerelease })
+    $explicitLine = $App.tag_pattern -or $App.release_name_pattern
+    if ($App.tag_pattern) { $stable = @($stable | Where-Object { $_.tag_name -like $App.tag_pattern }) }
+    if ($App.release_name_pattern) { $stable = @($stable | Where-Object { $_.name -like $App.release_name_pattern }) }
 
-    # Stay inside the family/channel the app was added from.
-    if ($App.tag_family) {
+    # An empty family is valid (numeric-only tags). For legacy entries without
+    # a saved family, use the old asset to identify the release line, not to
+    # select the update version: filenames commonly embed a version number.
+    $hasFamily = $null -ne $App.PSObject.Properties['tag_family'] -and $null -ne $App.tag_family
+    $family = $App.tag_family
+    if (-not $hasFamily -and -not $explicitLine) {
         foreach ($rel in $stable) {
-            if ((_GetReleaseKey $rel) -eq $App.tag_family) { return $rel }
+            $assets = @($rel.assets)
+            $matchByName = $App.current_asset -and ($assets.name -contains $App.current_asset)
+            $matchByPattern = $App.pattern -and (@($assets | Where-Object { $_.name -like $App.pattern }).Count -gt 0)
+            if ($matchByName -or $matchByPattern) {
+                $family = _GetReleaseKey $rel
+                $hasFamily = $true
+                break
+            }
         }
     }
 
-    # Newest stable release still carrying the file we track.
-    foreach ($rel in $stable) {
-        $assets         = @($rel.assets)
-        $matchByName    = $App.current_asset -and ($assets.name -contains $App.current_asset)
-        $matchByPattern = $App.pattern -and (@($assets | Where-Object { $_.name -like $App.pattern }).Count -gt 0)
-        if ($matchByName -or $matchByPattern) { return $rel }
+    if (-not $hasFamily -and -not $explicitLine) {
+        $lines = @(_GetReleaseLines @($stable | Where-Object {
+            @($_.assets | Where-Object { _TestIsInstallerAsset $_.name }).Count -gt 0
+        }))
+        if ($lines.Count -gt 1) { throw "Release line is ambiguous for $AppName. Use gitget configure $AppName -TagPattern <glob>." }
     }
 
-    # Otherwise: newest stable release with any installer-type asset.
+    # Newest stable release in the tracked line that ships an installer.
+    # Asset selection remains separate and can ask for a new installer type.
     foreach ($rel in $stable) {
+        if (-not $explicitLine -and $hasFamily -and (_GetReleaseKey $rel) -ne $family) { continue }
         if (@($rel.assets | Where-Object { _TestIsInstallerAsset $_.name }).Count -gt 0) { return $rel }
     }
 
-    # Last resort: fall back to /releases/latest.
-    return (_GetLatestRelease $App.repo $ProxyUrl -Force:$Force)
+    throw "No Windows installer release found for the tracked release line of $($App.repo). Configure release filters or increase -ReleaseLimit with gitget configure $AppName."
 }
 
 function _GetReleaseLines($InstallableReleases) {
@@ -349,19 +419,14 @@ function _NormalizeVersion($v) {
 }
 
 function _TestSameVersion($a, $b) {
-    # Match exactly, or differ by one extra leading segment (Chromium browsers
-    # write "<chromium-major>.<real-version>" into the registry).
+    # Extra leading segments have meaning; format overrides belong in config.
     $na = _NormalizeVersion $a
     $nb = _NormalizeVersion $b
     if ($na -eq $nb) { return $true }
     if (-not $na -or -not $nb) { return $false }
 
-    $pa = @($na -split '\.')
-    $pb = @($nb -split '\.')
-    if ([Math]::Abs($pa.Count - $pb.Count) -ne 1) { return $false }
-    if ($pa.Count -gt $pb.Count) { $pa = @($pa[1..($pa.Count - 1)]) }
-    else                         { $pb = @($pb[1..($pb.Count - 1)]) }
-    return (($pa -join '.') -eq ($pb -join '.'))
+    $cmp = _CompareVersions $a $b
+    return ($null -ne $cmp -and $cmp -eq 0)
 }
 
 function _CompareVersions($a, $b) {
@@ -370,32 +435,69 @@ function _CompareVersions($a, $b) {
     $nb = _NormalizeVersion $b
     if (-not $na -or -not $nb) { return $null }
     if ($na -eq $nb) { return 0 }
-    $numsA = @([regex]::Matches($na, '\d+') | ForEach-Object { $_.Value })
-    $numsB = @([regex]::Matches($nb, '\d+') | ForEach-Object { $_.Value })
-    if ($numsA.Count -eq 0 -or $numsB.Count -eq 0) { return $null }
+    if ($na -match '^\d{4}-\d{2}-\d{2}$' -or $nb -match '^\d{4}-\d{2}-\d{2}$') {
+        $dateA = [datetime]::MinValue
+        $dateB = [datetime]::MinValue
+        $culture = [System.Globalization.CultureInfo]::InvariantCulture
+        $style = [System.Globalization.DateTimeStyles]::None
+        if ([datetime]::TryParseExact($na, 'yyyy-MM-dd', $culture, $style, [ref]$dateA) -and
+            [datetime]::TryParseExact($nb, 'yyyy-MM-dd', $culture, $style, [ref]$dateB)) {
+            return [Math]::Sign($dateA.CompareTo($dateB))
+        }
+        return $null
+    }
+    # Compare numeric versions and SemVer prereleases; do not discard arbitrary
+    # text and accidentally equate different opaque release identifiers.
+    $syntax = '^(\d+(?:\.\d+)*)(?:-([0-9A-Za-z.-]+))?$'
+    $ma = [regex]::Match($na, $syntax)
+    $mb = [regex]::Match($nb, $syntax)
+    if (-not $ma.Success -or -not $mb.Success) { return $null }
+    $numsA = @($ma.Groups[1].Value -split '\.')
+    $numsB = @($mb.Groups[1].Value -split '\.')
     $n = [Math]::Max($numsA.Count, $numsB.Count)
     for ($i = 0; $i -lt $n; $i++) {
-        $va = if ($i -lt $numsA.Count) { [int64]$numsA[$i] } else { 0 }
-        $vb = if ($i -lt $numsB.Count) { [int64]$numsB[$i] } else { 0 }
+        $va = if ($i -lt $numsA.Count) { [System.Numerics.BigInteger]::Parse($numsA[$i]) } else { 0 }
+        $vb = if ($i -lt $numsB.Count) { [System.Numerics.BigInteger]::Parse($numsB[$i]) } else { 0 }
         if ($va -gt $vb) { return 1 }
         if ($va -lt $vb) { return -1 }
     }
-    return 0
+    $sa = $ma.Groups[2].Value
+    $sb = $mb.Groups[2].Value
+    if ($sa -ceq $sb) { return 0 }
+    if (-not $sa) { return 1 }
+    if (-not $sb) { return -1 }
+    $partsA = @($sa -split '\.')
+    $partsB = @($sb -split '\.')
+    for ($i = 0; $i -lt [Math]::Min($partsA.Count, $partsB.Count); $i++) {
+        $aNumeric = $partsA[$i] -match '^\d+$'
+        $bNumeric = $partsB[$i] -match '^\d+$'
+        if ($aNumeric -and $bNumeric) {
+            $cmp = [System.Numerics.BigInteger]::Parse($partsA[$i]).CompareTo([System.Numerics.BigInteger]::Parse($partsB[$i]))
+        } elseif ($aNumeric -ne $bNumeric) { $cmp = if ($aNumeric) { -1 } else { 1 } }
+        else { $cmp = [string]::CompareOrdinal($partsA[$i], $partsB[$i]) }
+        if ($cmp -ne 0) { return [Math]::Sign($cmp) }
+    }
+    return [Math]::Sign($partsA.Count - $partsB.Count)
 }
 
 function _TestIsNewer($Candidate, $Current) {
     # True only when $Candidate is a strictly higher version than $Current; an app
     # that self-updated past GitHub (e.g. Mullvad Browser) is NOT an update target.
     $cmp = _CompareVersions $Candidate $Current
-    if ($null -eq $cmp) { return -not (_TestSameVersion $Candidate $Current) }
+    if (-not $Current) { return $true }
+    if ($null -eq $cmp) { throw "Cannot compare '$Current' with '$Candidate'. Configure version extraction with gitget configure." }
     return ($cmp -gt 0)
 }
 
 function _FindInstalledExe($App) {
+    if ($App.version_exe -and [System.IO.Path]::IsPathRooted($App.version_exe)) {
+        if (Test-Path -LiteralPath $App.version_exe) { return $App.version_exe }
+    }
     if ($App.version_exe -and $App.install_dir) {
         $candidate = Join-Path $App.install_dir $App.version_exe
         if (Test-Path $candidate) { return $candidate }
     }
+    if ($App.version_exe) { return $null }
     if ($App.install_dir -and (Test-Path $App.install_dir)) {
         # Never probe the app's own downloaded installer (or any installer-like
         # exe) for a version - launching one would pop up its setup UI.
@@ -452,27 +554,13 @@ function _GetVersionFromFileMetadata($ExePath) {
 }
 
 function _GetVersionSearchNeedles($App, $AppName) {
-    # Recorded name/repo often differs from the installed DisplayName,
-    # so try the full name, repo owner, and word/camelCase tokens.
+    # Accept punctuation/spacing differences without matching unrelated
+    # programs from the same publisher or sharing one word.
     $repoName  = ($App.repo -split '/')[1]
-    $repoOwner = ($App.repo -split '/')[0]
-    $whole     = @($AppName, $repoName, $repoOwner) | Where-Object { $_ }
-
-    $tokens = @()
-    foreach ($w in @($AppName, $repoName)) {
-        if (-not $w) { continue }
-        $tokens += ($w -split '[-_\s]+' | Where-Object { $_.Length -ge 3 })
-    }
-
-    # CamelCase split: "LenovoLegionToolkit" -> "Lenovo", "Legion", "Toolkit"
-    $splitTokens = @()
-    foreach ($w in @($AppName, $repoName)) {
-        if (-not $w) { continue }
-        $parts = [regex]::Split($w, '(?<=[a-z])(?=[A-Z])')
-        $splitTokens += ($parts | Where-Object { $_.Length -ge 3 })
-    }
-
-    return @($whole + $tokens + $splitTokens | Where-Object { $_ } | Select-Object -Unique)
+    if ($App.display_name) { return @($App.display_name) }
+    if ($App.display_name_pattern) { return @('') }
+    # Whole names only: a publisher or one word can identify unrelated apps.
+    return @(@($AppName, $repoName) | Where-Object { $_ } | Select-Object -Unique)
 }
 
 function _TestDisplayNameMatch($DisplayName, $Needle) {
@@ -480,7 +568,10 @@ function _TestDisplayNameMatch($DisplayName, $Needle) {
     # non-alphanumerics. Plain substring matching was too loose.
     if (-not $DisplayName) { return $false }
     if ($DisplayName -eq $Needle) { return $true }
-    return ($DisplayName -match "(?i)(^|[^a-z0-9])$([regex]::Escape($Needle))([^a-z0-9]|$)")
+    $characters = @($Needle.ToCharArray() | Where-Object { "$_" -match '[a-zA-Z0-9]' } | ForEach-Object { [regex]::Escape("$_") })
+    if (-not $characters.Count) { return $false }
+    $pattern = $characters -join '[^a-z0-9]*'
+    return ($DisplayName -match "(?i)(^|[^a-z0-9])$pattern([^a-z0-9]|$)")
 }
 
 function _GetVersionFromRegistry($App, $AppName) {
@@ -493,23 +584,44 @@ function _GetVersionFromRegistry($App, $AppName) {
     if (-not $entries) { return $null }
 
     $needles = _GetVersionSearchNeedles $App $AppName
+    if ($App.display_name -or $App.display_name_pattern) {
+        $exact = @($entries | Where-Object {
+            $_.DisplayVersion -and (($App.display_name -and $_.DisplayName -eq $App.display_name) -or
+            ($App.display_name_pattern -and $_.DisplayName -like $App.display_name_pattern))
+        })
+        if (@($exact.DisplayName | Select-Object -Unique).Count -gt 1) { throw 'Configured display-name pattern matches multiple installed apps. Narrow it or configure VersionExe.' }
+        $versions = @($exact.DisplayVersion | Select-Object -Unique)
+        if ($versions.Count -gt 1) { throw "Multiple installed versions match '$($App.display_name)'. Configure VersionExe." }
+        if ($versions.Count -eq 1) { return $versions[0] }
+        return $null
+    }
     foreach ($n in $needles) {
         $exact = @($entries | Where-Object { $_.DisplayName -eq $n -and $_.DisplayVersion })
-        if ($exact.Count -gt 0) { return $exact[0].DisplayVersion }
+        if ($exact.Count -gt 0) {
+            $versions = @($exact.DisplayVersion | Select-Object -Unique)
+            if ($versions.Count -ne 1) { throw "Multiple installed versions match '$n'. Configure DisplayName or VersionExe." }
+            return $versions[0]
+        }
 
         $hit = @($entries | Where-Object { $_.DisplayVersion -and (_TestDisplayNameMatch $_.DisplayName $n) })
-        if ($hit.Count -gt 0) { return $hit[0].DisplayVersion }
+        if ($hit.Count -gt 1) { throw "Multiple installed apps match '$n'. Configure DisplayName or VersionExe." }
+        if ($hit.Count -eq 1) { return $hit[0].DisplayVersion }
     }
     return $null
 }
 
 function _GetVersionFromWinget($App, $AppName) {
-    if (-not (Get-Command winget -ErrorAction SilentlyContinue)) { return $null }
+    $wingetExe = Get-Command winget -ErrorAction SilentlyContinue
+    if (-not $wingetExe) { return $null }
 
     $needles = _GetVersionSearchNeedles $App $AppName
     foreach ($n in $needles) {
         try {
-            $lines = @(winget list --name $n --accept-source-agreements 2>&1 | Where-Object { $_ -and $_.Trim() -ne "" })
+            $wingetArgs = @('list', '--accept-source-agreements')
+            if ($n) { $wingetArgs += @('--name', $n) }
+            $argumentString = ($wingetArgs | ForEach-Object { '"' + $_.Replace('"', '\"') + '"' }) -join ' '
+            $output = _InvokeWithTimeout $wingetExe.Source $argumentString 8000
+            $lines = @($output -split '\r?\n' | Where-Object { $_ -and $_.Trim() -ne "" })
         }
         catch { continue }
         if (-not $lines) { continue }
@@ -524,16 +636,25 @@ function _GetVersionFromWinget($App, $AppName) {
         $header     = $lines[$headerIdx]
         $versionCol = $header.IndexOf("Version")
         $availCol   = $header.IndexOf("Available")
+        $sourceCol  = $header.IndexOf("Source")
         if ($versionCol -lt 0) { continue }
 
+        $hits = @()
+        $idCol = $header.IndexOf("Id")
         for ($i = $headerIdx + 1; $i -lt $lines.Count; $i++) {
             $line = $lines[$i]
             if ($line -match '^-+$' -or $line.Length -le $versionCol) { continue }
             $endCol = if ($availCol -gt $versionCol) { $availCol } else { $line.Length }
-            $name = $line.Substring(0, $versionCol).Trim()
+            if ($sourceCol -gt $versionCol) { $endCol = [Math]::Min($endCol, $sourceCol) }
+            $name = $line.Substring(0, $idCol).Trim()
             $ver = $line.Substring($versionCol, [Math]::Min($endCol, $line.Length) - $versionCol).Trim()
-            if ($ver -and (_TestDisplayNameMatch $name $n)) { return $ver }
+            if ($App.display_name) { $matchesName = $name -eq $App.display_name }
+            elseif ($App.display_name_pattern) { $matchesName = $name -like $App.display_name_pattern }
+            else { $matchesName = _TestDisplayNameMatch $name $n }
+            if ($ver -and $matchesName) { $hits += $ver }
         }
+        if ($hits.Count -gt 1) { throw "Multiple winget apps match '$n'. Configure DisplayName or VersionExe." }
+        if ($hits.Count -eq 1) { return $hits[0] }
     }
     return $null
 }
@@ -541,16 +662,17 @@ function _GetVersionFromWinget($App, $AppName) {
 function _GetInstalledVersion($AppName, $App) {
     # Try progressively less-direct sources; "recorded" only trusts the config.
     $exePath = _FindInstalledExe $App
+    if ($App.version_exe -and -not $exePath) { throw "Configured version executable not found: $($App.version_exe)" }
 
     if ($App.version_command) {
         $v = _GetVersionFromCommand $exePath @($App.version_command) $App.version_regex
         if ($v) { return @{ version = $v; source = "version command" } }
+        throw "Configured version command did not return a version. Check VersionExe, VersionCommand and VersionRegex."
     }
 
     if ($exePath) {
-        $v = _GetVersionFromCommand $exePath @("--version", "-version", "-v", "-V") $App.version_regex
-        if ($v) { return @{ version = $v; source = "exe --version" } }
-
+        # Metadata does not launch a GUI or installer. Run commands only when
+        # explicitly configured, since unknown executables can ignore flags.
         $v = _GetVersionFromFileMetadata $exePath
         if ($v) { return @{ version = $v; source = "file metadata" } }
     }
@@ -630,18 +752,20 @@ function _SelectAsset($Assets, $GlobPattern, [switch]$Interactive) {
 
         # Always show the full installer list when there's more than one -
         # arch scoring is just a guess and can be wrong.
-        if ($installers.Count -gt 1) {
+        if ($installers.Count -gt 1 -or ($GlobPattern -and -not $matched)) {
             $recommendedName = if ($final.Count -gt 0) { $final[0].name } else { $null }
             return _SelectAssetFromList $installers $recommendedName
         }
         return $installers[0]
     }
 
-    # Non-interactive: just match by pattern + arch, no extension filtering.
-    $candidates = @($Assets)
+    # A check must not silently select an unrelated asset on a pattern miss.
+    $candidates = @($Assets | Where-Object { _TestIsInstallerAsset $_.name })
+    if (-not $candidates.Count) { return $null }
     if ($GlobPattern) {
         $matched = @($candidates | Where-Object { $_.name -like $GlobPattern })
-        if ($matched) { $candidates = $matched }
+        if (-not $matched) { return $null }
+        $candidates = $matched
     }
 
     $arch   = _GetNativeArch
@@ -649,8 +773,10 @@ function _SelectAsset($Assets, $GlobPattern, [switch]$Interactive) {
         ForEach-Object { [PSCustomObject]@{ asset = $_; score = _GetArchScore $_.name $arch } } |
         Sort-Object @{Expression = "score"; Descending = $true }, @{Expression = { $_.asset.name }; Descending = $false })
     $topScore = $scored[0].score
+    if ($topScore -eq 0) { return $null }
     $final = @($scored | Where-Object { $_.score -eq $topScore } | ForEach-Object { $_.asset })
-    return $final[0]
+    if ($final.Count -eq 1) { return $final[0] }
+    return $null
 }
 
 function _SaveAsset($Asset, $DestDir, $ProxyUrl) {
@@ -661,13 +787,13 @@ function _SaveAsset($Asset, $DestDir, $ProxyUrl) {
 
     if (_TestIsSocks5 $ProxyUrl) {
         $parsed = _ParseSocks5Url $ProxyUrl
-        & curl.exe --socks5-hostname "$($parsed.host):$($parsed.port)" -L -f -o $destPath $Asset.browser_download_url
+        & curl.exe --socks5-hostname "$($parsed.host):$($parsed.port)" --connect-timeout 10 --max-time 300 -L -f -o $destPath $Asset.browser_download_url
         if ($LASTEXITCODE -ne 0) {
             throw "curl download failed (exit code $LASTEXITCODE)"
         }
     }
     else {
-        Invoke-WebRequest -Uri $Asset.browser_download_url -OutFile $destPath -UseBasicParsing
+        Invoke-WebRequest -Uri $Asset.browser_download_url -OutFile $destPath -UseBasicParsing -TimeoutSec 300
     }
     return $destPath
 }
@@ -691,9 +817,10 @@ function _InstallDownloadedAsset($Path) {
             Write-Host "Installing (msiexec /passive): $leaf"
             try {
                 $proc = Start-Process -FilePath "msiexec.exe" -ArgumentList "/i", "`"$Path`"", "/passive", "/norestart" -Wait -PassThru
-                if ($proc.ExitCode -eq 0) {
-                    Remove-Item -LiteralPath $Path -Force
+                if ($proc.ExitCode -in @(0, 1641, 3010)) {
+                    Remove-Item -LiteralPath $Path -Force -ErrorAction SilentlyContinue
                     Write-Host "Install finished; deleted $leaf" -ForegroundColor Green
+                    return $true
                 }
                 else {
                     Write-Host "msiexec exited with code $($proc.ExitCode); installer kept at $Path" -ForegroundColor Yellow
@@ -708,8 +835,9 @@ function _InstallDownloadedAsset($Path) {
             try {
                 $proc = Start-Process -FilePath $Path -Wait -PassThru
                 if ($proc.ExitCode -eq 0) {
-                    Remove-Item -LiteralPath $Path -Force
+                    Remove-Item -LiteralPath $Path -Force -ErrorAction SilentlyContinue
                     Write-Host "Installer finished; deleted $leaf" -ForegroundColor Green
+                    return $true
                 }
                 else {
                     Write-Host "Installer exited with code $($proc.ExitCode); file kept at $Path" -ForegroundColor Yellow
@@ -723,8 +851,9 @@ function _InstallDownloadedAsset($Path) {
             Write-Host "Installing (Add-AppxPackage): $leaf"
             try {
                 Add-AppxPackage -Path $Path -ErrorAction Stop
-                Remove-Item -LiteralPath $Path -Force
+                Remove-Item -LiteralPath $Path -Force -ErrorAction SilentlyContinue
                 Write-Host "Install finished; deleted $leaf" -ForegroundColor Green
+                return $true
             }
             catch {
                 Write-Host "Add-AppxPackage failed ($($_.Exception.Message)); file kept at $Path" -ForegroundColor Red
@@ -736,6 +865,7 @@ function _InstallDownloadedAsset($Path) {
             Write-Host "Unrecognized installer type ($ext); kept for manual install at $Path" -ForegroundColor Yellow
         }
     }
+    return $false
 }
 
 # --------------------------------------------------------------------------
@@ -810,9 +940,11 @@ function _Add {
         return
     }
 
-    $releases = _GetReleases $repo 40 $proxyUrl
-    $installable = @(@($releases | Where-Object { -not $_.prerelease }) |
+    $releases = _GetReleases $repo $ReleaseLimit $proxyUrl
+    $installable = @(@($releases | Where-Object { -not $_.prerelease -or $IncludePrerelease }) |
         Where-Object { @($_.assets | Where-Object { _TestIsInstallerAsset $_.name }).Count -gt 0 })
+    if ($TagPattern) { $installable = @($installable | Where-Object { $_.tag_name -like $TagPattern }) }
+    if ($ReleaseNamePattern) { $installable = @($installable | Where-Object { $_.name -like $ReleaseNamePattern }) }
     $release = $null
     if ($installable.Count -gt 0) {
         $byFamily = @(_GetReleaseLines $installable)
@@ -822,7 +954,7 @@ function _Add {
             $release = $installable[0]
         }
     }
-    if (-not $release) { $release = _GetLatestRelease $repo $proxyUrl }
+    if (-not $release) { Write-Host "No installer release matches the requested filters." -ForegroundColor Yellow; return }
     $asset = _SelectAsset $release.assets $Pattern -Interactive
 
     if (-not $asset) {
@@ -846,6 +978,15 @@ function _Add {
         version_exe      = if ($VersionExe) { $VersionExe } else { $null }
         version_command  = if ($VersionCommand) { $VersionCommand } else { $null }
         version_regex    = if ($VersionRegex) { $VersionRegex } else { $null }
+        tag_pattern      = $TagPattern
+        release_name_pattern = $ReleaseNamePattern
+        release_version_regex = $ReleaseVersionRegex
+        installed_version_regex = $InstalledVersionRegex
+        display_name = $DisplayName
+        display_name_pattern = $DisplayNamePattern
+        include_prerelease = [bool]$IncludePrerelease
+        pattern_explicit = [bool]$Pattern
+        release_limit = $ReleaseLimit
     }
     $config.apps | Add-Member -NotePropertyName $appName -NotePropertyValue $entry -Force
     _SaveConfig $config
@@ -882,7 +1023,9 @@ function _List {
     $maxLen = ($entries | ForEach-Object { $_.Name.Length } | Measure-Object -Maximum).Maximum
     foreach ($prop in $entries) {
         $detected = _GetInstalledVersion $prop.Name $prop.Value
-        $ver = if ($detected.version) { $detected.version } else { "-" }
+        $ver = if ($detected.source -eq 'recorded (unverified)') { $detected.version }
+               else { _ExtractConfiguredVersion $detected.version $prop.Value.installed_version_regex }
+        if (-not $ver) { $ver = '-' }
         Write-Host ("{0,-$maxLen}  {1}" -f $prop.Name, $ver)
     }
 }
@@ -890,36 +1033,27 @@ function _List {
 function _CheckOne($appName, $app, $ProxyUrl, [switch]$Force) {
     try {
         $release = _GetTrackedRelease $appName $app $ProxyUrl -Force:$Force
+        $latestVersion = _ExtractConfiguredVersion $release.tag_name $app.release_version_regex
+        $detected = _GetInstalledVersion $appName $app
+        $verified = $detected.source -notin @('recorded (unverified)', 'unknown')
+        $current = $app.current_version
+        if ($verified -and $detected.version) {
+            $current = _ExtractConfiguredVersion $detected.version $app.installed_version_regex
+        }
+        $hasUpdate = _TestIsNewer $latestVersion $current
+        $configChanged = $verified -and $current -and -not (_TestSameVersion $current $app.current_version)
+        if ($configChanged) { $app.current_version = $current }
+        $asset = _SelectAsset $release.assets $app.pattern
+        if ($hasUpdate) { Write-Host $appName -ForegroundColor Yellow }
+        return [PSCustomObject]@{
+            release = $release; asset = $asset; hasUpdate = $hasUpdate
+            configChanged = [bool]$configChanged; verified = $verified
+        }
     }
     catch {
         Write-Host "$appName error: $($_.Exception.Message)" -ForegroundColor Red
         return $null
     }
-
-    $latestVersion = $release.tag_name
-    $configChanged = $false
-
-    if ((_TestSameVersion $app.current_version $latestVersion) -and `
-            ((_NormalizeVersion $app.current_version) -ne (_NormalizeVersion $latestVersion))) {
-        $app.current_version = $latestVersion
-        $configChanged = $true
-    }
-
-    $detected = _GetInstalledVersion $appName $app
-    if ($detected.version -and $detected.source -ne "recorded (unverified)" `
-            -and -not (_TestSameVersion $detected.version $app.current_version)) {
-        $app.current_version = $detected.version
-        $configChanged = $true
-    }
-
-    $asset = _SelectAsset $release.assets $app.pattern
-    $hasUpdate = _TestIsNewer $latestVersion $app.current_version
-
-    if ($hasUpdate) {
-        Write-Host $appName -ForegroundColor Yellow
-    }
-
-    return [PSCustomObject]@{ release = $release; asset = $asset; hasUpdate = $hasUpdate; configChanged = $configChanged }
 }
 
 function _Check {
@@ -935,17 +1069,22 @@ function _Check {
     $proxyUrl = _ResolveProxy
     $updateCount = 0
     $errorCount = 0
+    $unverifiedCount = 0
     $configChanged = $false
     foreach ($prop in $targets) {
         $result = _CheckOne $prop.Name $prop.Value $proxyUrl -Force:$Force
         if ($null -eq $result) { $errorCount++; continue }
         if ($result.hasUpdate) { $updateCount++ }
+        if (-not $result.verified) { $unverifiedCount++ }
         if ($result.configChanged) { $configChanged = $true }
     }
     if ($configChanged) { _SaveConfig $config }
 
     if ($errorCount -gt 0 -and $updateCount -eq 0) {
         Write-Host "$errorCount check(s) failed, results inconclusive" -ForegroundColor Red
+    }
+    elseif ($updateCount -eq 0 -and $unverifiedCount -gt 0) {
+        Write-Host "No newer tracked releases found; $unverifiedCount installed version(s) could not be verified." -ForegroundColor Yellow
     }
     elseif ($updateCount -eq 0) {
         Write-Host "Up to date" -ForegroundColor Green
@@ -969,35 +1108,21 @@ function _Update {
     $proxyUrl = _ResolveProxy
     $updatable = [System.Collections.Generic.List[PSCustomObject]]::new()
     $errorCount = 0
+    $unverifiedCount = 0
     foreach ($prop in $targets) {
         $appName = $prop.Name
         $app = $prop.Value
 
-        try {
-            $release = _GetTrackedRelease $appName $app $proxyUrl -Force:$Force
-        }
-        catch {
-            Write-Host "$appName error: $($_.Exception.Message)" -ForegroundColor Red
+        $result = _CheckOne $appName $app $proxyUrl -Force:$Force
+        if ($null -eq $result) {
             $errorCount++
             continue
         }
-
-        $detected = _GetInstalledVersion $appName $app
-        if ($detected.version -and $detected.source -ne "recorded (unverified)" `
-                -and -not (_TestSameVersion $detected.version $app.current_version)) {
-            $app.current_version = $detected.version
-            _SaveConfig $config
-        }
-
-        $latestVersion = $release.tag_name
-        if ((_TestSameVersion $app.current_version $latestVersion) -and `
-                ((_NormalizeVersion $app.current_version) -ne (_NormalizeVersion $latestVersion))) {
-            $app.current_version = $latestVersion
-            _SaveConfig $config
-        }
-        if (-not (_TestIsNewer $latestVersion $app.current_version)) {
-            continue
-        }
+        if ($result.configChanged) { _SaveConfig $config }
+        if (-not $result.verified) { $unverifiedCount++ }
+        $release = $result.release
+        $latestVersion = _ExtractConfiguredVersion $release.tag_name $app.release_version_regex
+        if (-not $result.hasUpdate) { continue }
 
         $updatable.Add([PSCustomObject]@{
             appName = $appName
@@ -1012,7 +1137,8 @@ function _Update {
         return
     }
     if ($updatable.Count -eq 0) {
-        Write-Host "Up to date" -ForegroundColor Green
+        if ($unverifiedCount -gt 0) { Write-Host "No newer tracked releases found; $unverifiedCount installed version(s) could not be verified." -ForegroundColor Yellow }
+        else { Write-Host "Up to date" -ForegroundColor Green }
         return
     }
 
@@ -1044,7 +1170,7 @@ function _Update {
         $asset = $null
         $newTypeNeeded = $false
         if ($app.current_asset) {
-            $asset = @($release.assets | Where-Object { $_.name -eq $app.current_asset }) | Select-Object -First 1
+            $asset = @($release.assets | Where-Object { $_.name -eq $app.current_asset -and (_TestIsInstallerAsset $_.name) }) | Select-Object -First 1
             if (-not $asset) {
                 $newTypeNeeded = $true
                 Write-Host "$appName new type needed:" -ForegroundColor Yellow
@@ -1062,7 +1188,8 @@ function _Update {
             continue
         }
 
-        $path = _SaveAsset $asset $app.install_dir $proxyUrl
+        try { $path = _SaveAsset $asset $app.install_dir $proxyUrl }
+        catch { Write-Host "$appName download failed: $($_.Exception.Message)" -ForegroundColor Red; continue }
         if ($app.current_asset -and $app.current_asset -ne $asset.name) {
             $stalePath = Join-Path $app.install_dir $app.current_asset
             if (Test-Path $stalePath) {
@@ -1070,12 +1197,15 @@ function _Update {
                 Write-Host "Removed old installer: $($app.current_asset)" -ForegroundColor Gray
             }
         }
+        if (-not (_InstallDownloadedAsset $path)) { continue }
+        $keepPattern = $app.pattern_explicit -or
+            ($null -eq $app.PSObject.Properties['pattern_explicit'] -and $app.pattern -and
+             $app.pattern -ne (_NewAssetPattern $app.current_asset))
         $app.current_version = $latestVersion
         $app.current_asset = $asset.name
-        $app.pattern = _NewAssetPattern $asset.name
+        if (-not $keepPattern) { $app.pattern = _NewAssetPattern $asset.name }
         $app.last_checked = (Get-Date).ToUniversalTime().ToString("o")
         _SaveConfig $config
-        _InstallDownloadedAsset $path
     }
 }
 
@@ -1132,6 +1262,7 @@ function _Proxy {
 
 switch ($Command) {
     "add"     { _Add }
+    "configure" { _Configure }
     "rm"      { _Remove }
     "ls"      { _List }
     "check"   { _Check }
@@ -1145,6 +1276,7 @@ switch ($Command) {
         Write-Host ""
         Write-Host "Commands:"
         Write-Host "  add         - Track a GitHub repo (gitget add owner/repo)"
+        Write-Host "  configure   - Show/set an app's release, installer and version rules"
         Write-Host "  ls          - List tracked apps"
         Write-Host "  rm          - Remove tracked apps (fzf picker)"
         Write-Host "  check       - Check for updates (-Force skips cache)"
