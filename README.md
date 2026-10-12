@@ -11,7 +11,7 @@ My personal Windows setup — install everything, reset everything.
 - **CLI tools** (installed into your PowerShell profile):
   - `wgm` — WireGuard tunnel manager
   - `wpm` — Wireproxy SOCKS5 tunnel manager
-  - `gitget` — track GitHub repos and install their Windows releases
+  - [`gitget`](tools/gitget.md) — track GitHub repos and install their Windows releases
   - `regtwk` — quick registry tweaks via fzf
   - `timer` — full-screen countdown timer
 - **Dotfiles** — Starship, Neovim, mpv.net, Windows Terminal, PowerShell profile
