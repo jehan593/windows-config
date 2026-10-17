@@ -72,80 +72,9 @@
       "values": [
         { "name": "ImproveSuggest", "type": "DWord", "value": 0 }
       ]
-    },
-    {
-      "path": "SOFTWARE\\PolicyManager\\current\\device\\Start",
-      "values": [
-        { "name": "HideRecommendedSection", "type": "DWord", "value": "1", "default": "0" }
-      ]
-    },
-    {
-      "path": "SOFTWARE\\Policies\\Microsoft\\Windows\\Explorer",
-      "values": [
-        { "name": "HideRecommendedSection", "type": "DWord", "value": "1", "default": "0" }
-      ]
-    },
-    {
-      "path": "SOFTWARE\\Microsoft\\PolicyManager\\current\\device\\Education",
-      "values": [
-        { "name": "IsEducationEnvironment", "type": "DWord", "value": "1", "default": "0" }
-      ]
     }
   ],
   "HKCU": [
-    {
-      "path": "Software\\Classes\\CLSID\\{86ca1aa0-34aa-4e8b-a509-50c905bae2a2}\\InprocServer32",
-      "values": [
-        { "name": "(Default)", "type": "String", "value": "" }
-      ]
-    },
-    {
-      "path": "Software\\Microsoft\\Windows\\CurrentVersion\\Explorer\\Advanced",
-      "values": [
-        { "name": "HideFileExt", "type": "DWord", "value": "0", "default": "1" },
-        { "name": "Hidden", "type": "DWord", "value": "1", "default": "0" },
-        { "name": "LaunchTo", "type": "DWord", "value": "1" },
-        { "name": "AutoCheckSelect", "type": "DWord", "value": "1", "default": "0" },
-        { "name": "UseCompactMode", "type": "DWord", "value": "1", "default": "0" }
-      ]
-    },
-    {
-      "path": "Software\\Microsoft\\Windows\\CurrentVersion\\Policies\\Explorer",
-      "values": [
-        { "name": "SettingsPageVisibility", "type": "String", "value": "hide:home", "default": "show:home" }
-      ]
-    },
-    {
-      "path": "Software\\Microsoft\\Windows\\CurrentVersion\\Search",
-      "values": [
-        { "name": "BingSearchEnabled", "type": "DWord", "value": "0", "default": "1" }
-      ]
-    },
-    {
-      "path": "Software\\Classes\\CLSID\\{f874310e-b6b7-47dc-bc84-b9e6b38f5903}",
-      "values": [
-        { "name": "System.IsPinnedToNameSpaceTree", "type": "DWord", "value": "0" }
-      ]
-    },
-    {
-      "path": "Software\\Classes\\CLSID\\{e88865ea-0e1c-4e20-9aa6-edcd0212c87c}",
-      "values": [
-        { "name": "System.IsPinnedToNameSpaceTree", "type": "DWord", "value": "0" }
-      ]
-    },
-    {
-      "path": "Software\\Microsoft\\Windows\\CurrentVersion\\Explorer\\Advanced\\TaskbarDeveloperSettings",
-      "values": [
-        { "name": "TaskbarEndTask", "type": "DWord", "value": "1" }
-      ]
-    },
-    {
-      "path": "HKEY_CURRENT_USER\\Software\\Microsoft\\Windows\\CurrentVersion\\Themes\\Personalize",
-      "values": [
-        { "name": "SystemUsesLightTheme", "type": "DWord", "value": "0", "default": "0" },
-        { "name": "AppsUseLightTheme", "type": "DWord", "value": "0", "default": "0" },
-        { "name": "EnableTransparency", "type": "DWord", "value": "0", "default": "1" }
-      ]
-    }
+    
   ]
 }
