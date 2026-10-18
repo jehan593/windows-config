@@ -2,23 +2,28 @@
 setlocal enabledelayedexpansion
 
 :: ----------------------------------------
-:: Check for PowerShell 7
+:: Locate PowerShell 7
 :: ----------------------------------------
-where pwsh >nul 2>&1
-if %errorlevel% neq 0 (
-    echo PowerShell 7 not found. Installing...
-    winget install --id Microsoft.PowerShell --source winget --silent --accept-package-agreements --accept-source-agreements
+call :FindPwsh
 
-    :: Current PATH won't reflect the new install - resolve pwsh directly
-    if exist "%PROGRAMFILES%\PowerShell\7\pwsh.exe" (
-        set "PWSH=%PROGRAMFILES%\PowerShell\7\pwsh.exe"
-    ) else (
-        echo Error: PowerShell 7 install failed or path not found.
+:: winget may install the MSIX (pwsh alias on PATH) or the MSI
+:: (%ProgramFiles%\PowerShell\7). PATH in this process won't reflect a fresh
+:: MSI install, so :FindPwsh checks both before and after installing.
+if not defined PWSH (
+    echo PowerShell 7 not found. Installing...
+    where winget >nul 2>&1
+    if errorlevel 1 (
+        echo Error: winget not found. Install "App Installer" from the Microsoft Store first.
         pause
         exit /b 1
     )
-) else (
-    set "PWSH=pwsh"
+    winget install --id Microsoft.PowerShell --source winget --silent --accept-package-agreements --accept-source-agreements
+    call :FindPwsh
+    if not defined PWSH (
+        echo Error: PowerShell 7 install failed or pwsh not found.
+        pause
+        exit /b 1
+    )
 )
 
 :: ----------------------------------------
@@ -37,3 +42,10 @@ echo Starting setup...
 "!PWSH!" -NoProfile -ExecutionPolicy Bypass -File "%~dp0_setup.ps1"
 
 endlocal
+goto :eof
+
+:FindPwsh
+set "PWSH="
+where pwsh >nul 2>&1 && set "PWSH=pwsh"
+if not defined PWSH if exist "%ProgramFiles%\PowerShell\7\pwsh.exe" set "PWSH=%ProgramFiles%\PowerShell\7\pwsh.exe"
+exit /b 0

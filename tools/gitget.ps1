@@ -30,7 +30,6 @@ param(
     [string]$Target,          # repo (for add), app name (for rm/check/update), or proxy URL/clear (for proxy)
 
     [string]$RestorePath,     # path to config file to restore (for 'restore')
-
     [string]$Name,             # local name override for 'add'
     [string]$Pattern,          # asset glob pattern for 'add'
     [string]$Dir,               # download staging dir override for 'add' (installer runs from here, then gets deleted)
@@ -904,17 +903,19 @@ function _Backup {
 }
 
 function _Restore {
-    if (-not $RestorePath) {
+    $path = $RestorePath
+    if (-not $path) { $path = $Target }
+    if (-not $path) {
         Write-Host "Provide a config file path, e.g. gitget restore C:\path\to\config.json" -ForegroundColor Red
         return
     }
-    if (-not (Test-Path $RestorePath)) {
-        Write-Host "File not found: $RestorePath" -ForegroundColor Red
+    if (-not (Test-Path $path)) {
+        Write-Host "File not found: $path" -ForegroundColor Red
         return
     }
     New-Item -ItemType Directory -Force -Path $AppDir | Out-Null
-    Copy-Item -LiteralPath $RestorePath -Destination $ConfFilePath -Force
-    Write-Host "Restored config from: $RestorePath" -ForegroundColor Green
+    Copy-Item -LiteralPath $path -Destination $ConfFilePath -Force
+    Write-Host "Restored config from: $path" -ForegroundColor Green
 }
 
 function _Add {
@@ -1023,8 +1024,12 @@ function _List {
     $maxLen = ($entries | ForEach-Object { $_.Name.Length } | Measure-Object -Maximum).Maximum
     foreach ($prop in $entries) {
         $detected = _GetInstalledVersion $prop.Name $prop.Value
-        $ver = if ($detected.source -eq 'recorded (unverified)') { $detected.version }
-               else { _ExtractConfiguredVersion $detected.version $prop.Value.installed_version_regex }
+        $ver = $null
+        if ($detected.source -in @('recorded (unverified)', 'unknown')) {
+            $ver = $null
+        } else {
+            $ver = _ExtractConfiguredVersion $detected.version $prop.Value.installed_version_regex
+        }
         if (-not $ver) { $ver = '-' }
         Write-Host ("{0,-$maxLen}  {1}" -f $prop.Name, $ver)
     }
@@ -1209,6 +1214,85 @@ function _Update {
     }
 }
 
+function _Install {
+    $config = _GetConfig
+    $entries = $config.apps.PSObject.Properties
+    if (-not $entries -or $entries.Count -eq 0) {
+        Write-Host "Nothing tracked." -ForegroundColor Yellow
+        return
+    }
+
+    if ($Target -and -not (_GetAppEntry $config $Target)) {
+        Write-Host "'$Target' is not tracked." -ForegroundColor Yellow
+        return
+    }
+    $targets = if ($Target) { $entries | Where-Object { $_.Name -eq $Target } } else { $entries }
+
+    $proxyUrl = _ResolveProxy
+    $notInstalled = [System.Collections.Generic.List[PSCustomObject]]::new()
+    foreach ($prop in $targets) {
+        $detected = _GetInstalledVersion $prop.Name $prop.Value
+        $isInstalled = $detected.source -notin @('recorded (unverified)', 'unknown') -and $detected.version
+        if (-not $isInstalled) {
+            $notInstalled.Add([PSCustomObject]@{ appName = $prop.Name; app = $prop.Value })
+        }
+    }
+
+    if ($notInstalled.Count -eq 0) {
+        Write-Host "All tracked apps appear to be installed." -ForegroundColor Green
+        return
+    }
+
+    $toInstall = if ($All) {
+        $notInstalled
+    } else {
+        $lines = @($notInstalled | ForEach-Object { $_.appName })
+        $selected = @($lines | fzf --multi --reverse --height=40% --header="Tab: multi-select, esc: cancel" --prompt="install> ")
+        if ($selected.Count -eq 0) { return }
+        $picked = [System.Collections.Generic.List[PSCustomObject]]::new()
+        foreach ($s in $selected) {
+            $idx = [array]::IndexOf($lines, $s)
+            if ($idx -ge 0) { $picked.Add($notInstalled[$idx]) }
+        }
+        $picked
+    }
+
+    foreach ($item in $toInstall) {
+        Write-Host ""
+        $appName = $item.appName
+        $app = $item.app
+        try {
+            $release = _GetTrackedRelease $appName $app $proxyUrl -Force:$Force
+            $latestVersion = _ExtractConfiguredVersion $release.tag_name $app.release_version_regex
+            $asset = $app.current_asset
+            if ($asset) {
+                $assetObj = @($release.assets | Where-Object { $_.name -eq $asset -and (_TestIsInstallerAsset $_.name) }) | Select-Object -First 1
+            }
+            if (-not $assetObj) {
+                $assetObj = _SelectAsset $release.assets $app.pattern -Interactive
+            }
+            if (-not $assetObj) {
+                Write-Host ("$appName`: no suitable installer found on $($release.tag_name)") -ForegroundColor Yellow
+                continue
+            }
+            $path = _SaveAsset $assetObj $app.install_dir $proxyUrl
+            if (-not (_InstallDownloadedAsset $path)) { continue }
+            $keepPattern = $app.pattern_explicit -or
+                ($null -eq $app.PSObject.Properties['pattern_explicit'] -and $app.pattern -and
+                 $app.pattern -ne (_NewAssetPattern $app.current_asset))
+            $app.current_version = $latestVersion
+            $app.current_asset = $assetObj.name
+            if (-not $keepPattern) { $app.pattern = _NewAssetPattern $assetObj.name }
+            $app.last_checked = (Get-Date).ToUniversalTime().ToString("o")
+            _SaveConfig $config
+            Write-Host "$appName installed ($latestVersion)" -ForegroundColor Green
+        }
+        catch {
+            Write-Host "$appName install failed: $($_.Exception.Message)" -ForegroundColor Red
+        }
+    }
+}
+
 function _Proxy {
     $config = _GetConfig
 
@@ -1267,6 +1351,7 @@ switch ($Command) {
     "ls"      { _List }
     "check"   { _Check }
     "update"  { _Update }
+    "install" { _Install }
     "backup"  { _Backup }
     "restore" { _Restore }
     "proxy"   { _Proxy }
@@ -1281,6 +1366,7 @@ switch ($Command) {
         Write-Host "  rm          - Remove tracked apps (fzf picker)"
         Write-Host "  check       - Check for updates (-Force skips cache)"
         Write-Host "  update      - Download and install available updates (fzf picker, name to limit, -All to skip, -Force to skip cache)"
+        Write-Host "  install     - Install latest version for apps not currently installed (fzf picker, -All to skip picker)"
         Write-Host "  backup      - Backup config to Documents\windows-config-backup\gitget"
         Write-Host "  restore     - Restore config from a file path"
         Write-Host "  proxy       - Set/show/clear SOCKS5 proxy (gitget proxy host:port)"

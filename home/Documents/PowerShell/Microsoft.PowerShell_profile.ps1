@@ -522,22 +522,27 @@ function cup
     try
     {
         $profilesPath = "$env:APPDATA\Mozilla\Firefox\Profiles"
-        $bf        = Test-BetterfoxUpToDate
-        $behind    = @()
         $profiles  = Get-ChildItem $profilesPath -Directory -ErrorAction SilentlyContinue
-        foreach ($prof in $profiles)
-        {
-            $jsPath = Join-Path $prof.FullName "user.js"
-            $current = (Test-Path $jsPath) -and (_GetSha256 ((Get-Content $jsPath -Raw) -replace "`r`n", "`n").TrimEnd()) -eq $bf.NewHash
-            if (-not $current)
-            { $behind += $prof.Name }
-        }
-        if ($behind.Count -eq 0)
-        { Write-Host "Up to date" -ForegroundColor Green }
+        if ($profiles.Count -eq 0)
+        { Write-Host "No Firefox profiles found" -ForegroundColor Red }
         else
         {
-            Write-Host "New or outdated profile(s), run 'upf'" -ForegroundColor Yellow
-            foreach ($p in $behind) { Write-Host "  $p" -ForegroundColor Yellow }
+            $bf     = Test-BetterfoxUpToDate
+            $behind = @()
+            foreach ($prof in $profiles)
+            {
+                $jsPath = Join-Path $prof.FullName "user.js"
+                $current = (Test-Path $jsPath) -and (_GetSha256 ((Get-Content $jsPath -Raw) -replace "`r`n", "`n").TrimEnd()) -eq $bf.NewHash
+                if (-not $current)
+                { $behind += $prof.Name }
+            }
+            if ($behind.Count -eq 0)
+            { Write-Host "Up to date" -ForegroundColor Green }
+            else
+            {
+                Write-Host "New or outdated profile(s), run 'upf'" -ForegroundColor Yellow
+                foreach ($p in $behind) { Write-Host "  $p" -ForegroundColor Yellow }
+            }
         }
     }
     catch { Write-Host "Check failed: $($_.Exception.Message)" -ForegroundColor Red }
