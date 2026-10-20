@@ -53,7 +53,9 @@ summary states that the installed version could not be verified.
 
 Updates save the new version only after the installer succeeds. Failed or
 cancelled installs retain the old recorded version. MSI reboot-required success
-codes are supported. Checks and configuration never install applications.
+codes are supported. gitget waits for the installer process itself, not apps it
+launches, so a ticked "run software" option does not block the update. Checks
+and configuration never install applications.
 
 Config: `%LOCALAPPDATA%\windows-config-files\gitget\config.json`.
 Use `gitget backup` before making manual config changes.
