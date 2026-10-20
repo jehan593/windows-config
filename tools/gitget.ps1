@@ -815,7 +815,8 @@ function _InstallDownloadedAsset($Path) {
         ".msi" {
             Write-Host "Installing (msiexec /passive): $leaf"
             try {
-                $proc = Start-Process -FilePath "msiexec.exe" -ArgumentList "/i", "`"$Path`"", "/passive", "/norestart" -Wait -PassThru
+                $proc = Start-Process -FilePath "msiexec.exe" -ArgumentList "/i", "`"$Path`"", "/passive", "/norestart" -PassThru
+                $proc.WaitForExit()
                 if ($proc.ExitCode -in @(0, 1641, 3010)) {
                     Remove-Item -LiteralPath $Path -Force -ErrorAction SilentlyContinue
                     Write-Host "Install finished; deleted $leaf" -ForegroundColor Green
@@ -832,7 +833,11 @@ function _InstallDownloadedAsset($Path) {
         ".exe" {
             Write-Host "Running installer: $leaf"
             try {
-                $proc = Start-Process -FilePath $Path -Wait -PassThru
+                # Wait only for the installer itself. Start-Process -Wait also
+                # waits for descendants, so an installer that launches the app
+                # ("run software" checkbox) would block until the app closes.
+                $proc = Start-Process -FilePath $Path -PassThru
+                $proc.WaitForExit()
                 if ($proc.ExitCode -eq 0) {
                     Remove-Item -LiteralPath $Path -Force -ErrorAction SilentlyContinue
                     Write-Host "Installer finished; deleted $leaf" -ForegroundColor Green

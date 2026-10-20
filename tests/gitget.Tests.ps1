@@ -142,7 +142,11 @@ Assert ($null -eq (_CheckOne 'test' $app)) 'Invalid installed version did not pr
 
 # Installer outcomes never launch a process or delete files in this suite.
 $script:exitCode = 1
-function Start-Process { [pscustomobject]@{ExitCode=$script:exitCode} }
+function Start-Process {
+    $proc = [pscustomobject]@{ ExitCode = $script:exitCode }
+    $proc | Add-Member -MemberType ScriptMethod -Name WaitForExit -Value { }
+    $proc
+}
 function Remove-Item { }
 function Add-AppxPackage { if ($script:exitCode) { throw 'Mock install failure' } }
 Assert (-not (_InstallDownloadedAsset 'fake.exe')) 'Failed EXE install reported success'
