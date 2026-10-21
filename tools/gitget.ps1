@@ -3,13 +3,23 @@
     GitGet — track GitHub repos and install their Windows releases.
 
 .DESCRIPTION
-    Downloads + runs the matching Windows installer (.exe/.msi/.msix/.msixbundle).
-    No portable binaries or archives. Pure PowerShell, no extra dependencies.
+    Tracks GitHub repos and installs their Windows releases. Three kinds of
+    payload are supported:
+      installer - .exe/.msi/.msix/.msixbundle, executed like before.
+      portable  - a bare .exe, copied into a managed bin directory.
+      archive   - .zip/.tar.gz/.7z, unpacked into a managed bin directory.
+    "gitget add" installs the payload unless the program is already on the
+    machine (-NoInstall tracks it only). Adding an app that is already tracked
+    installs it again when it is missing from the machine. Portable payloads get
+    a recorded install state (version + sha256) so the installed version can be
+    verified on later checks. Pure PowerShell, no extra dependencies (7-Zip is
+    only needed for .7z assets).
 
 .EXAMPLE
     gitget add sharkdp/bat
     gitget add alacritty/alacritty -Pattern "*x64*.msi"
     gitget add sharkdp/bat -CurrentVersion v0.24.0
+    gitget add yt-dlp/yt-dlp -InstallType portable
     gitget check
     gitget update
     gitget ls
@@ -18,6 +28,7 @@
 
 .NOTES
     Config: $env:LOCALAPPDATA\windows-config-files\gitget\config.json
+    Portable payloads: %LOCALAPPDATA%\windows-config-files\gitget\apps\<name>
     Set $env:GITHUB_TOKEN for higher API rate limits (60/hr -> 5000/hr).
     Allow local scripts: Set-ExecutionPolicy -Scope CurrentUser RemoteSigned
 #>
@@ -51,15 +62,28 @@ param(
 
     [string]$Proxy,             # socks5://host:port for one-off override (not persisted)
 
-    [switch]$All,               # for 'update': update all without fzf picker
+    [ValidateSet('installer', 'portable', 'archive')]
+    [string]$InstallType,       # how the payload is installed (for 'add'/'configure')
 
-    [switch]$Force              # for 'check'/'update': ignore cache, always hit the API
+    [string]$BinDir,            # persistent install dir for portable/archive payloads (for 'add')
+
+    [switch]$Purge,             # for 'rm': also delete the files of an installer payload (portable/archive payloads are always deleted)
+
+    [switch]$All,               # for 'update': update all without fzf picker; for 'rm': remove every tracked app
+
+    [switch]$Force,             # for 'check'/'update': ignore cache, always hit the API
+
+    [switch]$Reinstall,         # for 'update'/'install'/'add': reinstall even when the installed copy cannot be verified
+
+    [switch]$NoInstall          # for 'add': only track the app, do not install it
 )
 
 $ErrorActionPreference = "Stop"
 
 $requiredCommands = @()
-if ($Command -in @('add', 'rm', 'update')) { $requiredCommands += 'fzf' }
+# fzf is only needed where a picker is actually shown.
+$usesPicker = ($Command -in @('add', 'update')) -or ($Command -eq 'rm' -and -not $All -and -not $Target)
+if ($usesPicker) { $requiredCommands += 'fzf' }
 $missingDeps = @($requiredCommands | Where-Object { -not (Get-Command $_ -ErrorAction SilentlyContinue) })
 if ($Proxy -or $Command -eq "proxy") {
     if (-not (Get-Command curl.exe -ErrorAction SilentlyContinue)) {
@@ -68,29 +92,107 @@ if ($Proxy -or $Command -eq "proxy") {
 }
 if ($missingDeps.Count -gt 0)
 {
-    foreach ($dep in $missingDeps) { Write-Host "$dep not found" -ForegroundColor Red }
-    Write-Host "Script stopped due to missing dependencies.`n" -ForegroundColor Red
+    Write-Host "Missing: $($missingDeps -join ', ')" -ForegroundColor Red
+    Write-Host "Stopped." -ForegroundColor Red
     return
 }
 
 $AppDir         = Join-Path $env:LOCALAPPDATA "windows-config-files\gitget"
 $ConfFilePath   = Join-Path $AppDir "config.json"
 $DownloadsDir   = Join-Path $AppDir "downloads"
+$AppsDir        = Join-Path $AppDir "apps"
 $CacheDir        = Join-Path $AppDir "cache"
 $CacheTtlMinutes = if ($env:GITGET_CACHE_TTL_MINUTES) { [int]$env:GITGET_CACHE_TTL_MINUTES } else { 10 }
+$script:staleCacheWarned = $false
 
-# Only these are ever offered/tracked - this script only handles Windows
-# installers, not portable binaries or archives.
-$InstallerExtensions = @(".exe", ".msi", ".msix", ".msixbundle")
-
+# Installers are executed; portable payloads are copied or unpacked into a
+# managed directory and never run. The classifiers below are self-contained on
+# purpose - the offline test suite loads function definitions only.
 function _TestIsInstallerAsset($AssetName) {
     $ext = [System.IO.Path]::GetExtension($AssetName).ToLower()
-    return $InstallerExtensions -contains $ext
+    return @(".exe", ".msi", ".msix", ".msixbundle") -contains $ext
 }
 
 function _TestIsInstallerLike($FileName) {
     if (-not $FileName) { return $false }
     return $FileName -match '(?i)setup|installer|install|update|updater|stub'
+}
+
+function _TestLooksLikeInstaller($AssetName) {
+    # Hint that an asset is an installer rather than a program: msi/msix
+    # packages, installer-ish names, and "<app><version>-<arch>.exe"
+    # (e.g. 7z2604-x64.exe) which are self-extracting installers. The
+    # architecture token is removed first so "yt-dlp_x86.exe" stays a program.
+    if (-not $AssetName) { return $false }
+    $name = $AssetName.ToLower()
+    $ext  = [System.IO.Path]::GetExtension($name)
+    if ($ext -in @(".msi", ".msix", ".msixbundle")) { return $true }
+    if (_TestIsInstallerLike $AssetName) { return $true }
+    if ($ext -ne ".exe") { return $false }
+    $withoutArch = $name -replace '(x86_64|x64|amd64|x86|win64|win32|32bit|aarch64|arm64)', ''
+    if ($withoutArch -eq $name) { return $false }
+    return ($withoutArch -match '\d{2,}')
+}
+
+function _TestIsArchiveAsset($AssetName) {
+    if (-not $AssetName) { return $false }
+    $name = $AssetName.ToLower()
+    foreach ($compound in @(".tar.gz", ".tar.bz2", ".tar.xz", ".tar.zst")) {
+        if ($name.EndsWith($compound)) { return $true }
+    }
+    $ext = [System.IO.Path]::GetExtension($name)
+    return @(".zip", ".7z", ".rar", ".tar", ".gz", ".tgz", ".bz2", ".xz") -contains $ext
+}
+
+function _TestIsPortableAsset($AssetName) {
+    # A bare Windows program: an .exe that does not look like an installer.
+    if (-not $AssetName) { return $false }
+    if ([System.IO.Path]::GetExtension($AssetName).ToLower() -ne ".exe") { return $false }
+    return -not (_TestLooksLikeInstaller $AssetName)
+}
+
+function _TestIsSourceAsset($AssetName) {
+    # Source archives and checksum files are never install payloads.
+    if (-not $AssetName) { return $false }
+    $name = $AssetName.ToLower()
+    if ($name -match '(^|[._-])(source|src|sources)([._-]|$)') { return $true }
+    return $name -match '(sha256|checksum|manifest|\.asc$|\.sig$|\.sbom$|\.json$|\.txt$|\.md$)'
+}
+
+function _TestIsWindowsAsset($AssetName) {
+    # A release usually ships one build per platform (topgrade ships ten).
+    # Only the Windows one can be installed, so the others are filtered out.
+    if (-not $AssetName) { return $false }
+    $name = $AssetName.ToLower()
+    $ext  = [System.IO.Path]::GetExtension($name)
+    if ($ext -in @(".exe", ".msi", ".msix", ".msixbundle")) { return $true }
+    # Target triples of the other platforms.
+    if ($name -match 'linux|darwin|macos|macosx|apple|freebsd|openbsd|netbsd|dragonfly|solaris|illumos|android|wasm|musl|mus1|alpine|centos|ubuntu|debian|fedora|suse|cygwin') { return $false }
+    # Windows markers.
+    if ($name -match 'windows|win32|win64|mingw|msvc|(^|[._-])win[0-9]*([._-]|$)') { return $true }
+    # No platform in the name - it is a Windows build.
+    return $true
+}
+
+function _TestIsAnyPayloadAsset($AssetName) {
+    # Any payload gitget could install, whatever kind it is.
+    if (_TestIsInstallerAsset $AssetName) { return $true }
+    if ((_TestIsArchiveAsset $AssetName) -and (_TestIsWindowsAsset $AssetName) -and -not (_TestIsSourceAsset $AssetName)) { return $true }
+    return $false
+}
+
+function _GetInstallType($App) {
+    # Entries without install_type predate portable support - they install.
+    if ($App -and $App.PSObject.Properties['install_type'] -and $App.install_type) { return $App.install_type }
+    return 'installer'
+}
+
+function _TestIsInstallableAsset($AssetName, $InstallType) {
+    switch ($InstallType) {
+        'portable' { return (_TestIsPortableAsset $AssetName) }
+        'archive'  { return ((_TestIsArchiveAsset $AssetName) -and (_TestIsWindowsAsset $AssetName)) }
+        default    { return (_TestIsInstallerAsset $AssetName) }
+    }
 }
 
 function _TestIsSocks5($Url) {
@@ -154,8 +256,10 @@ function _Configure {
         ReleaseVersionRegex='release_version_regex'; InstalledVersionRegex='installed_version_regex'
         DisplayName='display_name'; DisplayNamePattern='display_name_pattern'; VersionExe='version_exe'; VersionCommand='version_command'
         VersionRegex='version_regex'; IncludePrerelease='include_prerelease'; CurrentVersion='current_version'
-        ReleaseLimit='release_limit'
+        ReleaseLimit='release_limit'; InstallType='install_type'; BinDir='bin_dir'
     }
+    $previousType = _GetInstallType $entry.Value
+    $previousBinDir = $entry.Value.bin_dir
     $changed = $false
     foreach ($key in $settings.Keys) {
         if (-not $script:PSBoundParameters.ContainsKey($key)) { continue }
@@ -164,6 +268,38 @@ function _Configure {
         $entry.Value | Add-Member -NotePropertyName $settings[$key] -NotePropertyValue $value -Force
         if ($key -eq 'Pattern') { $entry.Value | Add-Member -NotePropertyName pattern_explicit -NotePropertyValue ([bool]$value) -Force }
         $changed = $true
+    }
+    if ($changed -and $script:PSBoundParameters.ContainsKey('InstallType') -and $previousType -ne $entry.Value.install_type) {
+        # The payload kind changed - any recorded state describes the old kind.
+        if ($entry.Value.PSObject.Properties['installed']) { $entry.Value.installed = $null }
+    }
+    if ($changed -and $script:PSBoundParameters.ContainsKey('BinDir') -and $previousBinDir -and
+        $previousBinDir -ine $entry.Value.bin_dir -and $previousType -ne 'installer') {
+        # The payload dir changed - move what is there, or the config would
+        # point at a place that holds nothing.
+        $oldRegistered = if ($entry.Value.installed -and $entry.Value.installed.path) { Split-Path -Parent $entry.Value.installed.path } else { $previousBinDir }
+        if (Test-Path $previousBinDir) {
+            if (Test-Path $entry.Value.bin_dir) {
+                Write-Host "'$Target' already has a payload at $($entry.Value.bin_dir) - nothing moved." -ForegroundColor Yellow
+            }
+            else {
+                try {
+                    $null = New-Item -ItemType Directory -Path (Split-Path -Parent $entry.Value.bin_dir) -Force
+                    Move-Item -LiteralPath $previousBinDir -Destination $entry.Value.bin_dir -ErrorAction Stop
+                    Write-Host "Moved payload to $($entry.Value.bin_dir)" -ForegroundColor Green
+                    if ($entry.Value.installed -and $entry.Value.installed.path) {
+                        $entry.Value.installed.path = Join-Path $entry.Value.bin_dir (Split-Path -Leaf $entry.Value.installed.path)
+                    }
+                }
+                catch {
+                    Write-Host "Failed to move the payload to $($entry.Value.bin_dir): $($_.Exception.Message)" -ForegroundColor Red
+                }
+            }
+        }
+        # The PATH entry follows the program, not the config.
+        $newRegistered = if ($entry.Value.installed -and $entry.Value.installed.path) { Split-Path -Parent $entry.Value.installed.path } else { $entry.Value.bin_dir }
+        _UnregisterBinDir $oldRegistered
+        if ($newRegistered) { _RegisterBinDir $newRegistered }
     }
     if ($changed) { _SaveConfig $config }
     $entry.Value | ConvertTo-Json -Depth 10
@@ -237,7 +373,7 @@ function _GetCachePath($Repo, $Endpoint) {
     return Join-Path $CacheDir "$safe-$hash.json"
 }
 
-function _ReadCache($Repo, $Endpoint) {
+function _ReadCache($Repo, $Endpoint, [switch]$AllowStale) {
     $path = _GetCachePath $Repo $Endpoint
     if (-not (Test-Path $path)) { return $null }
     try {
@@ -245,11 +381,13 @@ function _ReadCache($Repo, $Endpoint) {
     }
     catch { return $null }
     if ((-not $raw) -or (-not $raw.cached_at) -or ($raw.endpoint -ne $Endpoint)) { return $null }
-    $age = [DateTimeOffset]::UtcNow - ([DateTimeOffset]$raw.cached_at).ToUniversalTime()
-    if ($age.TotalMinutes -gt $CacheTtlMinutes) {
-        Remove-Item $path -Force -ErrorAction SilentlyContinue
-        return $null
+    try {
+        $age = [DateTimeOffset]::UtcNow - ([DateTimeOffset]$raw.cached_at).ToUniversalTime()
     }
+    catch { return $null }
+    # The old file is kept until a refresh worked - deleting it up front
+    # leaves nothing when the API cannot be reached.
+    if ($age.TotalMinutes -gt $CacheTtlMinutes -and -not $AllowStale) { return $null }
     return $raw.data
 }
 
@@ -263,17 +401,6 @@ function _WriteCache($Repo, $Endpoint, $Data) {
     $payload | ConvertTo-Json -Depth 12 | Set-Content -Path (_GetCachePath $Repo $Endpoint) -Encoding UTF8
 }
 
-function _GetLatestRelease($Repo, $ProxyUrl, [switch]$Force) {
-    $endpoint = "https://api.github.com/repos/$Repo/releases/latest"
-    if (-not $Force) {
-        $cached = _ReadCache $Repo $endpoint
-        if ($null -ne $cached) { return $cached }
-    }
-    $result = _ProjectRelease (_InvokeGitHubApi $endpoint $ProxyUrl)
-    _WriteCache $Repo $endpoint $result
-    return $result
-}
-
 function _GetReleases($Repo, $Count = 40, $ProxyUrl, [switch]$Force) {
     if ($Count -gt 100) {
         $result = @()
@@ -281,8 +408,9 @@ function _GetReleases($Repo, $Count = 40, $ProxyUrl, [switch]$Force) {
             $endpoint = "https://api.github.com/repos/$Repo/releases?per_page=100&page=$page"
             $batch = if (-not $Force) { _ReadCache $Repo $endpoint } else { $null }
             if ($null -eq $batch) {
-                $batch = @(@(_InvokeGitHubApi $endpoint $ProxyUrl) | ForEach-Object { _ProjectRelease $_ })
-                _WriteCache $Repo $endpoint $batch
+                $fetched = _FetchReleases $endpoint $ProxyUrl $Repo $endpoint
+                if (-not $fetched.stale) { _WriteCache $Repo $endpoint $fetched.data }
+                $batch = @($fetched.data)
             }
             $result += @($batch)
             if (@($batch).Count -lt 100) { break }
@@ -294,9 +422,27 @@ function _GetReleases($Repo, $Count = 40, $ProxyUrl, [switch]$Force) {
         $cached = _ReadCache $Repo $endpoint
         if ($null -ne $cached) { return @($cached) }
     }
-    $result = @(@(_InvokeGitHubApi $endpoint $ProxyUrl) | ForEach-Object { _ProjectRelease $_ })
-    _WriteCache $Repo $endpoint $result
-    return $result
+    $fetched = _FetchReleases $endpoint $ProxyUrl $Repo $endpoint
+    if (-not $fetched.stale) { _WriteCache $Repo $endpoint $fetched.data }
+    return @($fetched.data)
+}
+
+function _FetchReleases($Endpoint, $ProxyUrl, $Repo, $CacheEndpoint) {
+    # Fetches a release list. When the API cannot be reached, the data that is
+    # already cached is better than nothing.
+    try {
+        $data = @(@(_InvokeGitHubApi $Endpoint $ProxyUrl) | ForEach-Object { _ProjectRelease $_ })
+        return [PSCustomObject]@{ data = $data; stale = $false }
+    }
+    catch {
+        $stale = _ReadCache $Repo $CacheEndpoint -AllowStale
+        if ($null -eq $stale) { throw }
+        if (-not $script:staleCacheWarned) {
+            $script:staleCacheWarned = $true
+            Write-Host "GitHub API unavailable - using cached release data" -ForegroundColor Yellow
+        }
+        return [PSCustomObject]@{ data = @($stale); stale = $true }
+    }
 }
 
 # Some repos split releases per platform into separate tags. /releases/latest
@@ -334,6 +480,7 @@ function _GetReleaseKey($Rel) {
 
 function _GetTrackedRelease($AppName, $App, $ProxyUrl, [switch]$Force) {
     $limit = if ($App.release_limit) { $App.release_limit } else { 40 }
+    $type = _GetInstallType $App
     $releases = _GetReleases $App.repo $limit $ProxyUrl -Force:$Force
     $stable = @($releases | Where-Object { -not $_.prerelease -or $App.include_prerelease })
     $explicitLine = $App.tag_pattern -or $App.release_name_pattern
@@ -360,19 +507,20 @@ function _GetTrackedRelease($AppName, $App, $ProxyUrl, [switch]$Force) {
 
     if (-not $hasFamily -and -not $explicitLine) {
         $lines = @(_GetReleaseLines @($stable | Where-Object {
-            @($_.assets | Where-Object { _TestIsInstallerAsset $_.name }).Count -gt 0
+            @($_.assets | Where-Object { _TestIsInstallableAsset $_.name $type }).Count -gt 0
         }))
         if ($lines.Count -gt 1) { throw "Release line is ambiguous for $AppName. Use gitget configure $AppName -TagPattern <glob>." }
     }
 
-    # Newest stable release in the tracked line that ships an installer.
-    # Asset selection remains separate and can ask for a new installer type.
+    # Newest stable release in the tracked line that ships a payload we can
+    # install. The kind of that payload is decided when the asset is picked,
+    # so a release that ships another kind is still the release to track.
     foreach ($rel in $stable) {
         if (-not $explicitLine -and $hasFamily -and (_GetReleaseKey $rel) -ne $family) { continue }
-        if (@($rel.assets | Where-Object { _TestIsInstallerAsset $_.name }).Count -gt 0) { return $rel }
+        if (@($rel.assets | Where-Object { _TestIsAnyPayloadAsset $_.name }).Count -gt 0) { return $rel }
     }
 
-    throw "No Windows installer release found for the tracked release line of $($App.repo). Configure release filters or increase -ReleaseLimit with gitget configure $AppName."
+    throw "No installable release found for the tracked release line of $($App.repo). Configure release filters or increase -ReleaseLimit with gitget configure $AppName."
 }
 
 function _GetReleaseLines($InstallableReleases) {
@@ -383,7 +531,7 @@ function _GetReleaseLines($InstallableReleases) {
 }
 
 function _SelectReleaseLine($FamilyGroups) {
-    Write-Host "This repo publishes several independent release lines - which one do you want to track?"
+    Write-Host "Several release lines - pick one:"
     $lines = @($FamilyGroups | ForEach-Object {
         $label = "{0}  ({1} release(s), e.g. {2})" -f $_.Name, $_.Count, $_.Group[0].rel.tag_name
         if ($_.Group[0].rel.tag_name -eq $FamilyGroups[0].Group[0].rel.tag_name) { $label += "  [recommended]" }
@@ -496,13 +644,21 @@ function _FindInstalledExe($App) {
         $candidate = Join-Path $App.install_dir $App.version_exe
         if (Test-Path $candidate) { return $candidate }
     }
+    if ($App.version_exe -and $App.bin_dir) {
+        $candidate = Join-Path $App.bin_dir $App.version_exe
+        if (Test-Path $candidate) { return $candidate }
+    }
     if ($App.version_exe) { return $null }
-    if ($App.install_dir -and (Test-Path $App.install_dir)) {
+    # Portable payloads live in their own bin directory, installers in the
+    # download staging directory.
+    foreach ($dir in @($App.bin_dir, $App.install_dir)) {
+        if (-not $dir -or -not (Test-Path $dir)) { continue }
         # Never probe the app's own downloaded installer (or any installer-like
         # exe) for a version - launching one would pop up its setup UI.
-        return (Get-ChildItem -Path $App.install_dir -Filter *.exe -Recurse -ErrorAction SilentlyContinue |
-                Where-Object { $_.Name -ne $App.current_asset -and -not (_TestIsInstallerLike $_.Name) } |
-                Select-Object -First 1).FullName
+        $found = (Get-ChildItem -Path $dir -Filter *.exe -Recurse -ErrorAction SilentlyContinue |
+                  Where-Object { $_.Name -ne $App.current_asset -and -not (_TestLooksLikeInstaller $_.Name) } |
+                  Select-Object -First 1).FullName
+        if ($found) { return $found }
     }
     return $null
 }
@@ -658,7 +814,50 @@ function _GetVersionFromWinget($App, $AppName) {
     return $null
 }
 
+function _GetInstalledVersionPortable($AppName, $App) {
+    # Portable payloads have no installer, no uninstall entry and usually no
+    # version metadata - so the state we recorded is the primary source and
+    # the program's own answer is the fallback for copies we did not install.
+    $state = $null
+    if ($App.PSObject.Properties['installed'] -and $App.installed) { $state = $App.installed }
+    $statePath = if ($state -and $state.path) { $state.path } else { $null }
+
+    $exePath = $statePath
+    if (-not $exePath) { $exePath = _FindInstalledExe $App }
+
+    if ($state -and $state.version) {
+        if (-not $statePath -or -not [System.IO.File]::Exists($statePath)) {
+            return @{ version = $null; source = "missing" }
+        }
+        $hash = _GetFileSha256 $statePath
+        if ($hash -and $state.sha256 -and $hash -eq $state.sha256) {
+            return @{ version = $state.version; source = "state" }
+        }
+    }
+
+    # The payload changed on disk (self-update or manual replacement): ask the
+    # program itself.
+    if ($App.version_command) {
+        if (-not $exePath) { throw "Configured version executable not found: $($App.version_exe)" }
+        $v = _GetVersionFromCommand $exePath @($App.version_command) $App.version_regex
+        if ($v) { return @{ version = $v; source = "version command" } }
+        throw "Configured version command did not return a version. Check VersionExe, VersionCommand and VersionRegex."
+    }
+    if ($exePath) {
+        $v = _GetVersionFromFileMetadata $exePath
+        if ($v) { return @{ version = $v; source = "file metadata" } }
+    }
+    if ($state -and $state.version) {
+        # Changed and unreadable: we cannot prove what is installed, and
+        # overwriting a possibly newer build would be a downgrade.
+        return @{ version = $null; source = "modified" }
+    }
+    if ($App.current_version) { return @{ version = $App.current_version; source = "recorded (unverified)" } }
+    return @{ version = $null; source = "unknown" }
+}
+
 function _GetInstalledVersion($AppName, $App) {
+    if ((_GetInstallType $App) -ne 'installer') { return _GetInstalledVersionPortable $AppName $App }
     # Try progressively less-direct sources; "recorded" only trusts the config.
     $exePath = _FindInstalledExe $App
     if ($App.version_exe -and -not $exePath) { throw "Configured version executable not found: $($App.version_exe)" }
@@ -687,6 +886,17 @@ function _GetInstalledVersion($AppName, $App) {
     return @{ version = $null; source = "unknown" }
 }
 
+function _GetInstalledState($AppName, $App) {
+    # Whether the app is on the machine. A copy that changed outside gitget
+    # still counts as installed - we just cannot verify its version.
+    # Throws when the installed version cannot be determined at all.
+    $detected = _GetInstalledVersion $AppName $App
+    if (-not $detected) { return @{ installed = $false; version = $null } }
+    $present = $detected.source -notin @('recorded (unverified)', 'unknown', 'missing')
+    $installed = $present -and ($detected.version -or $detected.source -eq 'modified')
+    return @{ installed = $installed; version = $detected.version }
+}
+
 function _GetArchScore($FileName, $Arch) {
     if (-not $Arch) { return 1 }
     $n     = $FileName.ToLower()
@@ -702,7 +912,7 @@ function _GetArchScore($FileName, $Arch) {
     return 0
 }
 
-function _SelectAssetFromList($Candidates, $RecommendedName) {
+function _SelectAssetFromList($Candidates, $RecommendedName, [string]$Prompt = 'installer') {
     $ordered = @($Candidates)
     if ($RecommendedName) {
         $rec  = @($ordered | Where-Object { $_.name -eq $RecommendedName })
@@ -716,24 +926,30 @@ function _SelectAssetFromList($Candidates, $RecommendedName) {
         $label
     })
 
-    Write-Host "Some .exe assets are plain portable binaries, not installers - pick the actual" -ForegroundColor Yellow
-    Write-Host "installer (often named like '*-setup.exe' or '*-installer.exe', or a .msi/.msix)." -ForegroundColor Yellow
+    if ($Prompt -eq 'installer') {
+        Write-Host "Pick the installer (not a portable .exe):" -ForegroundColor Yellow
+    }
+    elseif ($Prompt -eq 'archive') {
+        Write-Host "Pick the archive with the Windows program:" -ForegroundColor Yellow
+    }
 
-    Write-Host "Pick an installer (showing all $($names.Count) installer-type files on this release, esc to cancel):"
-    $picked = @($names | fzf --prompt="installer> " --no-sort)[0]
+    $picked = @($names | fzf --prompt="$Prompt> " --no-sort)[0]
     if ($LASTEXITCODE -eq 0 -and $picked) {
         return $ordered[[array]::IndexOf($names, $picked)]
     }
     return $null
 }
 
-function _SelectAsset($Assets, $GlobPattern, [switch]$Interactive) {
+function _SelectAsset($Assets, $GlobPattern, [switch]$Interactive, [string]$InstallType = 'installer', [string]$PreviousName = '') {
     if (-not $Assets -or @($Assets).Count -eq 0) { return $null }
 
     if ($Interactive) {
-        # Interactive pickers only offer installer extensions; automatic
-        # matching below reuses the already-stored pattern.
-        $installers = @($Assets | Where-Object { _TestIsInstallerAsset $_.name })
+        # Interactive pickers only offer payload types we can install;
+        # automatic matching below reuses the already-stored pattern.
+        $installers = @($Assets | Where-Object { _TestIsInstallableAsset $_.name $InstallType })
+        if ($InstallType -eq 'archive') {
+            $installers = @($installers | Where-Object { -not (_TestIsSourceAsset $_.name) })
+        }
         if ($installers.Count -eq 0) { return $null }
 
         $candidates = $installers
@@ -749,22 +965,41 @@ function _SelectAsset($Assets, $GlobPattern, [switch]$Interactive) {
         $topScore = $scored[0].score
         $final    = @($scored | Where-Object { $_.score -eq $topScore } | ForEach-Object { $_.asset })
 
-        # Always show the full installer list when there's more than one -
+        # Assets built for another architecture cannot be used here - they are
+        # noise in the list. Everything else stays selectable, because the
         # arch scoring is just a guess and can be wrong.
-        if ($installers.Count -gt 1 -or ($GlobPattern -and -not $matched)) {
+        $showable = @($scored | Where-Object { $_.score -gt 0 } | ForEach-Object { $_.asset })
+        if (-not $showable.Count) { $showable = $installers }
+        # Several files look alike - the one that is the previous file with a
+        # new version is the one that is wanted.
+        $sameFile = @(_NarrowToSameFile $showable $PreviousName)
+        $identified = ($sameFile.Count -eq 1 -and $showable.Count -gt 1)
+        $showable = $sameFile
+
+        if ($showable.Count -gt 1 -or ($GlobPattern -and -not $matched -and -not $identified)) {
             $recommendedName = if ($final.Count -gt 0) { $final[0].name } else { $null }
-            return _SelectAssetFromList $installers $recommendedName
+            return _SelectAssetFromList $showable $recommendedName $InstallType
         }
-        return $installers[0]
+        return $showable[0]
     }
 
     # A check must not silently select an unrelated asset on a pattern miss.
-    $candidates = @($Assets | Where-Object { _TestIsInstallerAsset $_.name })
+    $candidates = @($Assets | Where-Object { _TestIsInstallableAsset $_.name $InstallType })
+    if ($InstallType -eq 'archive') {
+        # Source archives and checksum files are never the payload.
+        $candidates = @($candidates | Where-Object { -not (_TestIsSourceAsset $_.name) })
+    }
     if (-not $candidates.Count) { return $null }
     if ($GlobPattern) {
         $matched = @($candidates | Where-Object { $_.name -like $GlobPattern })
-        if (-not $matched) { return $null }
-        $candidates = $matched
+        if ($matched) { $candidates = $matched }
+        else {
+            # The pattern is stale - the file that is the previous file with a
+            # new version still counts.
+            $sameFile = @(_NarrowToSameFile $candidates $PreviousName)
+            if ($sameFile.Count -ne 1 -or $candidates.Count -lt 2) { return $null }
+            $candidates = $sameFile
+        }
     }
 
     $arch   = _GetNativeArch
@@ -774,6 +1009,7 @@ function _SelectAsset($Assets, $GlobPattern, [switch]$Interactive) {
     $topScore = $scored[0].score
     if ($topScore -eq 0) { return $null }
     $final = @($scored | Where-Object { $_.score -eq $topScore } | ForEach-Object { $_.asset })
+    $final = @(_NarrowToSameFile $final $PreviousName)
     if ($final.Count -eq 1) { return $final[0] }
     return $null
 }
@@ -782,7 +1018,7 @@ function _SaveAsset($Asset, $DestDir, $ProxyUrl) {
     New-Item -ItemType Directory -Force -Path $DestDir | Out-Null
     $destPath = Join-Path $DestDir $Asset.name
     $sizeMb = [math]::Round($Asset.size / 1MB, 1)
-    Write-Host "Downloading $($Asset.name) ($sizeMb MB)..."
+    Write-Host "Downloading $($Asset.name) ($sizeMb MB)"
 
     if (_TestIsSocks5 $ProxyUrl) {
         $parsed = _ParseSocks5Url $ProxyUrl
@@ -798,13 +1034,72 @@ function _SaveAsset($Asset, $DestDir, $ProxyUrl) {
 }
 
 function _NewAssetPattern($FileName) {
-    # Turn a concrete asset name into a reusable glob by dropping version
-    # tokens: bat-v0.26.1-x86_64-pc-windows-msvc.zip -> *x86_64*pc*windows*msvc.zip
+    # Turn a concrete asset name into a reusable glob by dropping the version
+    # part: bat-v0.26.1-x86_64-pc-windows-msvc.zip -> *bat*x86*64*pc*windows*msvc*zip*
+    # The version is cut out of the name instead of dropping a whole word, so
+    # names that glue the version to the rest keep their shape:
+    # gh_2.103.0_windows_amd64.msi -> *gh*windows*amd64*msi*
+    $stripped = $FileName -replace 'v?\d+\.\d+(\.\d+)*', '' -replace '\d{4,}', ''
+    $tokens = @($stripped -split '[\s_-]+' | Where-Object { $_ })
+    if ($tokens.Count -eq 0) { return "*" }
+    return "*" + ($tokens -join "*") + "*"
+}
+
+function _GetFileShape($FileName) {
+    # The name of a file without its version: the words that stay the same
+    # when the file is rebuilt for a new version.
+    # Bitwarden-Installer-2026.10.0.exe -> Bitwarden|Installer|.exe
+    if (-not $FileName) { return '' }
+    $stripped = $FileName -replace 'v?\d+\.\d+(\.\d+)*', '' -replace '\d{4,}', ''
+    $tokens = @($stripped -split '[\s_-]+' | Where-Object { $_ })
+    return ($tokens -join '|')
+}
+
+function _NarrowToSameFile($Candidates, $PreviousName) {
+    # Among several files, the one that is the previous file with a new
+    # version: Bitwarden-Installer-2027.11.1.exe over
+    # commercial-Bitwarden-Installer-2027.11.1.exe.
+    if (-not $PreviousName -or @($Candidates).Count -lt 2) { return $Candidates }
+    $shape = _GetFileShape $PreviousName
+    if (-not $shape) { return $Candidates }
+    $same = @($Candidates | Where-Object { (_GetFileShape $_.name) -eq $shape })
+    if ($same.Count -eq 1) { return $same }
+    return $Candidates
+}
+
+function _NewAssetPatternLegacy($FileName) {
+    # The pattern gitget used to derive. Kept so a pattern gitget derived can
+    # be told apart from one the user set by hand.
     $kept = @($FileName -split '[\s-]+' | Where-Object { $_ } | Where-Object {
         $_ -notmatch '^v?\d+$' -and $_ -notmatch '^v?\d+(\.\d+)+$' -and $_ -notmatch '\d\.\d'
     })
     if ($kept.Count -eq 0) { return "*" }
     return "*" + ($kept -join "*")
+}
+
+function _IsAutoPattern($App) {
+    # True when the stored pattern was derived by gitget, not set by the user.
+    if (-not $App -or -not $App.pattern) { return $true }
+    if ($App.PSObject.Properties['pattern_explicit']) { return (-not $App.pattern_explicit) }
+    # Entry from before the flag existed: a pattern that is what gitget
+    # derived is not a hand-written one.
+    if ($App.current_asset) {
+        if ($App.pattern -eq (_NewAssetPatternLegacy $App.current_asset)) { return $true }
+        if ($App.pattern -eq (_NewAssetPattern $App.current_asset)) { return $true }
+    }
+    return $false
+}
+
+function _GetEffectivePattern($App) {
+    # The pattern assets are matched with. A derived pattern is rebuilt from
+    # the asset that was installed last time, so an update does not have to
+    # ask again when the stored pattern no longer matches.
+    if (-not (_IsAutoPattern $App)) { return $App.pattern }
+    if ($App.current_asset) {
+        $derived = _NewAssetPattern $App.current_asset
+        if ($derived) { return $derived }
+    }
+    return $App.pattern
 }
 
 function _InstallDownloadedAsset($Path) {
@@ -813,21 +1108,21 @@ function _InstallDownloadedAsset($Path) {
 
     switch ($ext) {
         ".msi" {
-            Write-Host "Installing (msiexec /passive): $leaf"
+            Write-Host "Installing (msiexec): $leaf"
             try {
                 $proc = Start-Process -FilePath "msiexec.exe" -ArgumentList "/i", "`"$Path`"", "/passive", "/norestart" -PassThru
                 $proc.WaitForExit()
                 if ($proc.ExitCode -in @(0, 1641, 3010)) {
                     Remove-Item -LiteralPath $Path -Force -ErrorAction SilentlyContinue
-                    Write-Host "Install finished; deleted $leaf" -ForegroundColor Green
+                    Write-Host "Installed: $leaf" -ForegroundColor Green
                     return $true
                 }
                 else {
-                    Write-Host "msiexec exited with code $($proc.ExitCode); installer kept at $Path" -ForegroundColor Yellow
+                    Write-Host "msiexec failed (code $($proc.ExitCode)); kept at $Path" -ForegroundColor Yellow
                 }
             }
             catch {
-                Write-Host "Could not start install ($($_.Exception.Message)); installer kept at $Path" -ForegroundColor Red
+                Write-Host "Install failed ($($_.Exception.Message)); kept at $Path" -ForegroundColor Red
             }
         }
         ".exe" {
@@ -840,15 +1135,15 @@ function _InstallDownloadedAsset($Path) {
                 $proc.WaitForExit()
                 if ($proc.ExitCode -eq 0) {
                     Remove-Item -LiteralPath $Path -Force -ErrorAction SilentlyContinue
-                    Write-Host "Installer finished; deleted $leaf" -ForegroundColor Green
+                    Write-Host "Installed: $leaf" -ForegroundColor Green
                     return $true
                 }
                 else {
-                    Write-Host "Installer exited with code $($proc.ExitCode); file kept at $Path" -ForegroundColor Yellow
+                    Write-Host "Installer failed (code $($proc.ExitCode)); kept at $Path" -ForegroundColor Yellow
                 }
             }
             catch {
-                Write-Host "Could not start installer ($($_.Exception.Message)); file kept at $Path" -ForegroundColor Red
+                Write-Host "Installer failed ($($_.Exception.Message)); kept at $Path" -ForegroundColor Red
             }
         }
         { $_ -in ".msix", ".msixbundle" } {
@@ -856,12 +1151,11 @@ function _InstallDownloadedAsset($Path) {
             try {
                 Add-AppxPackage -Path $Path -ErrorAction Stop
                 Remove-Item -LiteralPath $Path -Force -ErrorAction SilentlyContinue
-                Write-Host "Install finished; deleted $leaf" -ForegroundColor Green
+                Write-Host "Installed: $leaf" -ForegroundColor Green
                 return $true
             }
             catch {
-                Write-Host "Add-AppxPackage failed ($($_.Exception.Message)); file kept at $Path" -ForegroundColor Red
-                Write-Host "(this usually means the package's signing certificate isn't trusted yet)" -ForegroundColor Yellow
+                Write-Host "Add-AppxPackage failed ($($_.Exception.Message)); kept at $Path" -ForegroundColor Red
             }
         }
         default {
@@ -870,6 +1164,188 @@ function _InstallDownloadedAsset($Path) {
         }
     }
     return $false
+}
+
+# --------------------------------------------------------------------------
+# Portable payloads and archives
+# --------------------------------------------------------------------------
+
+function _GetFileSha256($Path) {
+    if (-not $Path -or -not [System.IO.File]::Exists($Path)) { return $null }
+    try {
+        return (Get-FileHash -LiteralPath $Path -Algorithm SHA256 -ErrorAction Stop).Hash.ToLower()
+    }
+    catch { return $null }
+}
+
+function _RegisterBinDir($BinDir) {
+    # Put the payload directory on the user PATH so the program is callable.
+    # It goes in front of the other user entries: gitget keeps this copy up to
+    # date, so a stale copy further down the PATH (a leftover winget link, the
+    # legacy bin dir) must not shadow it.
+    $userPath = [Environment]::GetEnvironmentVariable("Path", "User")
+    if (-not $userPath) { $userPath = "" }
+    $known = @($userPath -split ';' | Where-Object { $_ })
+    $kept = @($known | Where-Object { $_.TrimEnd('\') -ine $BinDir.TrimEnd('\') })
+    [Environment]::SetEnvironmentVariable("Path", (($BinDir + $kept) -join ';'), "User")
+
+    $session = @($env:Path -split ';' | Where-Object { $_ })
+    $keptSession = @($session | Where-Object { $_.TrimEnd('\') -ine $BinDir.TrimEnd('\') })
+    $env:Path = (($BinDir + $keptSession) -join ';')
+}
+
+function _UnregisterBinDir($BinDir) {
+    # Drop the payload directory from the PATH so a removed program is not
+    # still callable through a stale entry.
+    if (-not $BinDir) { return }
+
+    $userPath = [Environment]::GetEnvironmentVariable("Path", "User")
+    if ($userPath) {
+        $known = @($userPath -split ';' | Where-Object { $_ })
+        $kept = @($known | Where-Object { $_.TrimEnd('\') -ine $BinDir.TrimEnd('\') })
+        if ($kept.Count -ne $known.Count) {
+            [Environment]::SetEnvironmentVariable("Path", ($kept -join ';'), "User")
+            Write-Host "Removed from PATH: $BinDir" -ForegroundColor Gray
+        }
+    }
+
+    $session = @($env:Path -split ';' | Where-Object { $_ })
+    $keptSession = @($session | Where-Object { $_.TrimEnd('\') -ine $BinDir.TrimEnd('\') })
+    if ($keptSession.Count -ne $session.Count) {
+        $env:Path = ($keptSession -join ';')
+    }
+}
+
+function _ExpandPayloadArchive($Path, $DestDir) {
+    $name = (Split-Path -Leaf $Path).ToLower()
+    New-Item -ItemType Directory -Force -Path $DestDir | Out-Null
+    if ($name -match '\.zip$') {
+        Expand-Archive -LiteralPath $Path -DestinationPath $DestDir -Force
+        return
+    }
+    if ($name -match '\.(tar\.gz|tar\.bz2|tar\.xz|tar\.zst|tgz|tbz2|txz|tar)$') {
+        & tar.exe -xf $Path -C $DestDir
+        if ($LASTEXITCODE -ne 0) { throw "tar extraction failed (exit code $LASTEXITCODE)" }
+        return
+    }
+    if ($name -match '\.7z$') {
+        $sevenZip = Get-Command 7z.exe -ErrorAction SilentlyContinue
+        if (-not $sevenZip) { throw "7-Zip is required to unpack .7z assets (winget install 7zip)" }
+        & $sevenZip.Source x -y "-o$DestDir" $Path | Out-Null
+        if ($LASTEXITCODE -ne 0) { throw "7-Zip extraction failed (exit code $LASTEXITCODE)" }
+        return
+    }
+    throw "Unsupported archive type: $name"
+}
+
+function _FlattenPayloadDir($Dir) {
+    # Most archives ship a single top-level folder; lift it so the payload
+    # path stays the same between updates.
+    $items = @(Get-ChildItem -LiteralPath $Dir -Force -ErrorAction SilentlyContinue)
+    $dirs  = @($items | Where-Object { $_.PSIsContainer })
+    $files = @($items | Where-Object { -not $_.PSIsContainer })
+    if ($dirs.Count -eq 1 -and $files.Count -eq 0) {
+        $inner = $dirs[0].FullName
+        foreach ($child in @(Get-ChildItem -LiteralPath $inner -Force -ErrorAction SilentlyContinue)) {
+            Move-Item -LiteralPath $child.FullName -Destination $Dir -Force -ErrorAction SilentlyContinue
+        }
+        Remove-Item -LiteralPath $inner -Recurse -Force -ErrorAction SilentlyContinue
+    }
+}
+
+function _FindPayloadExe($Dir, $AppName) {
+    $exes = @(Get-ChildItem -LiteralPath $Dir -Filter *.exe -Recurse -File -ErrorAction SilentlyContinue |
+              Where-Object { -not (_TestLooksLikeInstaller $_.Name) })
+    if ($exes.Count -eq 0) { return $null }
+    $needle = (($AppName -replace '[^a-zA-Z0-9]', '')).ToLower()
+    if ($needle) {
+        $named = @($exes | Where-Object { (($_.BaseName -replace '[^a-zA-Z0-9]', '')).ToLower() -eq $needle })
+        if ($named.Count -eq 1) { return $named[0].FullName }
+    }
+    if ($exes.Count -eq 1) { return $exes[0].FullName }
+    # Several programs in one archive: the largest one is the payload.
+    return ($exes | Sort-Object Length -Descending | Select-Object -First 1).FullName
+}
+
+function _InstallPortablePayload($Path, $BinDir, $AppName) {
+    # Places a portable payload in $BinDir and returns the installed program.
+    New-Item -ItemType Directory -Force -Path $BinDir | Out-Null
+    $ext = [System.IO.Path]::GetExtension($Path).ToLower()
+    if ($ext -eq ".exe") {
+        $dest = Join-Path $BinDir (Split-Path -Leaf $Path)
+        Copy-Item -LiteralPath $Path -Destination $dest -Force
+        return $dest
+    }
+    _ExpandPayloadArchive $Path $BinDir
+    _FlattenPayloadDir $BinDir
+    $exe = _FindPayloadExe $BinDir $AppName
+    if (-not $exe) { throw "No program found in the unpacked archive" }
+    return $exe
+}
+
+function _SetInstallState($App, $Version, $AssetName, $ExePath) {
+    # Record what we installed so later checks can verify it.
+    $state = [PSCustomObject]@{
+        version = $Version
+        asset   = $AssetName
+        path    = $ExePath
+        sha256  = _GetFileSha256 $ExePath
+        at      = (Get-Date).ToUniversalTime().ToString("o")
+    }
+    if ($App.PSObject.Properties['installed']) { $App.installed = $state }
+    else { $App | Add-Member -NotePropertyName installed -NotePropertyValue $state }
+}
+
+function _InstallAppPayload($AppName, $App, $Asset, $LatestVersion, $ProxyUrl) {
+    # Downloads the asset and installs it the way the app's kind requires.
+    # Returns $true only when the payload is in place.
+    $type = _GetInstallType $App
+
+    # Drop the previous download so a rename does not leave two copies behind.
+    if ($App.install_dir -and $App.current_asset -and $App.current_asset -ne $Asset.name) {
+        $stalePath = Join-Path $App.install_dir $App.current_asset
+        if (Test-Path $stalePath) {
+            Remove-Item $stalePath -Force -ErrorAction SilentlyContinue
+            Write-Host "Removed old download: $($App.current_asset)" -ForegroundColor Gray
+        }
+    }
+
+    $path = $null
+    try { $path = _SaveAsset $Asset $App.install_dir $ProxyUrl }
+    catch { Write-Host "$AppName download failed: $($_.Exception.Message)" -ForegroundColor Red; return $false }
+
+    if ($type -eq 'installer') {
+        if (-not (_InstallDownloadedAsset $path)) { return $false }
+    }
+    else {
+        $binDir = if ($App.bin_dir) { $App.bin_dir } else { Join-Path $AppsDir $AppName }
+        $oldPath = if ($App.PSObject.Properties['installed'] -and $App.installed) { $App.installed.path } else { $null }
+        $exe = $null
+        try { $exe = _InstallPortablePayload $path $binDir $AppName }
+        catch {
+            Write-Host "$AppName install failed: $($_.Exception.Message)" -ForegroundColor Red
+            Remove-Item -LiteralPath $path -Force -ErrorAction SilentlyContinue
+            return $false
+        }
+        Remove-Item -LiteralPath $path -Force -ErrorAction SilentlyContinue
+        if ($oldPath -and $oldPath -ne $exe -and [System.IO.File]::Exists($oldPath)) {
+            Remove-Item -LiteralPath $oldPath -Force -ErrorAction SilentlyContinue
+        }
+        _RegisterBinDir (Split-Path -Parent $exe)
+        _SetInstallState $App $LatestVersion $Asset.name $exe
+        Write-Host "Installed $AppName to $exe" -ForegroundColor Green
+    }
+
+    $autoPattern = _IsAutoPattern $App
+    $App.current_version = $LatestVersion
+    $App.current_asset = $Asset.name
+    if ($autoPattern) {
+        $App.pattern = _NewAssetPattern $Asset.name
+        # Record that the pattern is derived, so it keeps being rebuilt.
+        $App | Add-Member -NotePropertyName pattern_explicit -NotePropertyValue $false -Force
+    }
+    $App.last_checked = (Get-Date).ToUniversalTime().ToString("o")
+    return $true
 }
 
 # --------------------------------------------------------------------------
@@ -904,14 +1380,14 @@ function _Backup {
     New-Item -ItemType Directory -Force -Path $backupDir | Out-Null
     $dest = Join-Path $backupDir "config.json"
     Copy-Item -LiteralPath $ConfFilePath -Destination $dest -Force
-    Write-Host "Backed up to: Documents\windows-config-backup\gitget\config.json" -ForegroundColor Green
+    Write-Host "Config backed up." -ForegroundColor Green
 }
 
 function _Restore {
     $path = $RestorePath
     if (-not $path) { $path = $Target }
     if (-not $path) {
-        Write-Host "Provide a config file path, e.g. gitget restore C:\path\to\config.json" -ForegroundColor Red
+        Write-Host "Provide a config file path." -ForegroundColor Red
         return
     }
     if (-not (Test-Path $path)) {
@@ -923,34 +1399,217 @@ function _Restore {
     Write-Host "Restored config from: $path" -ForegroundColor Green
 }
 
+function _GetInstallKindCandidates($Releases) {
+    # Kinds we could install from these releases, with example asset names.
+    # A plain ".exe" is ambiguous: it can be a portable program (yt-dlp.exe)
+    # or an installer with an ordinary name (Slack.exe). Both kinds are
+    # offered for it, the more likely one first.
+    $installerLike = @()
+    $plainExe     = @()
+    $archives     = @()
+    foreach ($rel in $Releases) {
+        foreach ($a in @($rel.assets)) {
+            if (-not $a.name -or (_TestIsSourceAsset $a.name)) { continue }
+            if (_TestIsArchiveAsset $a.name) {
+                if (-not (_TestIsWindowsAsset $a.name)) { continue }
+                if (-not ($archives -contains $a.name)) { $archives += $a.name }
+                continue
+            }
+            if (-not (_TestIsInstallerAsset $a.name)) { continue }
+            if (_TestLooksLikeInstaller $a.name) {
+                if (-not ($installerLike -contains $a.name)) { $installerLike += $a.name }
+            }
+            else {
+                if (-not ($plainExe -contains $a.name)) { $plainExe += $a.name }
+            }
+        }
+    }
+
+    $result = @()
+    if ($installerLike.Count) {
+        $result += [PSCustomObject]@{ kind = 'installer'; examples = $installerLike; recommended = $true }
+    }
+    elseif ($plainExe.Count) {
+        $result += [PSCustomObject]@{ kind = 'installer'; examples = $plainExe; recommended = $false }
+    }
+    if ($plainExe.Count) {
+        $result += [PSCustomObject]@{ kind = 'portable'; examples = $plainExe; recommended = (-not $installerLike.Count) }
+    }
+    if ($archives.Count) {
+        $result += [PSCustomObject]@{ kind = 'archive'; examples = $archives; recommended = (-not $installerLike.Count -and -not $plainExe.Count) }
+    }
+    if (-not $result.Count) { return @() }
+
+    # The recommended kind comes first so it is the default in the picker.
+    $order = @{ 'installer' = 0; 'portable' = 1; 'archive' = 2 }
+    return @($result | Sort-Object @{Expression = { if ($_.recommended) { 0 } else { 1 } } }, @{Expression = { $order[$_.kind] } })
+}
+
+function _SelectInstallKind($Candidates) {
+    if (-not $Candidates -or @($Candidates).Count -eq 0) { return $null }
+    if (@($Candidates).Count -eq 1) { return $Candidates[0].kind }
+    $labels = @($Candidates | ForEach-Object {
+        $what = switch ($_.kind) {
+            'installer' { 'run as installer' }
+            'portable'  { 'copy (portable program)' }
+            'archive'   { 'unpack archive' }
+        }
+        "{0,-10} {1,-24} {2}" -f $_.kind, $what, (($_.examples | Select-Object -First 3) -join ', ')
+    })
+    Write-Host "Pick how to install it:" -ForegroundColor Yellow
+    $picked = @($labels | fzf --prompt="kind> " --no-sort)[0]
+    if ($LASTEXITCODE -eq 0 -and $picked) {
+        $idx = [array]::IndexOf($labels, $picked)
+        if ($idx -ge 0) { return $Candidates[$idx].kind }
+    }
+    return $null
+}
+
+function _ResolveInstallType($AppName, $App, $Release, $CurrentType, $Config) {
+    # The tracked kind is not in this release any more. Pick the kind the
+    # release ships now and remember it, so this is asked at most once.
+    $candidates = @(_GetInstallKindCandidates @($Release) | Where-Object { $_.kind -ne $CurrentType })
+    if ($candidates.Count -eq 0) { return $null }
+    $kind = if ($candidates.Count -eq 1) { $candidates[0].kind } else { _SelectInstallKind $candidates }
+    if (-not $kind) { return $null }
+    $autoPattern = _IsAutoPattern $App
+    $App | Add-Member -NotePropertyName install_type -NotePropertyValue $kind -Force
+    if ($App.PSObject.Properties['installed']) { $App.installed = $null }
+    # The old file name means nothing for the new kind - let the picker show
+    # what the release ships.
+    $App | Add-Member -NotePropertyName current_asset -NotePropertyValue $null -Force
+    if ($autoPattern) { $App.pattern = '*' }
+    # Record the release line, so it does not have to be guessed again.
+    if (-not ($App.PSObject.Properties['tag_family'] -and $App.tag_family)) {
+        $App | Add-Member -NotePropertyName tag_family -NotePropertyValue (_GetReleaseKey $Release) -Force
+    }
+    if ($Config) { _SaveConfig $Config }
+    Write-Host "$($AppName): switched to $kind" -ForegroundColor Yellow
+    return $kind
+}
+
+function _InstallTrackedApp($AppName, $App, $ProxyUrl, $Config) {
+    # Installs the tracked release of an app that is not on the machine.
+    # Returns $true when the payload is in place.
+    try {
+        $release = _GetTrackedRelease $AppName $App $ProxyUrl -Force:$Force
+        $latestVersion = _ExtractConfiguredVersion $release.tag_name $App.release_version_regex
+        $type = _GetInstallType $App
+        if (@($release.assets | Where-Object { _TestIsInstallableAsset $_.name $type }).Count -eq 0) {
+            $newType = _ResolveInstallType $AppName $App $release $type $Config
+            if (-not $newType) {
+                Write-Host ("$AppName`: no suitable payload found on $($release.tag_name)") -ForegroundColor Yellow
+                return $false
+            }
+            $type = $newType
+        }
+        $assetObj = $null
+        if ($App.current_asset) {
+            $assetObj = @($release.assets | Where-Object { $_.name -eq $App.current_asset -and (_TestIsInstallableAsset $_.name $type) }) | Select-Object -First 1
+        }
+        if (-not $assetObj) {
+            $assetObj = _SelectAsset $release.assets (_GetEffectivePattern $App) -Interactive -InstallType $type -PreviousName $App.current_asset
+        }
+        if (-not $assetObj) {
+            Write-Host ("$AppName`: no suitable $type payload found on $($release.tag_name)") -ForegroundColor Yellow
+            return $false
+        }
+        if (-not (_InstallAppPayload $AppName $App $assetObj $latestVersion $ProxyUrl)) { return $false }
+        _SaveConfig $Config
+        Write-Host "$AppName installed ($latestVersion)" -ForegroundColor Green
+        return $true
+    }
+    catch {
+        Write-Host "$AppName install failed: $($_.Exception.Message)" -ForegroundColor Red
+        return $false
+    }
+}
+
+function _AddTrackedApp($AppName, $App, $ProxyUrl, $Config) {
+    # The app is already tracked: install it when it is not on the machine.
+    Write-Host "'$AppName' is already tracked." -ForegroundColor Yellow
+    if ($NoInstall) {
+        Write-Host "Tracked only - run 'gitget install $AppName'" -ForegroundColor Yellow
+        return
+    }
+    if ($CurrentVersion) {
+        # The user says the program is already on the machine.
+        if (-not $App.current_version) {
+            $App | Add-Member -NotePropertyName current_version -NotePropertyValue $CurrentVersion -Force
+            _SaveConfig $Config
+        }
+        Write-Host "$AppName already installed ($CurrentVersion)" -ForegroundColor Green
+        return
+    }
+    $state = $null
+    try { $state = _GetInstalledState $AppName $App }
+    catch {
+        Write-Host "$($AppName): cannot tell whether it is installed - $($_.Exception.Message)" -ForegroundColor Yellow
+        return
+    }
+    if ($state.installed -and -not $Reinstall) {
+        $shown = if ($state.version) { $state.version } else { 'version unknown' }
+        Write-Host "$AppName already installed ($shown)" -ForegroundColor Green
+        return
+    }
+    if ($Reinstall) { Write-Host "Reinstalling $AppName..." -ForegroundColor Yellow }
+    else { Write-Host "$AppName not installed - installing it now." -ForegroundColor Yellow }
+    _InstallTrackedApp $AppName $App $ProxyUrl $Config
+}
+
 function _Add {
     if (-not $Target) { Write-Host "Provide a repo, e.g. gitget add sharkdp/bat" -ForegroundColor Red; return }
     $repo = _ConvertToRepoSlug $Target
     if (-not $repo) {
-        Write-Host "Couldn't parse a repo. Use 'owner/repo' or a github.com URL." -ForegroundColor Red
+        Write-Host "Use 'owner/repo' or a github.com URL." -ForegroundColor Red
         return
     }
 
     $proxyUrl = _ResolveProxy
+    $config = _GetConfig
 
     $defaultName = ($repo -split '/')[1]
     if ($Name) {
         $appName = $Name
-    } else {
+    }
+    elseif (_GetAppEntry $config $defaultName) {
+        # The repo's own name is already tracked - no need to ask.
+        $appName = $defaultName
+    }
+    else {
         $resp = Read-Host "Name? [$defaultName]"
         $appName = if ($null -eq $resp -or $resp.Trim() -eq "") { $defaultName } else { $resp.Trim() }
     }
-    $config = _GetConfig
-    if (_GetAppEntry $config $appName) {
-        Write-Host "'$appName' already tracked." -ForegroundColor Yellow
+
+    $existing = _GetAppEntry $config $appName
+    if ($existing) {
+        # Already tracked - install it when it is not on the machine.
+        if ($existing.Value.repo -and $existing.Value.repo -ne $repo) {
+            Write-Host "'$appName' tracks $($existing.Value.repo) - installing that one" -ForegroundColor Yellow
+        }
+        _AddTrackedApp $appName $existing.Value $proxyUrl $config
         return
     }
 
     $releases = _GetReleases $repo $ReleaseLimit $proxyUrl
-    $installable = @(@($releases | Where-Object { -not $_.prerelease -or $IncludePrerelease }) |
-        Where-Object { @($_.assets | Where-Object { _TestIsInstallerAsset $_.name }).Count -gt 0 })
-    if ($TagPattern) { $installable = @($installable | Where-Object { $_.tag_name -like $TagPattern }) }
-    if ($ReleaseNamePattern) { $installable = @($installable | Where-Object { $_.name -like $ReleaseNamePattern }) }
+    $candidates = @(@($releases | Where-Object { -not $_.prerelease -or $IncludePrerelease }))
+    if ($TagPattern) { $candidates = @($candidates | Where-Object { $_.tag_name -like $TagPattern }) }
+    if ($ReleaseNamePattern) { $candidates = @($candidates | Where-Object { $_.name -like $ReleaseNamePattern }) }
+
+    $kind = $InstallType
+    if (-not $kind) {
+        $kinds = _GetInstallKindCandidates $candidates
+        if ($kinds.Count -eq 0) {
+            Write-Host "No Windows payload found." -ForegroundColor Yellow
+            return
+        }
+        $kind = _SelectInstallKind $kinds
+        if (-not $kind) { Write-Host "Cancelled." -ForegroundColor Yellow; return }
+    }
+
+    $installable = @($candidates | Where-Object {
+        @($_.assets | Where-Object { _TestIsInstallableAsset $_.name $kind }).Count -gt 0
+    })
     $release = $null
     if ($installable.Count -gt 0) {
         $byFamily = @(_GetReleaseLines $installable)
@@ -960,11 +1619,11 @@ function _Add {
             $release = $installable[0]
         }
     }
-    if (-not $release) { Write-Host "No installer release matches the requested filters." -ForegroundColor Yellow; return }
-    $asset = _SelectAsset $release.assets $Pattern -Interactive
+    if (-not $release) { Write-Host "No $kind release matches the requested filters." -ForegroundColor Yellow; return }
+    $asset = _SelectAsset $release.assets $Pattern -Interactive -InstallType $kind
 
     if (-not $asset) {
-        Write-Host "No installer assets found on latest release." -ForegroundColor Yellow
+        Write-Host "No $kind assets found on release $($release.tag_name)." -ForegroundColor Yellow
         if ($release.assets) {
             $release.assets | ForEach-Object { Write-Host "  $($_.name)" }
         }
@@ -972,6 +1631,7 @@ function _Add {
     }
 
     $installDir = if ($Dir) { $Dir } else { Join-Path $DownloadsDir $appName }
+    $binDir = if ($BinDir) { $BinDir } elseif ($kind -ne 'installer') { Join-Path $AppsDir $appName } else { $null }
 
     $entry = [PSCustomObject]@{
         repo             = $repo
@@ -993,11 +1653,37 @@ function _Add {
         include_prerelease = [bool]$IncludePrerelease
         pattern_explicit = [bool]$Pattern
         release_limit = $ReleaseLimit
+        install_type   = $kind
+        bin_dir        = $binDir
+        installed      = $null
     }
     $config.apps | Add-Member -NotePropertyName $appName -NotePropertyValue $entry -Force
     _SaveConfig $config
 
-    Write-Host "$appName $($release.tag_name) ($($asset.name))" -ForegroundColor Green
+    Write-Host "$appName $($release.tag_name) ($($asset.name)) - $kind" -ForegroundColor Green
+
+    if ($NoInstall) {
+        Write-Host "Tracked only - run 'gitget install $appName'" -ForegroundColor Yellow
+        return
+    }
+
+    # Install it right away, unless the program is already on the machine.
+    if ($CurrentVersion) {
+        Write-Host "$appName already installed ($CurrentVersion)" -ForegroundColor Green
+        return
+    }
+    $state = $null
+    try { $state = _GetInstalledState $appName $entry }
+    catch { $state = @{ installed = $false; version = $null } }
+    if ($state.installed) {
+        Write-Host "$appName already installed ($($state.version))" -ForegroundColor Green
+        return
+    }
+
+    $latest = _ExtractConfiguredVersion $release.tag_name $entry.release_version_regex
+    if (_InstallAppPayload $appName $entry $asset $latest $proxyUrl) {
+        _SaveConfig $config
+    }
 }
 
 function _Remove {
@@ -1009,13 +1695,63 @@ function _Remove {
     }
 
     $names = @($entries | ForEach-Object { $_.Name })
-    $selected = $names | fzf --multi --reverse --height=40% --header="Select to remove"
-    if (-not $selected) { return }
+    if ($All) {
+        # Everything that is tracked, without the picker.
+        $selected = @($names)
+    }
+    elseif ($Target) {
+        if ($names -notcontains $Target) {
+            Write-Host "'$Target' is not tracked." -ForegroundColor Yellow
+            return
+        }
+        $selected = @($Target)
+    } else {
+        $selected = @($names | fzf --multi --reverse --height=40% --header="Select to remove")
+        if (-not $selected) { return }
+    }
 
     foreach ($name in $selected) {
+        $prop = _GetAppEntry $config $name
+        $purged = $false
+        if ($prop) {
+            # Portable and archive payloads were placed by gitget, so gitget owns
+            # their files - removing the app removes them. An installer payload
+            # belongs to the program's own uninstaller and is left alone unless
+            # -Purge asks for its leftovers to go too.
+            $managed = (_GetInstallType $prop.Value) -ne 'installer'
+            if ($managed -or $Purge) {
+                _PurgeAppFiles $name $prop.Value
+                $purged = $true
+            }
+            else {
+                Write-Host "'$name' has its own installer - uninstall it there" -ForegroundColor Yellow
+            }
+        }
         $config.apps.PSObject.Properties.Remove($name)
+        $suffix = if ($purged) { ' (files removed)' } else { '' }
+        Write-Host "Removed '$name'$suffix" -ForegroundColor Green
     }
     _SaveConfig $config
+}
+
+function _PurgeAppFiles($AppName, $App) {
+    # Delete the payload dir (portable/archive) and download staging dir.
+    $binDir = $App.bin_dir
+    if ($binDir -and (Test-Path $binDir)) {
+        try { Remove-Item $binDir -Recurse -Force -ErrorAction Stop; Write-Host "Deleted payload: $(Split-Path -Leaf $binDir)" -ForegroundColor Gray }
+        catch { Write-Host "Failed to delete payload '$binDir': $($_.Exception.Message)" -ForegroundColor Red }
+    }
+    # The PATH entry points at the dir the program actually lives in, which is
+    # the payload dir unless the payload nests it in a subfolder.
+    $registeredDir = $null
+    if ($App.installed -and $App.installed.path) { $registeredDir = Split-Path -Parent $App.installed.path }
+    foreach ($dir in @($registeredDir, $binDir)) {
+        if ($dir) { _UnregisterBinDir $dir }
+    }
+    if ($App.install_dir -and (Test-Path $App.install_dir)) {
+        try { Remove-Item $App.install_dir -Recurse -Force -ErrorAction Stop; Write-Host "Deleted downloads: $(Split-Path -Leaf $App.install_dir)" -ForegroundColor Gray }
+        catch { Write-Host "Failed to delete downloads '$($App.install_dir)': $($_.Exception.Message)" -ForegroundColor Red }
+    }
 }
 
 function _List {
@@ -1028,15 +1764,36 @@ function _List {
 
     $maxLen = ($entries | ForEach-Object { $_.Name.Length } | Measure-Object -Maximum).Maximum
     foreach ($prop in $entries) {
-        $detected = _GetInstalledVersion $prop.Name $prop.Value
+        $kind = _GetInstallType $prop.Value
         $ver = $null
-        if ($detected.source -in @('recorded (unverified)', 'unknown')) {
-            $ver = $null
-        } else {
-            $ver = _ExtractConfiguredVersion $detected.version $prop.Value.installed_version_regex
+        try {
+            $detected = _GetInstalledVersion $prop.Name $prop.Value
+            if ($detected.source -eq 'modified') {
+                $ver = '?'
+            }
+            elseif ($detected.source -notin @('recorded (unverified)', 'unknown', 'missing')) {
+                $ver = _ExtractConfiguredVersion $detected.version $prop.Value.installed_version_regex
+            }
         }
+        catch { $ver = '?' }
         if (-not $ver) { $ver = '-' }
-        Write-Host ("{0,-$maxLen}  {1}" -f $prop.Name, $ver)
+        Write-Host ("{0,-$maxLen}  {1,-9}  {2}" -f $prop.Name, $kind, $ver)
+    }
+}
+
+function _WriteCheckErrors {
+    # One line per problem, not one per app: 27 apps failing the same way say
+    # it once.
+    $errors = @($script:checkErrors)
+    if ($errors.Count -eq 0) { return }
+    $groups = $errors | Group-Object reason
+    foreach ($group in $groups) {
+        if ($group.Count -eq 1) {
+            Write-Host "$($group.Group[0].app) error: $($group.Name)" -ForegroundColor Red
+        }
+        else {
+            Write-Host "$($group.Count) check(s) failed: $($group.Name)" -ForegroundColor Red
+        }
     }
 }
 
@@ -1045,23 +1802,46 @@ function _CheckOne($appName, $app, $ProxyUrl, [switch]$Force) {
         $release = _GetTrackedRelease $appName $app $ProxyUrl -Force:$Force
         $latestVersion = _ExtractConfiguredVersion $release.tag_name $app.release_version_regex
         $detected = _GetInstalledVersion $appName $app
-        $verified = $detected.source -notin @('recorded (unverified)', 'unknown')
+        $verified = $detected.source -notin @('recorded (unverified)', 'unknown', 'missing', 'modified')
         $current = $app.current_version
         if ($verified -and $detected.version) {
             $current = _ExtractConfiguredVersion $detected.version $app.installed_version_regex
         }
-        $hasUpdate = _TestIsNewer $latestVersion $current
+        $modified = ($detected.source -eq 'modified')
+        $hasUpdate = $false
+        if ($modified) {
+            # The installed copy changed outside gitget and does not report a
+            # version - we cannot prove an update is needed, and overwriting a
+            # possibly newer build would be a downgrade.
+            Write-Host "$appName changed outside gitget - skipped" -ForegroundColor Yellow
+        }
+        else {
+            $hasUpdate = _TestIsNewer $latestVersion $current
+        }
         $configChanged = $verified -and $current -and -not (_TestSameVersion $current $app.current_version)
         if ($configChanged) { $app.current_version = $current }
-        $asset = _SelectAsset $release.assets $app.pattern
+        if (-not $modified -and $detected.source -in @('version command', 'file metadata') -and
+            $app.PSObject.Properties['installed'] -and $app.installed -and $app.installed.path) {
+            # The payload was replaced outside gitget (self-update) - record
+            # what is on disk now so the next check can verify it again.
+            $newHash = _GetFileSha256 $app.installed.path
+            if ($newHash -and $newHash -ne $app.installed.sha256) {
+                $app.installed.sha256 = $newHash
+                $app.installed.version = $current
+                $app.installed.at = (Get-Date).ToUniversalTime().ToString("o")
+                $configChanged = $true
+            }
+        }
+        $asset = _SelectAsset $release.assets (_GetEffectivePattern $app) -InstallType (_GetInstallType $app) -PreviousName $app.current_asset
         if ($hasUpdate) { Write-Host $appName -ForegroundColor Yellow }
         return [PSCustomObject]@{
             release = $release; asset = $asset; hasUpdate = $hasUpdate
             configChanged = [bool]$configChanged; verified = $verified
+            modified = $modified; detected = $detected
         }
     }
     catch {
-        Write-Host "$appName error: $($_.Exception.Message)" -ForegroundColor Red
+        $script:checkErrors += [PSCustomObject]@{ app = $appName; reason = $_.Exception.Message }
         return $null
     }
 }
@@ -1080,21 +1860,28 @@ function _Check {
     $updateCount = 0
     $errorCount = 0
     $unverifiedCount = 0
+    $modifiedCount = 0
     $configChanged = $false
+    $script:checkErrors = @()
     foreach ($prop in $targets) {
         $result = _CheckOne $prop.Name $prop.Value $proxyUrl -Force:$Force
         if ($null -eq $result) { $errorCount++; continue }
         if ($result.hasUpdate) { $updateCount++ }
+        if ($result.modified) { $modifiedCount++ }
         if (-not $result.verified) { $unverifiedCount++ }
         if ($result.configChanged) { $configChanged = $true }
     }
     if ($configChanged) { _SaveConfig $config }
 
+    _WriteCheckErrors
+    if ($modifiedCount -gt 0) {
+        Write-Host "$modifiedCount copy/copies changed outside gitget - skipped" -ForegroundColor Yellow
+    }
     if ($errorCount -gt 0 -and $updateCount -eq 0) {
-        Write-Host "$errorCount check(s) failed, results inconclusive" -ForegroundColor Red
+        return
     }
     elseif ($updateCount -eq 0 -and $unverifiedCount -gt 0) {
-        Write-Host "No newer tracked releases found; $unverifiedCount installed version(s) could not be verified." -ForegroundColor Yellow
+        Write-Host "$unverifiedCount version(s) unverified" -ForegroundColor Yellow
     }
     elseif ($updateCount -eq 0) {
         Write-Host "Up to date" -ForegroundColor Green
@@ -1119,6 +1906,8 @@ function _Update {
     $updatable = [System.Collections.Generic.List[PSCustomObject]]::new()
     $errorCount = 0
     $unverifiedCount = 0
+    $modifiedCount = 0
+    $script:checkErrors = @()
     foreach ($prop in $targets) {
         $appName = $prop.Name
         $app = $prop.Value
@@ -1132,7 +1921,19 @@ function _Update {
         if (-not $result.verified) { $unverifiedCount++ }
         $release = $result.release
         $latestVersion = _ExtractConfiguredVersion $release.tag_name $app.release_version_regex
-        if (-not $result.hasUpdate) { continue }
+        $forced = $false
+        if ($result.modified) {
+            $modifiedCount++
+            # The installed copy changed outside gitget and reports no version.
+            # Only an explicit reinstall is allowed to overwrite it.
+            $forced = [bool]$Reinstall
+            if (-not $forced) { continue }
+        }
+        elseif ($result.detected.source -eq 'missing') {
+            # The payload was deleted - put the tracked release back.
+            $forced = $true
+        }
+        if (-not $result.hasUpdate -and -not $forced) { continue }
 
         $updatable.Add([PSCustomObject]@{
             appName = $appName
@@ -1142,12 +1943,15 @@ function _Update {
         })
     }
 
+    if ($modifiedCount -gt 0 -and -not $Reinstall) {
+        Write-Host "$modifiedCount copy/copies changed outside gitget - skipped (use -Reinstall)" -ForegroundColor Yellow
+    }
+    _WriteCheckErrors
     if ($errorCount -gt 0 -and $updatable.Count -eq 0) {
-        Write-Host "$errorCount check(s) failed, update aborted" -ForegroundColor Red
         return
     }
     if ($updatable.Count -eq 0) {
-        if ($unverifiedCount -gt 0) { Write-Host "No newer tracked releases found; $unverifiedCount installed version(s) could not be verified." -ForegroundColor Yellow }
+        if ($unverifiedCount -gt 0) { Write-Host "$unverifiedCount version(s) unverified" -ForegroundColor Yellow }
         else { Write-Host "Up to date" -ForegroundColor Green }
         return
     }
@@ -1176,45 +1980,34 @@ function _Update {
         $app = $item.app
         $release = $item.release
         $latestVersion = $item.latest
+        $type = _GetInstallType $app
+
+        # The release can ship another kind of payload than the one that was
+        # installed last time. Switch to what it ships and remember it.
+        if (@($release.assets | Where-Object { _TestIsInstallableAsset $_.name $type }).Count -eq 0) {
+            $newType = _ResolveInstallType $appName $app $release $type $config
+            if (-not $newType) {
+                # No usable payload in this release - don't bump the
+                # recorded version; it'll come up again once one lands.
+                Write-Host "$appName $latestVersion has no $type payload - skipped" -ForegroundColor Yellow
+                continue
+            }
+            $type = $newType
+        }
 
         $asset = $null
-        $newTypeNeeded = $false
         if ($app.current_asset) {
-            $asset = @($release.assets | Where-Object { $_.name -eq $app.current_asset -and (_TestIsInstallerAsset $_.name) }) | Select-Object -First 1
-            if (-not $asset) {
-                $newTypeNeeded = $true
-                Write-Host "$appName new type needed:" -ForegroundColor Yellow
-            }
+            $asset = @($release.assets | Where-Object { $_.name -eq $app.current_asset -and (_TestIsInstallableAsset $_.name $type) }) | Select-Object -First 1
         }
         if (-not $asset) {
-            $asset = _SelectAsset $release.assets $app.pattern -Interactive
+            $asset = _SelectAsset $release.assets (_GetEffectivePattern $app) -Interactive -InstallType $type -PreviousName $app.current_asset
         }
         if (-not $asset) {
-            if ($newTypeNeeded) {
-                # No Windows installer in this release - don't bump the
-                # recorded version; it'll come up again once one lands.
-                Write-Host "$appName $latestVersion ($($release.name)) has no Windows installer - skipping." -ForegroundColor Yellow
-            }
+            Write-Host "$appName $latestVersion has no $type payload - skipped" -ForegroundColor Yellow
             continue
         }
 
-        try { $path = _SaveAsset $asset $app.install_dir $proxyUrl }
-        catch { Write-Host "$appName download failed: $($_.Exception.Message)" -ForegroundColor Red; continue }
-        if ($app.current_asset -and $app.current_asset -ne $asset.name) {
-            $stalePath = Join-Path $app.install_dir $app.current_asset
-            if (Test-Path $stalePath) {
-                Remove-Item $stalePath -Force -ErrorAction SilentlyContinue
-                Write-Host "Removed old installer: $($app.current_asset)" -ForegroundColor Gray
-            }
-        }
-        if (-not (_InstallDownloadedAsset $path)) { continue }
-        $keepPattern = $app.pattern_explicit -or
-            ($null -eq $app.PSObject.Properties['pattern_explicit'] -and $app.pattern -and
-             $app.pattern -ne (_NewAssetPattern $app.current_asset))
-        $app.current_version = $latestVersion
-        $app.current_asset = $asset.name
-        if (-not $keepPattern) { $app.pattern = _NewAssetPattern $asset.name }
-        $app.last_checked = (Get-Date).ToUniversalTime().ToString("o")
+        if (-not (_InstallAppPayload $appName $app $asset $latestVersion $proxyUrl)) { continue }
         _SaveConfig $config
     }
 }
@@ -1236,9 +2029,8 @@ function _Install {
     $proxyUrl = _ResolveProxy
     $notInstalled = [System.Collections.Generic.List[PSCustomObject]]::new()
     foreach ($prop in $targets) {
-        $detected = _GetInstalledVersion $prop.Name $prop.Value
-        $isInstalled = $detected.source -notin @('recorded (unverified)', 'unknown') -and $detected.version
-        if (-not $isInstalled) {
+        $state = _GetInstalledState $prop.Name $prop.Value
+        if ($Reinstall -or -not $state.installed) {
             $notInstalled.Add([PSCustomObject]@{ appName = $prop.Name; app = $prop.Value })
         }
     }
@@ -1264,37 +2056,7 @@ function _Install {
 
     foreach ($item in $toInstall) {
         Write-Host ""
-        $appName = $item.appName
-        $app = $item.app
-        try {
-            $release = _GetTrackedRelease $appName $app $proxyUrl -Force:$Force
-            $latestVersion = _ExtractConfiguredVersion $release.tag_name $app.release_version_regex
-            $asset = $app.current_asset
-            if ($asset) {
-                $assetObj = @($release.assets | Where-Object { $_.name -eq $asset -and (_TestIsInstallerAsset $_.name) }) | Select-Object -First 1
-            }
-            if (-not $assetObj) {
-                $assetObj = _SelectAsset $release.assets $app.pattern -Interactive
-            }
-            if (-not $assetObj) {
-                Write-Host ("$appName`: no suitable installer found on $($release.tag_name)") -ForegroundColor Yellow
-                continue
-            }
-            $path = _SaveAsset $assetObj $app.install_dir $proxyUrl
-            if (-not (_InstallDownloadedAsset $path)) { continue }
-            $keepPattern = $app.pattern_explicit -or
-                ($null -eq $app.PSObject.Properties['pattern_explicit'] -and $app.pattern -and
-                 $app.pattern -ne (_NewAssetPattern $app.current_asset))
-            $app.current_version = $latestVersion
-            $app.current_asset = $assetObj.name
-            if (-not $keepPattern) { $app.pattern = _NewAssetPattern $assetObj.name }
-            $app.last_checked = (Get-Date).ToUniversalTime().ToString("o")
-            _SaveConfig $config
-            Write-Host "$appName installed ($latestVersion)" -ForegroundColor Green
-        }
-        catch {
-            Write-Host "$appName install failed: $($_.Exception.Message)" -ForegroundColor Red
-        }
+        _InstallTrackedApp $item.appName $item.app $proxyUrl $config
     }
 }
 
@@ -1365,16 +2127,16 @@ switch ($Command) {
         Write-Host "Usage: gitget <command>" -ForegroundColor Yellow
         Write-Host ""
         Write-Host "Commands:"
-        Write-Host "  add         - Track a GitHub repo (gitget add owner/repo)"
-        Write-Host "  configure   - Show/set an app's release, installer and version rules"
+        Write-Host "  add         - Track a repo and install it (add owner/repo [-InstallType kind] [-NoInstall])"
+        Write-Host "  configure   - Show/set an app's rules (configure name [options])"
         Write-Host "  ls          - List tracked apps"
-        Write-Host "  rm          - Remove tracked apps (fzf picker)"
+        Write-Host "  rm          - Remove tracked apps (rm name | -All) [-Purge]"
         Write-Host "  check       - Check for updates (-Force skips cache)"
-        Write-Host "  update      - Download and install available updates (fzf picker, name to limit, -All to skip, -Force to skip cache)"
-        Write-Host "  install     - Install latest version for apps not currently installed (fzf picker, -All to skip picker)"
-        Write-Host "  backup      - Backup config to Documents\windows-config-backup\gitget"
-        Write-Host "  restore     - Restore config from a file path"
-        Write-Host "  proxy       - Set/show/clear SOCKS5 proxy (gitget proxy host:port)"
+        Write-Host "  update      - Install available updates (update [name] [-All] [-Force] [-Reinstall])"
+        Write-Host "  install     - Install apps that are missing (install [name] [-All])"
+        Write-Host "  backup      - Back up the config"
+        Write-Host "  restore     - Restore the config from a file"
+        Write-Host "  proxy       - Set/show/clear the SOCKS5 proxy (proxy host:port)"
         Write-Host ""
     }
 }

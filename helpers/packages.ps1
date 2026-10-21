@@ -4,10 +4,10 @@
 function Get-WingetApps
 {
     return @(
-        "Starship.Starship", "junegunn.fzf", "Git.Git", "ajeetdsouza.zoxide",
-        "sharkdp.fd", "aelassas.Servy",
+        "Starship.Starship", "junegunn.fzf", "Git.Git",
+        "sharkdp.fd",
         "WireGuard.WireGuard", "ViRb3.wgcf", "gerardog.gsudo",
-        "jurplel.qView", "mpv.net", "Neovim.Neovim", "topgrade-rs.topgrade",
+        "jurplel.qView", "mpv.net", "Neovim.Neovim",
         "Microsoft.WindowsTerminal", "BurntSushi.ripgrep.MSVC"
     )
 }

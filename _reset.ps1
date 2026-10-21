@@ -315,11 +315,12 @@ else {
     }
 
     $wireproxyBinDir = "$env:LOCALAPPDATA\windows-config-files\bin"
+    # Legacy wireproxy install location (pre-gitget). Removed on every reset.
     $wireproxyExe    = Join-Path $wireproxyBinDir "wireproxy.exe"
     if (Test-Path $wireproxyExe) {
         try {
             Remove-Item $wireproxyExe -Force -ErrorAction Stop
-            Write-Host "Deleted wireproxy binary from: $wireproxyExe" -ForegroundColor Green
+            Write-Host "Deleted legacy wireproxy binary from: $wireproxyExe" -ForegroundColor Green
         }
         catch {
             Write-Host "Failed to delete wireproxy binary. File might be locked." -ForegroundColor Red
@@ -361,6 +362,24 @@ if (Test-Path $gitgetConf) {
         Write-Host "Failed to back up GitGet config: $($_.Exception.Message)" -ForegroundColor Red
     }
 }
+
+# ==============================================================================
+# 6c. GITGET-MANAGED APPS PURGE
+# ==============================================================================
+Write-Host "`n>Managed CLI Tools (gitget)" -ForegroundColor Blue
+
+# gitget cleans up after itself: it knows which payload dirs it put on the
+# PATH and which files it owns. Reset only asks it to remove everything.
+$gitgetTool = "$ConfigPath\tools\gitget.ps1"
+if (Test-Path $gitgetTool) {
+    & $gitgetTool rm -All
+}
+else {
+    Write-Host "gitget tool not found - removing its data directory only" -ForegroundColor Yellow
+}
+
+# Remove gitget tracking config now that payloads are gone.
+Remove-Item "$env:LOCALAPPDATA\windows-config-files\gitget" -Recurse -Force -ErrorAction SilentlyContinue
 
 # ==============================================================================
 # 7. INIT CACHES CLEANUP

@@ -7,8 +7,8 @@ $ConfigPath = $env:WINDOWS_CONFIG_PATH
 $missingDeps = @(_TestDependencies -Commands "gsudo", "fzf")
 if ($missingDeps.Count -gt 0)
 {
-    foreach ($dep in $missingDeps) { Write-Host "$dep not found" -ForegroundColor Red }
-    Write-Host "Script stopped due to missing dependencies." -ForegroundColor Red
+    Write-Host "Missing: $($missingDeps -join ', ')" -ForegroundColor Red
+    Write-Host "Stopped." -ForegroundColor Red
     return
 }
 
@@ -75,7 +75,12 @@ function _Tweak_EditWithNeovim
 {
     Write-Host "`n03. Add 'Edit with Neovim' to File Context Menu" -ForegroundColor Blue
 
-    $nvimPath = "C:\Program Files\Neovim\bin\nvim.exe"
+    # Neovim is found on the PATH, wherever it was installed.
+    $nvimPath = (Get-Command nvim -ErrorAction SilentlyContinue).Source
+    if (-not $nvimPath) {
+        Write-Host "Neovim not found on the PATH - install it first." -ForegroundColor Red
+        return
+    }
     gsudo {
         param($path, $cmdArgs)
         try {
@@ -88,7 +93,7 @@ function _Tweak_EditWithNeovim
             $cmd.Close(); $shell.Close()
             Write-Host "Added" -ForegroundColor Green
         } catch {
-            Write-Host "Failed to add : $($_.Exception.Message)" -ForegroundColor Red
+            Write-Host "Failed to add: $($_.Exception.Message)" -ForegroundColor Red
         }
     } -args $nvimPath, "wt.exe nvim `"%1`""
 }

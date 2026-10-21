@@ -14,7 +14,6 @@ if ($missingDeps.Count -gt 0)
 
 . "$ConfigPath\helpers\keep-awake.ps1"
 . "$ConfigPath\helpers\repo-list.ps1"
-. "$ConfigPath\helpers\wireproxy-install.ps1"
 . "$ConfigPath\helpers\font-install.ps1"
 
 $env:FZF_DEFAULT_OPTS = '--exact --cycle --border=rounded --color=bg+:#3b4252,bg:#2e3440,spinner:#81a1c1,hl:#c2a166,fg:#d8dee9,header:#5e81ac,info:#b48ead,pointer:#88c0d0,marker:#ebcb8b,fg+:#e5e9f0,prompt:#81a1c1,hl+:#ebcb8b,border:#4c566a --bind "ctrl-a:toggle-all"'
@@ -72,10 +71,10 @@ function _WingetAction
     {
         Write-Host ""
         winget $Verb --id $id --exact --interactive @ExtraArgs
-                
+
         $argsStr = if ($ExtraArgs) { " " + ($ExtraArgs -join " ") } else { "" }
         $cmdEntry = "winget $Verb --id $id --exact --interactive$argsStr"
-        
+
         [Microsoft.PowerShell.PSConsoleReadLine]::AddToHistory($cmdEntry)
     }
 }
@@ -174,7 +173,7 @@ function sz {
 
 function wage
 {
-   try{ 
+   try{
     $installDate = (Get-CimInstance Win32_OperatingSystem).InstallDate
     $days = (New-TimeSpan -Start $installDate -End (Get-Date)).Days
         Write-Host "$days day(s)"
@@ -212,7 +211,7 @@ function gsudop
         gsudo --loadProfile $CommandArgs
     }
     else {
-        gsudo 
+        gsudo
     }
 }
 
@@ -255,7 +254,7 @@ function cleanup
         catch {
             Write-Host "Recycle Bin Cleanup Failed: $($_.Exception.Message)" -ForegroundColor Red
         }
-                 
+
     } -args $env:TEMP, "$env:SystemRoot\Temp"
 }
 
@@ -265,7 +264,7 @@ function fixgpu
         Write-Host "`n>GPU Processes Cleanup" -ForegroundColor Blue
         try {
             $smiPath = "C:\Windows\System32\nvidia-smi.exe"
-            $smiOutput = (& $smiPath --query-compute-apps=pid --format=csv,noheader 2>$null) | 
+            $smiOutput = (& $smiPath --query-compute-apps=pid --format=csv,noheader 2>$null) |
                              Where-Object { -not [string]::IsNullOrWhiteSpace($_) }
             if ($null -eq $smiOutput -or $smiOutput.Count -eq 0) {
                 Write-Host "No active GPU processes found to clean." -ForegroundColor Yellow
@@ -300,7 +299,7 @@ function fixgpu
             if (-not ([System.Management.Automation.PSTypeName]'GPUKick').Type) {
                 Add-Type -TypeDefinition $Definition -ErrorAction Stop
             }
-            
+
             [GPUKick]::Direct3DCreate9(32) | Out-Null
             Start-Sleep -Milliseconds 800
             Write-Host "GPU Quick Kick completed" -ForegroundColor Green
@@ -446,18 +445,11 @@ function _GetBetterfoxUserJs
     return ($content -replace "`r`n", "`n").TrimEnd()
 }
 
-# Hash of last-deployed content - local edits retrigger 'upf' like a new release.
-function Test-BetterfoxUpToDate
+# Hash of the content that belongs in every profile. A profile is up to date
+# when its own user.js hashes to this - no separate marker file needed.
+function _GetBetterfoxHash
 {
-    $hashFile = "$env:LOCALAPPDATA\windows-config-files\betterfox_hash.txt"
-    $newHash  = _GetSha256 (_GetBetterfoxUserJs)
-    $upToDate = (Test-Path $hashFile) -and ((Get-Content $hashFile -Raw).Trim() -eq $newHash)
-
-    return [pscustomobject]@{
-        HashFile = $hashFile
-        NewHash  = $newHash
-        UpToDate = $upToDate
-    }
+    return _GetSha256 (_GetBetterfoxUserJs)
 }
 
 function _ShowGitUpdateStatus
@@ -505,6 +497,9 @@ function _ShowGitUpdateStatus
 
 function cup
 {
+    Write-Host "`n>GitGet" -ForegroundColor Blue
+    gitget check
+
     Write-Host "`n>Winget" -ForegroundColor Blue
     $ids = @(_WingetUpgradeIds)
     if ($ids.Count -gt 0) {
@@ -527,12 +522,12 @@ function cup
         { Write-Host "No Firefox profiles found" -ForegroundColor Red }
         else
         {
-            $bf     = Test-BetterfoxUpToDate
+            $newHash = _GetBetterfoxHash
             $behind = @()
             foreach ($prof in $profiles)
             {
                 $jsPath = Join-Path $prof.FullName "user.js"
-                $current = (Test-Path $jsPath) -and (_GetSha256 ((Get-Content $jsPath -Raw) -replace "`r`n", "`n").TrimEnd()) -eq $bf.NewHash
+                $current = (Test-Path $jsPath) -and (_GetSha256 ((Get-Content $jsPath -Raw) -replace "`r`n", "`n").TrimEnd()) -eq $newHash
                 if (-not $current)
                 { $behind += $prof.Name }
             }
@@ -556,19 +551,6 @@ function cup
         else                 { Write-Host "Check failed: $($r.Error)" -ForegroundColor Red }
     }
     catch { Write-Host "Check failed: $($_.Exception.Message)" -ForegroundColor Red }
-
-    Write-Host "`n>Wireproxy" -ForegroundColor Blue
-    try
-    {
-        $r = Install-Wireproxy -CheckOnly
-        if     ($r.UpToDate) { Write-Host "Up to date" -ForegroundColor Green }
-        elseif ($r.Success)  { Write-Host "Update available, run 'wpm update'" -ForegroundColor Yellow }
-        else                 { Write-Host "Check failed: $($r.Error)" -ForegroundColor Red }
-    }
-    catch { Write-Host "Check failed: $($_.Exception.Message)" -ForegroundColor Red }
-
-    Write-Host "`n>GitGet" -ForegroundColor Blue
-    gitget check
 
     Write-Host "`n>Cloned Repos" -ForegroundColor Blue
     $repoResults = foreach ($entry in (Get-RepoList))
@@ -595,6 +577,15 @@ function cup
 
 function upall
 {
+    # A running tunnel holds its binary open, so it is stopped for the update.
+    $tunnels = @(Get-Service -Name "*-wpm" -ErrorAction SilentlyContinue | Where-Object { $_.Status -eq "Running" })
+    if ($tunnels) {
+        wpm stop all
+    }
+    Write-Host "`n>GitGet Update" -ForegroundColor Blue
+    gitget update -All
+    if ($tunnels) { wpm start all }
+
     Write-Host "`n>Winget Updates" -ForegroundColor Blue
     winget source update
     Write-Host ""
@@ -602,10 +593,6 @@ function upall
     upf
     ups
     upfont
-    Write-Host "`n>Wireproxy Update" -ForegroundColor Blue
-    wpm update
-    Write-Host "`n>GitGet Update" -ForegroundColor Blue
-    gitget update -All
     uprep
     upc
 }
@@ -626,10 +613,8 @@ function upf
         if ($profiles.Count -eq 0)
         { Write-Host "No Firefox profiles found" -ForegroundColor Red; return }
 
-        $bf = Test-BetterfoxUpToDate
         $content  = _GetBetterfoxUserJs
-        $hashFile = $bf.HashFile
-        $newHash  = $bf.NewHash
+        $newHash  = _GetBetterfoxHash
 
         $updated = 0; $current = 0; $failed = 0
         foreach ($prof in $profiles)
@@ -658,12 +643,6 @@ function upf
         if ($current -gt 0)
         { Write-Host "$current profile(s) already up to date" -ForegroundColor Green }
 
-        if ($updated -gt 0)
-        {
-            $null = New-Item -ItemType Directory -Path (Split-Path $hashFile) -Force
-            Set-Content -Path $hashFile -Value $newHash -ErrorAction SilentlyContinue
-        }
-
         if ($updated -eq 0 -and $failed -gt 0)
         { Write-Host "Failed to update profile(s)" -ForegroundColor Red }
     }
@@ -679,17 +658,17 @@ function upfont
         . "$configPath\helpers\font-install.ps1"
         $r = Install-MartianMonoFont -Update
         if (-not $r.Success) {
-            Write-Host "Martian Mono Nerd Font update failed: $($r.Error)" -ForegroundColor Red
+            Write-Host "Font update failed: $($r.Error)" -ForegroundColor Red
         }
         elseif ($r.UpToDate) {
-            Write-Host "Martian Mono Nerd Font already up to date." -ForegroundColor Green
+            Write-Host "Font already up to date." -ForegroundColor Green
         }
         else {
             foreach ($name in $r.Installed)     { Write-Host "Installed: $name" -ForegroundColor Gray }
             foreach ($name in $r.Updated)       { Write-Host "Updated: $name" -ForegroundColor Gray }
             foreach ($name in $r.SkippedInUse)  { Write-Host "In use, skipped: $name" -ForegroundColor Yellow }
             if ($r.RebootCleanup.Count -gt 0)   { Write-Host "Old copies pending deletion at next reboot." -ForegroundColor Yellow }
-            Write-Host "Martian Mono Nerd Font update complete." -ForegroundColor Green
+            Write-Host "Font update complete." -ForegroundColor Green
             Write-Host "Restart terminal apps to pick up new font glyphs" -ForegroundColor Yellow
         }
     } -args $ConfigPath
@@ -766,18 +745,18 @@ Set-PSReadLineKeyHandler -Key "Ctrl+h" -ScriptBlock {
 
     $history = [System.Collections.Generic.List[string]]((Get-Content $historyFile))
     $history.Reverse()
-    
+
     $uniqueHistory = [System.Collections.Generic.HashSet[string]]::new()
     $deduplicated = foreach ($cmd in $history) {
         if ($uniqueHistory.Add($cmd)) { $cmd }
     }
 
-    $selected = $deduplicated | fzf --no-multi --reverse --height 40% 
+    $selected = $deduplicated | fzf --no-multi --reverse --height 40%
 
     if ($null -eq $selected) { return }
 
     [Microsoft.PowerShell.PSConsoleReadLine]::DeleteLine()
-    [Microsoft.PowerShell.PSConsoleReadLine]::Insert($selected.Trim()) 
+    [Microsoft.PowerShell.PSConsoleReadLine]::Insert($selected.Trim())
 }
 
 # ==============================================================================
@@ -813,11 +792,11 @@ function keepawake
         {
             Start-Sleep -Seconds 60
         }
-    } 
+    }
     finally
     {
         _DisableKeepAwake
-        Write-Host "Keepawake cancelled, normal sleep behavior restored." -ForegroundColor Yellow
+        Write-Host "Keepawake cancelled." -ForegroundColor Yellow
     }
 }
 
@@ -826,7 +805,7 @@ function keepawake
 # ==============================================================================
 function ctt
 {
-    Invoke-RestMethod https://christitus.com/win | Invoke-Expression 
+    Invoke-RestMethod https://christitus.com/win | Invoke-Expression
 }
 
 function massgrave

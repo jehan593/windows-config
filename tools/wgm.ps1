@@ -10,8 +10,8 @@ $ConfigPath = $env:WINDOWS_CONFIG_PATH
 $missingDeps = @(_TestDependencies -Commands "gsudo", "fzf", "wireguard")
 if ($missingDeps.Count -gt 0)
 {
-    foreach ($dep in $missingDeps) { Write-Host "$dep not found" -ForegroundColor Red }
-    Write-Host "Script stopped due to missing dependencies.`n" -ForegroundColor Red
+    Write-Host "Missing: $($missingDeps -join ', ')" -ForegroundColor Red
+    Write-Host "Stopped." -ForegroundColor Red
     return
 }
 
@@ -65,7 +65,7 @@ function _WgOn
             return
         }
         
-        Write-Host "Switching profiles... Turning off active tunnel '$active' first." -ForegroundColor Yellow
+        Write-Host "Turning off active tunnel '$active' first." -ForegroundColor Yellow
         
         if (-not (Disconnect-WgmTunnel -TunnelName $active -UseGsudo)) {
             Write-Host "Failed to disconnect '$active'. Aborting profile switch." -ForegroundColor Red
@@ -73,13 +73,13 @@ function _WgOn
         }
         Write-Host "Disconnected from '$active'." -ForegroundColor Green
         if (-not (Wait-WgmTunnelState -ExpectedTunnel $null)) {
-            Write-Host "Warning: '$active' still appears active after waiting." -ForegroundColor Yellow
+            Write-Host "'$active' still active." -ForegroundColor Yellow
         }
     }
 
     if (-not (Test-Path $wgProfile.Path)) {
         if ($wgProfile.Builtin -and $wgProfile.Name -eq "warp") {
-            Write-Host "Warp config not found. Generating with wgcf..." -ForegroundColor Yellow
+            Write-Host "Generating warp config with wgcf..." -ForegroundColor Yellow
             $warpDir = Split-Path $wgProfile.Path -Parent
             New-Item -ItemType Directory -Path $warpDir -Force | Out-Null
             Push-Location $warpDir
@@ -105,7 +105,7 @@ function _WgOn
     
     if ($LASTEXITCODE -eq 0) {
         if (-not (Wait-WgmTunnelState -ExpectedTunnel $wgProfile.Name)) {
-            Write-Host "Warning: tunnel service started but '$($wgProfile.Name)' isn't showing as active yet." -ForegroundColor Yellow
+            Write-Host "'$($wgProfile.Name)' not active yet." -ForegroundColor Yellow
         }
         Write-Host "Connected to $($wgProfile.Name)" -ForegroundColor Green
     } else {
@@ -122,7 +122,7 @@ function _WgOff
     }    
     if (Disconnect-WgmTunnel -TunnelName $active -UseGsudo) {
         if (-not (Wait-WgmTunnelState -ExpectedTunnel $null)) {
-            Write-Host "Warning: '$active' still appears active after waiting." -ForegroundColor Yellow
+            Write-Host "'$active' still active." -ForegroundColor Yellow
         }
         Write-Host "Disconnected from $active" -ForegroundColor Green
     } else {
@@ -147,7 +147,7 @@ function _WgAdd
 
     $existingConfigs = _GetAllConfigs
     if ($existingConfigs.Name -contains $Name) {
-        Write-Host "A profile named '$Name' already exists. Choose a unique name or remove the old profile first." -ForegroundColor Red
+        Write-Host "'$Name' already exists" -ForegroundColor Red
         return
     }
 
@@ -180,7 +180,7 @@ function _WgAdd
     } else {
         Write-Host "Failed to copy or rename configuration profile." -ForegroundColor Red
         if (Test-Path -LiteralPath $dest -PathType Container) {
-            Write-Host "A folder was created at '$dest' instead of a file - removing it." -ForegroundColor Red
+            Write-Host "Unexpected folder at '$dest' - removed" -ForegroundColor Red
             Remove-Item -LiteralPath $dest -Force -Recurse -ErrorAction SilentlyContinue
         }
     }
@@ -191,7 +191,7 @@ function _WgRemove
     $configs = _GetAllConfigs | Where-Object { -not $_.Builtin }
 
     if ($configs.Count -eq 0) {
-        Write-Host "No user-added profiles to remove." -ForegroundColor Yellow
+        Write-Host "No profiles to remove." -ForegroundColor Yellow
         return
     }
 
@@ -208,7 +208,7 @@ function _WgRemove
             Write-Host "'$selected' is currently active. Disconnecting first..." -ForegroundColor Yellow
             
             if (-not (Disconnect-WgmTunnel -TunnelName $active -UseGsudo)) {
-                Write-Host "Failed to disconnect active tunnel. Aborting removal." -ForegroundColor Red
+                Write-Host "Disconnect failed - nothing removed." -ForegroundColor Red
                 return
             }
             
@@ -228,7 +228,7 @@ function _WgRemove
                 Write-Host "Failed to delete configuration file: $_" -ForegroundColor Red
             }
         } else {
-            Write-Host "Backup sequence failed. Aborting deletion for safety." -ForegroundColor Red  
+            Write-Host "Backup failed - nothing deleted." -ForegroundColor Red  
         }
     } else {
         Write-Host "Config file not found: $target" -ForegroundColor Red
