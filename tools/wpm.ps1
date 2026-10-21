@@ -2,18 +2,45 @@ param([string]$Action, [string]$Arg1, [string]$Arg2, [string]$Arg3)
 
 $ConfigPath = $env:WINDOWS_CONFIG_PATH
 . "$ConfigPath\helpers\dep-checker.ps1"
-
-$missingDeps = @(_TestDependencies -Commands "gsudo", "fzf", "wireproxy", "servy-cli")
-if ($missingDeps.Count -gt 0)
-{
-    foreach ($dep in $missingDeps) { Write-Host "$dep not found" -ForegroundColor Red }
-    Write-Host "Script stopped due to missing dependencies.`n" -ForegroundColor Red
-    return
-}
-
 . "$ConfigPath\helpers\backup-wg-configs.ps1"
 . "$ConfigPath\helpers\wpm-helper.ps1"
-. "$ConfigPath\helpers\wireproxy-install.ps1"
+
+# wireproxy is found on the PATH like any other program. Whoever put it there
+# - gitget, winget, a manual install - wpm does not care.
+function _ResolveWireproxyPath
+{
+    $cmd = Get-Command wireproxy -ErrorAction SilentlyContinue
+    if ($cmd -and $cmd.Source) { return $cmd.Source }
+
+    # The session PATH can be older than the persisted one, so look there too.
+    $paths = @(
+        [Environment]::GetEnvironmentVariable("Path", "User")
+        [Environment]::GetEnvironmentVariable("Path", "Machine")
+    )
+    foreach ($path in $paths)
+    {
+        if (-not $path) { continue }
+        foreach ($entry in ($path -split ';'))
+        {
+            if (-not $entry) { continue }
+            $candidate = Join-Path $entry.Trim() "wireproxy.exe"
+            if (Test-Path $candidate) { return $candidate }
+        }
+    }
+
+    return $null
+}
+
+$wireproxyPath = _ResolveWireproxyPath
+
+$missingDeps = @(_TestDependencies -Commands "gsudo", "fzf", "servy-cli")
+if (-not $wireproxyPath) { $missingDeps += "wireproxy" }
+if ($missingDeps.Count -gt 0)
+{
+    Write-Host "Missing: $($missingDeps -join ', ')" -ForegroundColor Red
+    Write-Host "Stopped." -ForegroundColor Red
+    return
+}
 
 $confDir = "$env:LOCALAPPDATA\windows-config-files\wpm\configs"
 New-Item -ItemType Directory -Path $confDir -Force > $null
@@ -97,13 +124,13 @@ function _AddSocks
 
     if ($Name -notmatch '^[a-zA-Z0-9_-]+$')
     {
-        Write-Host "Invalid name '$Name'. Use letters, numbers, dashes, or underscores only." -ForegroundColor Red
+        Write-Host "Invalid name '$Name'" -ForegroundColor Red
         return
     }
 
     if ($Port -notmatch '^\d+$' -or [int]$Port -lt 1 -or [int]$Port -gt 65535)
     {
-        Write-Host "Invalid port '$Port'. Must be 1-65535." -ForegroundColor Red
+        Write-Host "Invalid port '$Port'" -ForegroundColor Red
         return
     }
 
@@ -119,7 +146,7 @@ function _AddSocks
 
     if ((Get-Service -Name $serviceName -ErrorAction SilentlyContinue) -or (Test-Path $confDest))
     {
-        Write-Host "A tunnel named '$Name' already exists. Choose a unique name." -ForegroundColor Red
+        Write-Host "'$Name' already exists" -ForegroundColor Red
         return
     }
 
@@ -133,7 +160,7 @@ function _AddSocks
     { $content = $content.TrimEnd() + "`n`n[Socks5]`nBindAddress = 0.0.0.0:$Port`n" }
     $content | Set-Content $confDest -NoNewline
 
-    $wireproxyPath = (Get-Command wireproxy -ErrorAction SilentlyContinue).Source
+    $wireproxyExe = $wireproxyPath
 
     gsudo {
             param($sName, $wPath, $cDest)
@@ -143,7 +170,7 @@ function _AddSocks
                 exit 0 
             }
             exit 1
-        } -args $serviceName, $wireproxyPath, $confDest
+        } -args $serviceName, $wireproxyExe, $confDest
 
     if ($LASTEXITCODE -eq 0)
     {
@@ -151,7 +178,7 @@ function _AddSocks
     }
     else
     {
-        Write-Host "Failed to register and start $serviceName" -ForegroundColor Red
+        Write-Host "Failed to start $serviceName" -ForegroundColor Red
     }
 }
 
@@ -213,9 +240,9 @@ function _RemoveSocks
     }
 
     if ($allOk) {
-        Write-Host "Selected tunnels removed, configs backed up." -ForegroundColor Green
+        Write-Host "Tunnels removed, configs backed up." -ForegroundColor Green
     } else {
-        Write-Host "Removal incomplete - see errors above." -ForegroundColor Red
+        Write-Host "Removal incomplete." -ForegroundColor Red
     }
 }
 
@@ -234,7 +261,7 @@ function _RefreshSocks
     if (_ServyBatchAction -Verb "restart" -ServiceNames $serviceNames) {
         Write-Host "All tunnels restarted." -ForegroundColor Green
     } else {
-        Write-Host "Failed to restart one or more tunnels." -ForegroundColor Red
+        Write-Host "Failed to restart tunnels." -ForegroundColor Red
     }
 }
 
@@ -244,29 +271,45 @@ function _RefreshSocks
 
 function _StartSocks
 {
-    $selected = _SelectTunnelsInteractively "TAB to select, ENTER to start tunnels" 
-    if (-not $selected) { return }
+    $serviceNames = $null
+    if ($Arg1 -eq "all") { $serviceNames = @(Get-Service -ErrorAction SilentlyContinue | Where-Object { $_.Name -like "*-wpm" } | ForEach-Object { $_.Name }) }
+    else {
+        $selected = _SelectTunnelsInteractively "TAB to select, ENTER to start tunnels"
+        if (-not $selected) { return }
+        $serviceNames = @($selected | ForEach-Object { $_.Svc.Name })
+    }
 
-    $serviceNames = $selected | ForEach-Object { $_.Svc.Name }
+    if (-not $serviceNames) {
+        Write-Host "No tunnels found." -ForegroundColor Yellow
+        return
+    }
 
     if (_ServyBatchAction -Verb "start" -ServiceNames $serviceNames) {
-        Write-Host "Selected tunnels started." -ForegroundColor Green
+        Write-Host "Tunnels started." -ForegroundColor Green
     } else {
-        Write-Host "Failed to start one or more tunnels." -ForegroundColor Red
+        Write-Host "Failed to start tunnels." -ForegroundColor Red
     }
 }
 
 function _StopSocks
 {
-    $selected = _SelectTunnelsInteractively "TAB to select, ENTER to stop tunnels" 
-    if (-not $selected) { return }
+    $serviceNames = $null
+    if ($Arg1 -eq "all") { $serviceNames = @(Get-Service -ErrorAction SilentlyContinue | Where-Object { $_.Name -like "*-wpm" } | ForEach-Object { $_.Name }) }
+    else {
+        $selected = _SelectTunnelsInteractively "TAB to select, ENTER to stop tunnels" 
+        if (-not $selected) { return }
+        $serviceNames = @($selected | ForEach-Object { $_.Svc.Name })
+    }
 
-    $serviceNames = $selected | ForEach-Object { $_.Svc.Name }
+    if (-not $serviceNames) {
+        Write-Host "No tunnels found." -ForegroundColor Yellow
+        return
+    }
 
     if (_ServyBatchAction -Verb "stop" -ServiceNames $serviceNames) {
-        Write-Host "Selected tunnels stopped." -ForegroundColor Green
+        Write-Host "Tunnels stopped." -ForegroundColor Green
     } else {
-        Write-Host "Failed to stop one or more tunnels." -ForegroundColor Red
+        Write-Host "Failed to stop tunnels." -ForegroundColor Red
     }
 }
 
@@ -280,47 +323,7 @@ function _RestartSocks
     if (_ServyBatchAction -Verb "restart" -ServiceNames $serviceNames) {
         Write-Host "Selected tunnels restarted." -ForegroundColor Green
     } else {
-        Write-Host "Failed to restart one or more tunnels." -ForegroundColor Red
-    }
-}
-
-function _UpdateWireproxy
-{
-    $check = Install-Wireproxy -CheckOnly
-    if (-not $check.Success) {
-        Write-Host "Failed to check for wireproxy updates: $($check.Error)" -ForegroundColor Red
-        return
-    }
-
-    if ($check.UpToDate) {
-        Write-Host "wireproxy is already up to date." -ForegroundColor Green
-        return
-    }
-
-    $running = @(Get-Service -ErrorAction SilentlyContinue |
-        Where-Object { $_.Name -like "*-wpm" -and $_.Status -eq "Running" } |
-        ForEach-Object { $_.Name })
-
-    if ($running.Count -gt 0) {
-        Write-Host "Stopping active tunnels before update..." -ForegroundColor Gray
-        if (-not (_ServyBatchAction -Verb "stop" -ServiceNames $running)) {
-            Write-Host "Failed to stop one or more tunnels. Aborting update." -ForegroundColor Red
-            return
-        }
-    }
-
-    $r = Install-Wireproxy
-    if (-not $r.Success) { Write-Host "Failed to update wireproxy: $($r.Error)" -ForegroundColor Red }
-    elseif ($r.UpToDate) { Write-Host "wireproxy already up to date: $($r.Path)" -ForegroundColor Green }
-    else                 { Write-Host "wireproxy updated: $($r.Path)" -ForegroundColor Green }
-
-    if ($running.Count -gt 0) {
-        Write-Host "Restarting previously active tunnels..." -ForegroundColor Gray
-        if (_ServyBatchAction -Verb "start" -ServiceNames $running) {
-            Write-Host "Tunnels restarted." -ForegroundColor Green
-        } else {
-            Write-Host "Failed to restart one or more tunnels." -ForegroundColor Red
-        }
+        Write-Host "Failed to restart tunnels." -ForegroundColor Red
     }
 }
 
@@ -336,7 +339,6 @@ switch ($Action)
     "start"    { _StartSocks }
     "stop"     { _StopSocks }
     "restart"  { _RestartSocks }
-    "update"   { _UpdateWireproxy }
     default
     {
         Write-Host ">Wireproxy Manager" -ForegroundColor Blue
@@ -345,11 +347,10 @@ switch ($Action)
         Write-Host "Actions:"
         Write-Host "  add      - Create tunnel (wpm add <name> <path> <port>)"
         Write-Host "  ls       - List all tunnels"
-        Write-Host "  start    - Start target tunnel(s)"
-        Write-Host "  stop     - Stop target tunnel(s)"
+        Write-Host "  start    - Start target tunnel(s) (wpm start all for every tunnel)"
+        Write-Host "  stop     - Stop target tunnel(s) (wpm stop all for every tunnel)"
         Write-Host "  restart  - Restart target tunnel(s)"
         Write-Host "  refresh  - Restart ALL tunnels"
-        Write-Host "  update   - Update the wireproxy binary (stops/restarts active tunnels)"
         Write-Host "  rm       - Remove tunnel(s)"
         Write-Host ""
     }

@@ -1,15 +1,90 @@
 # GitGet
 
 Run `gitget add owner/repo`, `gitget check`, or `gitget update` as before.
-GitGet tracks GitHub release lines and Windows installers. Existing JSON config
-entries remain supported. The script also runs directly with PowerShell 7;
-`fzf` is required for installer and app pickers, but not for checks or config.
+GitGet tracks GitHub release lines and installs their Windows payloads.
+Existing JSON config entries remain supported. The script also runs directly
+with PowerShell 7; `fzf` is required for installer and app pickers, but not for
+checks or config.
+
+`gitget add` installs the payload right away, for every kind - installer,
+portable and archive. It only tracks the app when the program is already
+installed, and `gitget add owner/repo -NoInstall` never installs anything.
+
+Adding an app that is already tracked installs it when it is missing from the
+machine, so `gitget add owner/repo` is enough to get a program back after it
+was deleted or never installed. The tracked release line, kind and asset
+pattern are reused, the name prompt is skipped when the repo's own name is
+already tracked, and an app that is still installed is left alone.
+`gitget add owner/repo -Reinstall` overwrites an installed copy.
 
 Release detection selects the newest eligible release in the tracked line with
-an installer extension. Old filenames and filename patterns never pin it to an
+a matching payload. Old filenames and filename patterns never pin it to an
 old version. A missing or ambiguous release line produces an error instead of
 silently switching products or channels. `.exe` files can be portable programs;
 the installer picker remains the final choice when filenames change.
+
+Release lists are cached for a short time. When the API cannot be reached -
+the anonymous rate limit is the usual reason - the cached lists are used and
+the run says so once. A problem that hits many apps is reported once, not once
+per app. Set `$env:GITHUB_TOKEN` to raise the rate limit.
+
+## Payload kinds
+
+Every tracked app has a kind, stored as `install_type` in the config. Entries
+without one keep the old installer behaviour.
+
+| Kind | Payload | What gitget does |
+| --- | --- | --- |
+| `installer` | `.exe`, `.msi`, `.msix`, `.msixbundle` | Runs the installer and waits for it. The default. |
+| `portable` | A bare `.exe` | Copies the program into a managed bin directory. |
+| `archive` | `.zip`, `.tar.gz`, `.tgz`, `.tar`, `.7z` | Unpacks the archive into a managed bin directory. |
+
+`gitget add` offers the kinds the release actually ships and remembers the
+choice. A plain `.exe` is ambiguous - it can be a portable program
+(`yt-dlp.exe`) or an installer with an ordinary name (`Slack.exe`) - so both
+kinds are offered and the likely one is listed first. `gitget add owner/repo
+-InstallType portable` skips the picker. `gitget configure app
+-InstallType archive` switches the kind later; the recorded install state is
+dropped because it described the old kind.
+
+When a release stops shipping the tracked kind, gitget switches to the kind it
+ships now and stores it, so the question is asked at most once. The file name
+of the old kind is dropped with it, because it means nothing for the new one.
+
+Portable and archive payloads land in
+`%LOCALAPPDATA%\windows-config-files\gitget\apps\<app name>` (`-BinDir` picks
+another directory) and that directory is added to the user `PATH`, so the
+program is callable. Archives are unpacked, a single top-level folder is
+lifted, and the program is the one matching the app name, the only program in
+the archive, or the largest program in it. `.7z` needs 7-Zip
+(`winget install 7zip`); every other archive uses built-in tooling.
+
+A release that ships one build per platform (topgrade ships ten) only offers
+the Windows one: assets naming another platform (`linux`, `darwin`, `freebsd`,
+`musl`, ...) are dropped, and assets built for another architecture are hidden
+from the picker.
+
+`gitget ls` shows the kind of every tracked app.
+
+## Removing apps
+
+`gitget rm` opens a picker over every tracked app. Pass a name to target one
+without a picker, or `-All` to clear every tracked app:
+
+```powershell
+gitget rm myapp
+gitget rm myapp -Purge
+gitget rm -All
+```
+
+Portable and archive payloads were placed by gitget, so removing such an app
+also removes its files: the payload bin directory (and its `PATH` entry) and
+the download staging directory are deleted. An app that was installed by a setup
+program keeps its files - uninstall it with the program itself - and `-Purge`
+additionally deletes the leftovers of that installation.
+
+`gitget rm -All` is what `reset` uses, so the tool stays the only thing that
+knows where its payloads live.
 
 ## Configure an unusual app without editing the script
 
@@ -24,6 +99,8 @@ The same options are available when adding an app.
 | `-IncludePrerelease $true` | Opt into releases marked prerelease by GitHub. Use `$false` to disable. |
 | `-ReleaseLimit 200` | Search more history when a repo publishes many independent products. Default: 40; maximum: 1000. Larger requests are paginated and cached. |
 | `-Pattern '*windows*x64*.msi'` | Installer matching/recommendation; explicitly configured patterns survive updates. |
+| `-InstallType installer\|portable\|archive` | How the payload is installed. Changing it clears the recorded install state. |
+| `-BinDir 'C:\Apps\bat'` | Directory for portable/archive payloads. Default: `%LOCALAPPDATA%\windows-config-files\gitget\apps\<app name>`. Changing it moves the existing payload to the new directory and re-registers its `PATH` entry, so the program stays callable. |
 | `-DisplayName 'Example App'` | Exact Windows uninstall display name. |
 | `-DisplayNamePattern 'Example App version *'` | Match a display name containing a changing version. Multiple matches produce an error. |
 | `-VersionExe 'C:\Apps\Example\app.exe'` | Read installed executable metadata from an explicit path. A relative filename uses the saved directory. |
@@ -51,11 +128,51 @@ check and instructions to configure extraction. Apps ahead of the tracked
 release are not downgraded. When only a recorded version is available, the
 summary states that the installed version could not be verified.
 
+## How the file is picked again on an update
+
+The file of a tracked app is found by a pattern gitget derives from the file
+name it installed last time: the version is cut out of the name, everything
+else is kept (`gh_2.103.0_windows_amd64.msi` becomes
+`*gh*windows*amd64.msi*`). The pattern is rebuilt on every install, so a new
+version of the same file is found without asking. A pattern set with
+`-Pattern` is never touched.
+
+The picker only shows up when the release really renamed the file - there is
+no name left to derive a pattern from. Picking the file then stores it, and
+the next update is silent again.
+
+A release can ship several files that match the pattern (a commercial build
+next to the free one, a long-term-support build next to the current one).
+The file that is the previous file with a new version is picked, so the extra
+builds do not make gitget ask.
+
+## Installed versions of portable apps
+
+A portable program has no uninstall entry, so gitget records what it installed:
+the version, the asset name, the program path and its SHA-256 hash. Checks use
+the first source that answers:
+
+1. The recorded state, but only when the hash on disk still matches.
+2. The program's own answer - `-VersionCommand`/`-VersionRegex`, then the file
+   metadata of the program.
+3. The recorded version as a last resort, reported as unverified.
+
+The result is never guessed. A payload that changed outside gitget and cannot
+report a version is *inconclusive*: the check says so and the update is
+skipped, because overwriting it could downgrade a self-updated program. Use
+`gitget update -Reinstall` to overwrite it deliberately. A payload that was
+deleted is *missing* and is installed again.
+
+When a self-updating program reports its own version, the new hash and version
+are recorded, so the next check is verified again.
+
 Updates save the new version only after the installer succeeds. Failed or
 cancelled installs retain the old recorded version. MSI reboot-required success
 codes are supported. gitget waits for the installer process itself, not apps it
 launches, so a ticked "run software" option does not block the update. Checks
-and configuration never install applications.
+and configuration never install applications. Portable and archive payloads are
+replaced in place in the bin directory, and the state is recorded only after
+the payload is in place.
 
 Config: `%LOCALAPPDATA%\windows-config-files\gitget\config.json`.
 Use `gitget backup` before making manual config changes.
@@ -67,4 +184,6 @@ pwsh -NoProfile -File tests/gitget.Tests.ps1
 ```
 
 The suite mocks network requests, installers, and saved config; it does not
-install apps or change your actual config.
+install apps or change your actual config. Portable and archive payloads are
+covered too: the suite unpacks a real zip into a temp directory and checks the
+recorded state, the changed-copy and missing-copy cases.

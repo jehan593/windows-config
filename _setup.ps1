@@ -21,7 +21,6 @@ Write-Host ""
 # ==============================================================================
 . "$ConfigPath\helpers\packages.ps1"
 . "$ConfigPath\helpers\registry-value.ps1"
-. "$ConfigPath\helpers\wireproxy-install.ps1"
 . "$ConfigPath\helpers\font-install.ps1"
 . "$ConfigPath\helpers\repo-list.ps1"
 
@@ -163,17 +162,17 @@ Write-Host "`n> Installing Martian Mono Nerd Font" -ForegroundColor Blue
 
 $fontResult = Install-MartianMonoFont
 if (-not $fontResult.Success) {
-    Write-Host "Martian Mono Nerd Font installation failed: $($fontResult.Error)" -ForegroundColor Red
+    Write-Host "Font installation failed: $($fontResult.Error)" -ForegroundColor Red
 }
 elseif ($fontResult.UpToDate) {
-    Write-Host "Martian Mono Nerd Font already up to date." -ForegroundColor Green
+    Write-Host "Font already up to date." -ForegroundColor Green
 }
 else {
     foreach ($name in $fontResult.Installed)     { Write-Host "Installed: $name" -ForegroundColor Gray }
     foreach ($name in $fontResult.Updated)       { Write-Host "Updated: $name" -ForegroundColor Gray }
     foreach ($name in $fontResult.SkippedInUse)  { Write-Host "In use, skipped: $name" -ForegroundColor Yellow }
     if ($fontResult.RebootCleanup.Count -gt 0)   { Write-Host "Old copies pending deletion at next reboot." -ForegroundColor Yellow }
-    Write-Host "Martian Mono Nerd Font setup complete." -ForegroundColor Green
+    Write-Host "Font setup complete." -ForegroundColor Green
 }
 
 Write-Host "`n> Windows Terminal Nord Theme" -ForegroundColor Blue
@@ -218,22 +217,15 @@ foreach ($entry in (Get-RepoList)) {
 # ==============================================================================
 # 6. TOOLS & SCRIPTS
 # ==============================================================================
-Write-Host "`n> Wireproxy Manager" -ForegroundColor Blue
+. "$ConfigPath\helpers\gitget-apps.ps1"
 
-try {
-    $wireproxyResult = Install-Wireproxy
-    if (-not $wireproxyResult.Success) {
-        Write-Host "Failed to install wireproxy: $($wireproxyResult.Error)" -ForegroundColor Red
-    }
-    elseif ($wireproxyResult.UpToDate) {
-        Write-Host "wireproxy already up to date: $($wireproxyResult.Path)" -ForegroundColor Green
-    }
-    else {
-        Write-Host "wireproxy installed: $($wireproxyResult.Path)" -ForegroundColor Green
-    }
-}
-catch {
-    Write-Host "Failed to install wireproxy: $($_.Exception.Message)" -ForegroundColor Red
+Write-Host "`n>Managed CLI Tools (gitget)" -ForegroundColor Blue
+
+foreach ($entry in (Get-GitgetApps))
+{
+    $app = Get-GitgetAppEntry $entry
+    Write-Host "`n--- $($app.Name) ---" -ForegroundColor DarkGray
+    & "$ConfigPath\tools\gitget.ps1" add $app.Repo -Name $app.Name -InstallType $app.Kind
 }
 
 
@@ -319,7 +311,7 @@ Write-Host " ┌─────────────────────�
 Write-Host " │              SETUP COMPLETE              │" -ForegroundColor Cyan
 Write-Host " └──────────────────────────────────────────┘" -ForegroundColor Cyan
 Write-Host ""
-Write-Host " • Repos cloned to: ~\Pictures, ~\browser-extensions" -ForegroundColor Gray
+Write-Host " • Repos cloned to: $(@(Get-RepoList | ForEach-Object { (Get-RepoEntry $_).Dest -replace [regex]::Escape($HOME), '~' } | Sort-Object -Unique) -join ', ')" -ForegroundColor Gray
 Write-Host " • Please restart your terminal application to apply active PATH environment changes." -ForegroundColor Gray
 Write-Host " • Restart Explorer or sign out and sign back in to apply some registry tweaks." -ForegroundColor Gray
 Write-Host ""
