@@ -1554,7 +1554,7 @@ function _AddTrackedApp($AppName, $App, $ProxyUrl, $Config) {
     }
     if ($Reinstall) { Write-Host "Reinstalling $AppName..." -ForegroundColor Yellow }
     else { Write-Host "$AppName not installed - installing it now." -ForegroundColor Yellow }
-    _InstallTrackedApp $AppName $App $ProxyUrl $Config
+    $null = _InstallTrackedApp $AppName $App $ProxyUrl $Config
 }
 
 function _Add {
@@ -2056,7 +2056,7 @@ function _Install {
 
     foreach ($item in $toInstall) {
         Write-Host ""
-        _InstallTrackedApp $item.appName $item.app $proxyUrl $config
+        $null = _InstallTrackedApp $item.appName $item.app $proxyUrl $config
     }
 }
 
