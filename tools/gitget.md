@@ -36,8 +36,8 @@ without one keep the old installer behaviour.
 | Kind | Payload | What gitget does |
 | --- | --- | --- |
 | `installer` | `.exe`, `.msi`, `.msix`, `.msixbundle` | Runs the installer and waits for it. The default. |
-| `portable` | A bare `.exe` | Copies the program into a managed bin directory. |
-| `archive` | `.zip`, `.tar.gz`, `.tgz`, `.tar`, `.7z` | Unpacks the archive into a managed bin directory. |
+| `portable` | A bare `.exe` | Copies the program into the shared bin directory. |
+| `archive` | `.zip`, `.tar.gz`, `.tgz`, `.tar`, `.7z` | Unpacks the archive into a staging dir and copies the program into the shared bin directory. |
 
 `gitget add` offers the kinds the release actually ships and remembers the
 choice. A plain `.exe` is ambiguous - it can be a portable program
@@ -51,13 +51,17 @@ When a release stops shipping the tracked kind, gitget switches to the kind it
 ships now and stores it, so the question is asked at most once. The file name
 of the old kind is dropped with it, because it means nothing for the new one.
 
-Portable and archive payloads land in
-`%LOCALAPPDATA%\windows-config-files\gitget\apps\<app name>` (`-BinDir` picks
-another directory) and that directory is added to the user `PATH`, so the
-program is callable. Archives are unpacked, a single top-level folder is
-lifted, and the program is the one matching the app name, the only program in
-the archive, or the largest program in it. `.7z` needs 7-Zip
-(`winget install 7zip`); every other archive uses built-in tooling.
+Portable and archive programs land in the shared bin dir
+`%LOCALAPPDATA%\windows-config-files\gitget\bin` (`-BinDir` picks a private
+directory for one app instead) and that shared dir sits once near the front of
+the user `PATH` - installs, updates and removals never rewrite it, so the PATH
+cannot drift. Archives are unpacked into a per-app staging dir
+(`...gitget\apps\<app name>`), a single top-level folder is lifted, and the
+program placed into the shared bin dir is the one matching the app name, the
+only program in the archive, or the largest program in it. `.dll` files sitting
+next to the staged program go along so programs that load them still run.
+`.7z` needs 7-Zip (`winget install 7zip`); every other archive uses built-in
+tooling.
 
 A release that ships one build per platform (topgrade ships ten) only offers
 the Windows one: assets naming another platform (`linux`, `darwin`, `freebsd`,
@@ -78,8 +82,10 @@ gitget rm -All
 ```
 
 Portable and archive payloads were placed by gitget, so removing such an app
-also removes its files: the payload bin directory (and its `PATH` entry) and
-the download staging directory are deleted. An app that was installed by a setup
+also removes its files: the program goes out of the shared bin dir (or the
+per-app dir picked with `-BinDir`, together with its `PATH` entry) and the
+download staging directory is deleted. The shared dir leaves the user `PATH`
+when no tracked install lives in it anymore. An app that was installed by a setup
 program keeps its files - uninstall it with the program itself - and `-Purge`
 additionally deletes the leftovers of that installation.
 
@@ -100,7 +106,7 @@ The same options are available when adding an app.
 | `-ReleaseLimit 200` | Search more history when a repo publishes many independent products. Default: 40; maximum: 1000. Larger requests are paginated and cached. |
 | `-Pattern '*windows*x64*.msi'` | Installer matching/recommendation; explicitly configured patterns survive updates. |
 | `-InstallType installer\|portable\|archive` | How the payload is installed. Changing it clears the recorded install state. |
-| `-BinDir 'C:\Apps\bat'` | Directory for portable/archive payloads. Default: `%LOCALAPPDATA%\windows-config-files\gitget\apps\<app name>`. Changing it moves the existing payload to the new directory and re-registers its `PATH` entry, so the program stays callable. |
+| `-BinDir 'C:\Apps\bat'` | Private directory for this app's portable/archive payload instead of the shared bin dir. Set it when the app is tracked (or re-add after `rm`). Apps in the shared bin dir refuse a `-BinDir` change because moving would take every other install with it. |
 | `-DisplayName 'Example App'` | Exact Windows uninstall display name. |
 | `-DisplayNamePattern 'Example App version *'` | Match a display name containing a changing version. Multiple matches produce an error. |
 | `-VersionExe 'C:\Apps\Example\app.exe'` | Read installed executable metadata from an explicit path. A relative filename uses the saved directory. |
