@@ -386,6 +386,7 @@ Assert ($result.hasUpdate) 'A newer release was not detected for a portable app'
 # --- adding an app installs it unless it is already there ------------------
 $DownloadsDir = Join-Path $env:TEMP 'gitget-tests-downloads'
 $AppsDir = Join-Path $env:TEMP 'gitget-tests-apps'
+$SharedBinDir = Join-Path $env:TEMP 'gitget-tests-shared-bin'
 $Target = 'example/app'
 $Name = 'testapp'
 $InstallType = 'installer'
@@ -420,7 +421,9 @@ function _GetInstalledVersion { @{ version = $null; source = 'unknown' } }
 _Add
 Assert ($script:saves -eq 1) 'Add installed the payload although -NoInstall was given'
 
-# A portable payload is placed in the bin directory and recorded.
+# A portable payload is staged per app and placed in the shared bin dir.
+# The real Remove-Item runs here - the standing no-op mock would block cleanup.
+Microsoft.PowerShell.Management\Remove-Item function:\Remove-Item -ErrorAction SilentlyContinue
 $script:fakePayload = Join-Path $env:TEMP 'gitget-tests-payload.exe'
 Set-Content -LiteralPath $script:fakePayload -Value 'payload'
 function _SaveAsset { $script:fakePayload }
@@ -433,8 +436,10 @@ _Add
 $state = $script:config.apps.testapp.installed
 Assert ($state -and $state.version -eq 'v1.0') 'Add did not record the portable install state'
 Assert ($state -and (Test-Path -LiteralPath $state.path)) 'Add did not place the portable program'
-Assert ($state -and $state.path.StartsWith((Join-Path $AppsDir 'testapp'))) 'The portable program was not placed in the app directory'
+Assert ($state -and $state.path.StartsWith($SharedBinDir)) 'The portable program was not placed in the shared bin dir'
+Assert (-not (Test-Path -LiteralPath (Join-Path $AppsDir 'testapp'))) 'Add left the staging dir behind'
 [System.IO.File]::Delete($script:fakePayload)
+function Remove-Item { }
 
 # Adding an app that is already tracked installs it when it is missing.
 $script:tracked = [pscustomobject]@{

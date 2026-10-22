@@ -101,6 +101,9 @@ $AppDir         = Join-Path $env:LOCALAPPDATA "windows-config-files\gitget"
 $ConfFilePath   = Join-Path $AppDir "config.json"
 $DownloadsDir   = Join-Path $AppDir "downloads"
 $AppsDir        = Join-Path $AppDir "apps"
+# One shared bin dir all portable/archive programs live in. It is registered on
+# the user PATH once (in front), so installs/updates/removals never rewrite it.
+$SharedBinDir   = Join-Path $AppDir "bin"
 $CacheDir        = Join-Path $AppDir "cache"
 $CacheTtlMinutes = if ($env:GITGET_CACHE_TTL_MINUTES) { [int]$env:GITGET_CACHE_TTL_MINUTES } else { 10 }
 $script:staleCacheWarned = $false
@@ -275,6 +278,12 @@ function _Configure {
     }
     if ($changed -and $script:PSBoundParameters.ContainsKey('BinDir') -and $previousBinDir -and
         $previousBinDir -ine $entry.Value.bin_dir -and $previousType -ne 'installer') {
+        if ($previousBinDir.TrimEnd('\') -ieq $SharedBinDir.TrimEnd('\')) {
+            # Moving would take the whole shared dir - other installs live there.
+            $entry.Value | Add-Member -NotePropertyName bin_dir -NotePropertyValue $previousBinDir -Force
+            Write-Host "'$Target' shares the gitget bin dir - to move it, run 'gitget rm $Target' and re-add with -BinDir." -ForegroundColor Yellow
+        }
+        else {
         # The payload dir changed - move what is there, or the config would
         # point at a place that holds nothing.
         $oldRegistered = if ($entry.Value.installed -and $entry.Value.installed.path) { Split-Path -Parent $entry.Value.installed.path } else { $previousBinDir }
@@ -300,6 +309,7 @@ function _Configure {
         $newRegistered = if ($entry.Value.installed -and $entry.Value.installed.path) { Split-Path -Parent $entry.Value.installed.path } else { $entry.Value.bin_dir }
         _UnregisterBinDir $oldRegistered
         if ($newRegistered) { _RegisterBinDir $newRegistered }
+        }
     }
     if ($changed) { _SaveConfig $config }
     $entry.Value | ConvertTo-Json -Depth 10
@@ -1179,19 +1189,36 @@ function _GetFileSha256($Path) {
 }
 
 function _RegisterBinDir($BinDir) {
-    # Put the payload directory on the user PATH so the program is callable.
-    # It goes in front of the other user entries: gitget keeps this copy up to
-    # date, so a stale copy further down the PATH (a leftover winget link, the
-    # legacy bin dir) must not shadow it.
+    # Put a bin dir on the user PATH, in front of the other user entries, so a
+    # stale copy further down the PATH (a leftover winget link, the legacy bin
+    # dir) must not shadow it. Idempotent: a present entry is left alone, so
+    # installs and updates do not rewrite the PATH.
     $userPath = [Environment]::GetEnvironmentVariable("Path", "User")
     if (-not $userPath) { $userPath = "" }
     $known = @($userPath -split ';' | Where-Object { $_ })
     $kept = @($known | Where-Object { $_.TrimEnd('\') -ine $BinDir.TrimEnd('\') })
-    [Environment]::SetEnvironmentVariable("Path", (($BinDir + $kept) -join ';'), "User")
+    # @() guards: string + array joins with spaces, which would corrupt PATH.
+    $new = (@($BinDir) + $kept) -join ';'
+    if ($new -ine $userPath) { [Environment]::SetEnvironmentVariable("Path", $new, "User") }
 
     $session = @($env:Path -split ';' | Where-Object { $_ })
     $keptSession = @($session | Where-Object { $_.TrimEnd('\') -ine $BinDir.TrimEnd('\') })
-    $env:Path = (($BinDir + $keptSession) -join ';')
+    $env:Path = ((@($BinDir) + $keptSession) -join ';')
+}
+
+function _PromotePayloadExe($Exe) {
+    # Copy the staged payload program (and its adjacent .dll files) into the
+    # shared bin dir and return the placed exe. An exe staged inside the shared
+    # bin dir already is returned as-is.
+    $stageDir = Split-Path -Parent $Exe
+    if ($stageDir.TrimEnd('\') -ieq $SharedBinDir.TrimEnd('\')) { return $Exe }
+
+    New-Item -ItemType Directory -Force -Path $SharedBinDir | Out-Null
+    Get-ChildItem -LiteralPath $stageDir -Filter *.dll -File -ErrorAction SilentlyContinue |
+        ForEach-Object { Copy-Item -LiteralPath $_.FullName -Destination $SharedBinDir -Force }
+    $dest = Join-Path $SharedBinDir (Split-Path -Leaf $Exe)
+    Copy-Item -LiteralPath $Exe -Destination $dest -Force
+    return $dest
 }
 
 function _UnregisterBinDir($BinDir) {
@@ -1318,18 +1345,26 @@ function _InstallAppPayload($AppName, $App, $Asset, $LatestVersion, $ProxyUrl) {
         if (-not (_InstallDownloadedAsset $path)) { return $false }
     }
     else {
-        $binDir = if ($App.bin_dir) { $App.bin_dir } else { Join-Path $AppsDir $AppName }
+        # Archives are unpacked into a per-app staging dir and the program
+        # lands in the shared bin dir. A -BinDir override keeps the program
+        # (and the unpacked files) in its own dir instead.
+        $override = $App.bin_dir -and $App.bin_dir.TrimEnd('\') -ine $SharedBinDir.TrimEnd('\')
+        $stageDir = if ($override) { $App.bin_dir } else { Join-Path $AppsDir $AppName }
         $oldPath = if ($App.PSObject.Properties['installed'] -and $App.installed) { $App.installed.path } else { $null }
         $exe = $null
-        try { $exe = _InstallPortablePayload $path $binDir $AppName }
+        try { $exe = _InstallPortablePayload $path $stageDir $AppName }
         catch {
             Write-Host "$AppName install failed: $($_.Exception.Message)" -ForegroundColor Red
             Remove-Item -LiteralPath $path -Force -ErrorAction SilentlyContinue
             return $false
         }
         Remove-Item -LiteralPath $path -Force -ErrorAction SilentlyContinue
+        if (-not $override) { $exe = _PromotePayloadExe $exe }
         if ($oldPath -and $oldPath -ne $exe -and [System.IO.File]::Exists($oldPath)) {
             Remove-Item -LiteralPath $oldPath -Force -ErrorAction SilentlyContinue
+        }
+        if (-not $override) {
+            Remove-Item -LiteralPath $stageDir -Recurse -Force -ErrorAction SilentlyContinue
         }
         _RegisterBinDir (Split-Path -Parent $exe)
         _SetInstallState $App $LatestVersion $Asset.name $exe
@@ -1631,7 +1666,7 @@ function _Add {
     }
 
     $installDir = if ($Dir) { $Dir } else { Join-Path $DownloadsDir $appName }
-    $binDir = if ($BinDir) { $BinDir } elseif ($kind -ne 'installer') { Join-Path $AppsDir $appName } else { $null }
+    $binDir = if ($BinDir) { $BinDir } elseif ($kind -ne 'installer') { $SharedBinDir } else { $null }
 
     $entry = [PSCustomObject]@{
         repo             = $repo
@@ -1731,13 +1766,37 @@ function _Remove {
         $suffix = if ($purged) { ' (files removed)' } else { '' }
         Write-Host "Removed '$name'$suffix" -ForegroundColor Green
     }
+    # The shared bin dir goes off the PATH when no tracked install lives there.
+    $stillUsing = @($config.apps.PSObject.Properties | Where-Object {
+        _GetInstallType $_.Value -ne 'installer'
+    } | Where-Object {
+        $b = $_.Value
+        ($b.bin_dir -and $b.bin_dir.TrimEnd('\') -ieq $SharedBinDir.TrimEnd('\')) -or
+        ($b.PSObject.Properties['installed'] -and $b.installed -and $b.installed.path -and
+         (Split-Path -Parent $b.installed.path).TrimEnd('\') -ieq $SharedBinDir.TrimEnd('\'))
+    })
+    if ($stillUsing.Count -eq 0) { _UnregisterBinDir $SharedBinDir }
     _SaveConfig $config
 }
 
 function _PurgeAppFiles($AppName, $App) {
-    # Delete the payload dir (portable/archive) and download staging dir.
+    # Delete the program of a portable/archive app and, for a per-app payload
+    # dir, the whole dir. The shared bin dir holds every program's exe, so only
+    # this app's exe goes; the dir itself stays for the remaining apps.
     $binDir = $App.bin_dir
-    if ($binDir -and (Test-Path $binDir)) {
+    if ($binDir -and (Test-Path $binDir) -and $binDir.TrimEnd('\') -ieq $SharedBinDir.TrimEnd('\')) {
+        $exePath = if ($App.installed -and $App.installed.path) { $App.installed.path } else { $null }
+        if ($exePath -and (Test-Path -LiteralPath $exePath) -and
+            ((Split-Path -Parent $exePath).TrimEnd('\') -ieq $SharedBinDir.TrimEnd('\'))) {
+            try {
+                Remove-Item -LiteralPath $exePath -Force -ErrorAction Stop
+                Write-Host "Deleted: $(Split-Path -Leaf $exePath)" -ForegroundColor Gray
+            }
+            catch { Write-Host "Failed to delete '$exePath': $($_.Exception.Message)" -ForegroundColor Red }
+        }
+        $binDir = $null   # the shared dir itself is not unregistered here
+    }
+    elseif ($binDir -and (Test-Path $binDir)) {
         try { Remove-Item $binDir -Recurse -Force -ErrorAction Stop; Write-Host "Deleted payload: $(Split-Path -Leaf $binDir)" -ForegroundColor Gray }
         catch { Write-Host "Failed to delete payload '$binDir': $($_.Exception.Message)" -ForegroundColor Red }
     }
@@ -1746,7 +1805,7 @@ function _PurgeAppFiles($AppName, $App) {
     $registeredDir = $null
     if ($App.installed -and $App.installed.path) { $registeredDir = Split-Path -Parent $App.installed.path }
     foreach ($dir in @($registeredDir, $binDir)) {
-        if ($dir) { _UnregisterBinDir $dir }
+        if ($dir -and $dir.TrimEnd('\') -ine $SharedBinDir.TrimEnd('\')) { _UnregisterBinDir $dir }
     }
     if ($App.install_dir -and (Test-Path $App.install_dir)) {
         try { Remove-Item $App.install_dir -Recurse -Force -ErrorAction Stop; Write-Host "Deleted downloads: $(Split-Path -Leaf $App.install_dir)" -ForegroundColor Gray }
