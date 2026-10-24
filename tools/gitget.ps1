@@ -1215,10 +1215,232 @@ function _PromotePayloadExe($Exe) {
 
     New-Item -ItemType Directory -Force -Path $SharedBinDir | Out-Null
     Get-ChildItem -LiteralPath $stageDir -Filter *.dll -File -ErrorAction SilentlyContinue |
-        ForEach-Object { Copy-Item -LiteralPath $_.FullName -Destination $SharedBinDir -Force }
+        ForEach-Object { [void](_ReplaceLockedCopy $_.FullName (Join-Path $SharedBinDir $_.Name)) }
     $dest = Join-Path $SharedBinDir (Split-Path -Leaf $Exe)
-    Copy-Item -LiteralPath $Exe -Destination $dest -Force
+    [void](_ReplaceLockedCopy $Exe $dest)
     return $dest
+}
+
+function _TestElevated {
+    return [Security.Principal.WindowsPrincipal]::new([Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
+}
+
+function _GetPayloadProcesses($Dir) {
+    # Running programs whose binary lives inside $Dir. Found through the
+    # process image path, which is readable without elevation.
+    $dirPath = $Dir.TrimEnd('\')
+    return @(Get-Process -ErrorAction SilentlyContinue | Where-Object {
+        $_.Path -and $_.Path.StartsWith("$dirPath\", [System.StringComparison]::OrdinalIgnoreCase)
+    })
+}
+
+function _TestServiceProgramEquals($Service, $ProgramPath) {
+    # A service's PathName is either "<exepath> <args>" or a quoted
+    # '"<exepath>" <args>'; the program is the part before the arguments.
+    if (-not $Service -or -not $Service.PathName) { return $false }
+    $p = $Service.PathName
+    if ($p.StartsWith('"')) {
+        if ($p.Length -lt 2) { return $false }
+        $end = $p.IndexOf('"', 1)
+        if ($end -lt 0) { return $false }
+        $p = $p.Substring(1, $end - 1)
+    }
+    else { $p = ($p -split ' ', 2)[0] }
+    if (-not $p) { return $false }
+    return ($p.TrimEnd('\') -ieq ([string]$ProgramPath).TrimEnd('\'))
+}
+
+function _GetPayloadServicesOfProcess($Proc) {
+    # Services that a payload program's supervisor process manages. The
+    # wrapped program itself is not the service program, so the service is
+    # resolved via the supervisor: when the host is launched as
+    # '"<hostpath>" "<servicename>"', its extra quoted argument names the
+    # service. When the payload exe is the service program itself, every
+    # service registered on it wraps this payload and is returned.
+    if (-not $Proc) { return @() }
+    $prog = $null
+    if ($Proc.CommandLine) {
+        if ($Proc.CommandLine -match '^\s*"([^"]+)"') { $prog = $Matches[1] }
+        else { $prog = ($Proc.CommandLine -split ' ', 2)[0] }
+    }
+    if (-not $prog -and $Proc.ExecutablePath) { $prog = $Proc.ExecutablePath }
+    if (-not $prog) { return @() }
+
+    if ($Proc.CommandLine) {
+        $rest = ($Proc.CommandLine -replace '^\s*"[^"]+"\s*', '')
+        foreach ($tok in @([regex]::Matches($rest, '"([^"]+)"') | ForEach-Object { $_.Groups[1].Value })) {
+            $filter = "Name='" + ($tok -replace "'", "''") + "'"
+            $svc = Get-CimInstance Win32_Service -Filter $filter -ErrorAction SilentlyContinue
+            if ($svc -and (_TestServiceProgramEquals $svc $prog)) { return @($svc) }
+        }
+    }
+    return @(Get-CimInstance Win32_Service -ErrorAction SilentlyContinue |
+              Where-Object { _TestServiceProgramEquals $_ $prog })
+}
+
+function _GetPayloadServiceNames($Dir) {
+    # Windows services that keep a running program with its binary inside
+    # $Dir, found by climbing to the payload's supervisor process and looking
+    # it up in the service database. The climb is process data; where the
+    # supervisor runs elevated (a Servy style host), reading the chain needs
+    # elevation, so then it reruns in a pwsh child via gsudo. Only evidence
+    # from the payload dir itself is accepted, never the other way around.
+
+    $procs = @(_GetPayloadProcesses $Dir)
+    if (-not $procs.Count) { return @() }
+
+    if (_TestElevated) {
+        # Direction confirmed in-session. Climb from the payload program to
+        # its supervisor, then read the supervisor's identity in the service
+        # database. Guard bails so a reused PID never resolves to the wrong
+        # service, and the hop limit bounds the walk.
+        $names = @()
+        $seen = @{}
+        foreach ($proc in $procs) {
+            $procId = $proc.Id
+            for ($hop = 0; $hop -lt 6 -and $procId; $hop++) {
+                if ($seen.ContainsKey($procId)) { break }
+                $seen[$procId] = $true
+                $hostProc = Get-CimInstance Win32_Process -Filter "ProcessId=$procId" -ErrorAction SilentlyContinue
+                if (-not $hostProc) { break }
+                $svcs = @(_GetPayloadServicesOfProcess $hostProc)
+                if ($svcs.Count) { $names += @($svcs | ForEach-Object Name); break }
+                $procId = $hostProc.ParentProcessId
+            }
+        }
+        return @($names | Select-Object -Unique)
+    }
+
+    # Not elevated: reading a SYSTEM host's command line is not possible
+    # here, so the climb reruns in an elevated pwsh child. Only "-wpm"-free
+    # generic output lines come back, so console noise cannot become a
+    # service name.
+    if (Get-Command gsudo -ErrorAction SilentlyContinue) {
+        $child = @(& gsudo {
+            param($dir, $file)
+            $parseErrors = $null
+            $ast = [System.Management.Automation.Language.Parser]::ParseFile($file, [ref]$null, [ref]$parseErrors)
+            if ($parseErrors.Count) { return }
+            $ast.FindAll({ param($node) $node -is [System.Management.Automation.Language.FunctionDefinitionAst] }, $true) |
+                ForEach-Object { Invoke-Expression $_.Extent.Text }
+            _GetPayloadServiceNames $dir | ForEach-Object { "svcname:$_" }
+        } -args $Dir, $PSCommandPath 2>$null)
+        return @(@($child | Where-Object { $_ -like 'svcname:*' }) | ForEach-Object { $_.Substring(8) })
+    }
+
+    # No gsudo: service-hosted programs stay undetectable here. Nothing stops
+    # and the caller relies on the rename replacement instead.
+    return @()
+}
+
+function _SetPayloadServices([ValidateSet("Stop", "Start")][string]$Verb, [string[]]$ServiceNames) {
+    # Returns whether every service action succeeded. Only start/stop is
+    # ever performed - never a config change, datatype write, or removal.
+    if (-not $ServiceNames -or $ServiceNames.Count -eq 0) { return $true }
+    if (_TestElevated) {
+        $ok = $true
+        foreach ($name in $ServiceNames) {
+            try {
+                if ($Verb -eq "Stop") { Stop-Service -Name $name -ErrorAction Stop }
+                else { Start-Service -Name $name -ErrorAction Stop }
+            }
+            catch { $ok = $false }
+        }
+        return $ok
+    }
+    if (-not (Get-Command gsudo -ErrorAction SilentlyContinue)) { return $false }
+    # gsudo sequence-flattens array args, so only scalars cross into the
+    # scriptblock; NUL is here as an unchanged-on-path separator.
+    $sep = [string][char]0
+    & gsudo {
+        param($verb, $packed)
+        $ok = $true
+        foreach ($name in $packed -split [string][char]0) {
+            try {
+                if ($verb -eq "Stop") { Stop-Service -Name $name -ErrorAction Stop }
+                else { Start-Service -Name $name -ErrorAction Stop }
+            }
+            catch { $ok = $false }
+        }
+        if ($ok) { exit 0 } else { exit 1 }
+    } -args $Verb, ([string]$ServiceNames -join $sep) | Out-Null
+    return ($LASTEXITCODE -eq 0)
+}
+
+function _RemoveParkedPayloadCopies($Dirs) {
+    # Best effort: a parked copy is only deletable once whatever holds it (a
+    # program running the old image) exited, so leftovers stay until the next
+    # update or removal cleans them.
+    foreach ($dir in @($Dirs | Where-Object { $_ -and (Test-Path -LiteralPath $_) })) {
+        Get-ChildItem -LiteralPath $dir -Filter '*.ggold' -File -ErrorAction SilentlyContinue |
+            ForEach-Object { Remove-Item -LiteralPath $_.FullName -Force -ErrorAction SilentlyContinue }
+    }
+}
+
+function _PausePayloadForUpdate($Dirs) {
+    # Prepares payload dirs for a copy. Services started from copies inside
+    # those dirs hold their files open and are asked to stop for the
+    # duration; nothing is launched or terminated. Returns the paused state
+    # for the caller (_ResumePausedPayload restarts only the stopped ones),
+    # or $null when the dirs used no service, stopping itself failed - in
+    # which case replacement still lands, through the rename in
+    # _ReplaceLockedCopy.
+    $dirs = @($Dirs | Where-Object { $_ -and (Test-Path -LiteralPath $_) } |
+              ForEach-Object { $_.TrimEnd('\') } | Select-Object -Unique)
+    if (-not $dirs.Count) { return $null }
+
+    # Stale parked copies from earlier updates whose holder since exited.
+    _RemoveParkedPayloadCopies $dirs
+
+    $names = @()
+    foreach ($dir in $dirs) { $names += @(_GetPayloadServiceNames $dir) }
+    $names = @($names | Select-Object -Unique)
+    if (-not $names.Count) { return $null }
+
+    [void](_SetPayloadServices "Stop" $names)
+    $actuallyStopped = @(Get-Service -Name $names -ErrorAction SilentlyContinue |
+        Where-Object { $_.Status -eq "Stopped" } | ForEach-Object { $_.Name })
+    if ($actuallyStopped.Count -lt $names.Count) {
+        Write-Host "Service refusals during the update: copies locked by a still running program are replaced through a rename" -ForegroundColor Yellow
+    }
+    else {
+        Write-Host "Stopped Service(s): $($actuallyStopped -join ', ')" -ForegroundColor Gray
+    }
+    return [pscustomobject]@{ Names = $actuallyStopped; Dirs = $dirs }
+}
+
+function _ResumePausedPayload($Paused) {
+    # Restores the state _PausePayloadForUpdate found: only the services it
+    # stopped are started again, and nothing that never stopped is touched.
+    if (-not $Paused) { return }
+    if ($Paused.Names.Count) {
+        if (_SetPayloadServices "Start" $Paused.Names) {
+            Write-Host "Restarted $($Paused.Names -join ', ')" -ForegroundColor Gray
+        }
+        else {
+            Write-Host "Start failed for $($Paused.Names -join ', ') - start by hand with 'wpm start all'" -ForegroundColor Yellow
+        }
+    }
+    _RemoveParkedPayloadCopies $Paused.Dirs
+}
+
+function _ReplaceLockedCopy($Source, $DestPath) {
+    # gitget's copy into the payload's final place. A program that is still
+    # running holds its binary open: Copy-Item -Force cannot overwrite it,
+    # but a running image can be renamed, so the old copy is parked under a
+    # ".ggold" suffix and the update lands next to it. The program keeps
+    # running on the parked copy; whoever ran it from there keeps the old
+    # version until they restart. Returns nothing; throws when the copy
+    # cannot land at all.
+    try {
+        Copy-Item -LiteralPath $Source -Destination $DestPath -Force -ErrorAction Stop
+        return
+    }
+    catch {
+        Move-Item -LiteralPath $DestPath -Destination "$DestPath.ggold" -Force -ErrorAction Stop
+        Copy-Item -LiteralPath $Source -Destination $DestPath -Force -ErrorAction Stop
+        Write-Host "Replaced locked copy (kept as $((Split-Path -Leaf $DestPath)).ggold - running program keeps the old version until it restarts)" -ForegroundColor Gray
+    }
 }
 
 function _UnregisterBinDir($BinDir) {
@@ -1300,7 +1522,7 @@ function _InstallPortablePayload($Path, $BinDir, $AppName) {
     $ext = [System.IO.Path]::GetExtension($Path).ToLower()
     if ($ext -eq ".exe") {
         $dest = Join-Path $BinDir (Split-Path -Leaf $Path)
-        Copy-Item -LiteralPath $Path -Destination $dest -Force
+        [void](_ReplaceLockedCopy $Path $dest)
         return $dest
     }
     _ExpandPayloadArchive $Path $BinDir
@@ -1352,23 +1574,30 @@ function _InstallAppPayload($AppName, $App, $Asset, $LatestVersion, $ProxyUrl) {
         $stageDir = if ($override) { $App.bin_dir } else { Join-Path $AppsDir $AppName }
         $oldPath = if ($App.PSObject.Properties['installed'] -and $App.installed) { $App.installed.path } else { $null }
         $exe = $null
-        try { $exe = _InstallPortablePayload $path $stageDir $AppName }
-        catch {
-            Write-Host "$AppName install failed: $($_.Exception.Message)" -ForegroundColor Red
+        # A service that runs the current payload keeps its copy open; copies
+        # inside the payload dirs must land while such a service stays out of
+        # the way. Whatever happens, the paused state is restored first.
+        $paused = _PausePayloadForUpdate @($stageDir, $SharedBinDir)
+        try {
+            try { $exe = _InstallPortablePayload $path $stageDir $AppName }
+            catch {
+                Write-Host "$AppName install failed: $($_.Exception.Message)" -ForegroundColor Red
+                Remove-Item -LiteralPath $path -Force -ErrorAction SilentlyContinue
+                return $false
+            }
             Remove-Item -LiteralPath $path -Force -ErrorAction SilentlyContinue
-            return $false
+            if (-not $override) { $exe = _PromotePayloadExe $exe }
+            if ($oldPath -and $oldPath -ne $exe -and [System.IO.File]::Exists($oldPath)) {
+                Remove-Item -LiteralPath $oldPath -Force -ErrorAction SilentlyContinue
+            }
+            if (-not $override) {
+                Remove-Item -LiteralPath $stageDir -Recurse -Force -ErrorAction SilentlyContinue
+            }
+            _RegisterBinDir (Split-Path -Parent $exe)
+            _SetInstallState $App $LatestVersion $Asset.name $exe
+            Write-Host "Installed $AppName to $exe" -ForegroundColor Green
         }
-        Remove-Item -LiteralPath $path -Force -ErrorAction SilentlyContinue
-        if (-not $override) { $exe = _PromotePayloadExe $exe }
-        if ($oldPath -and $oldPath -ne $exe -and [System.IO.File]::Exists($oldPath)) {
-            Remove-Item -LiteralPath $oldPath -Force -ErrorAction SilentlyContinue
-        }
-        if (-not $override) {
-            Remove-Item -LiteralPath $stageDir -Recurse -Force -ErrorAction SilentlyContinue
-        }
-        _RegisterBinDir (Split-Path -Parent $exe)
-        _SetInstallState $App $LatestVersion $Asset.name $exe
-        Write-Host "Installed $AppName to $exe" -ForegroundColor Green
+        finally { _ResumePausedPayload $paused }
     }
 
     $autoPattern = _IsAutoPattern $App

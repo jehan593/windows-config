@@ -180,6 +180,16 @@ and configuration never install applications. Portable and archive payloads are
 replaced in place in the bin directory, and the state is recorded only after
 the payload is in place.
 
+Portable and archive payloads are updated even when a program is running from
+its dir. Services running a copy from the payload dir (a servy-managed
+wireproxy tunnel, say) are found by evidence - a running program whose binary
+is inside the payload dir - and stopped for the copy, then started again; only
+the ones actually stopped ever get restarted. Nothing is killed, and only
+start/stop is ever performed. When a program or a stopping service keeps a
+copy locked anyway, the running image is renamed to `<file>.ggold` and the
+update lands next to it - the running program keeps the old version until it
+restarts, and the parked copy is cleaned up on a later update once free.
+
 Config: `%LOCALAPPDATA%\windows-config-files\gitget\config.json`.
 Use `gitget backup` before making manual config changes.
 

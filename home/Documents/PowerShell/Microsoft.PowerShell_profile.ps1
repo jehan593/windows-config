@@ -4,7 +4,7 @@
 $ConfigPath = $env:WINDOWS_CONFIG_PATH
 . "$ConfigPath\helpers\dep-checker.ps1"
 
-$missingDeps = @(_TestDependencies -Commands "starship", "fzf", "git", "fd", "gsudo", "winget")
+$missingDeps = @(_TestDependencies -Commands "starship", "fzf", "git", "fd", "gsudo", "winget", "topgrade")
 if ($missingDeps.Count -gt 0)
 {
     foreach ($dep in $missingDeps) { Write-Host "$dep not found" -ForegroundColor Red }
@@ -577,14 +577,10 @@ function cup
 
 function upall
 {
-    # A running tunnel holds its binary open, so it is stopped for the update.
-    $tunnels = @(Get-Service -Name "*-wpm" -ErrorAction SilentlyContinue | Where-Object { $_.Status -eq "Running" })
-    if ($tunnels) {
-        wpm stop all
-    }
+    # A running wireproxy holds its binary open, so gitget stops the tunnels
+    # it hosts during the update itself and starts them back up after.
     Write-Host "`n>GitGet Update" -ForegroundColor Blue
     gitget update -All
-    if ($tunnels) { wpm start all }
 
     Write-Host "`n>Winget Updates" -ForegroundColor Blue
     winget source update
