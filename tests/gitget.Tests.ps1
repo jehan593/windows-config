@@ -170,6 +170,62 @@ $script:exitCode = 3010
 Assert (_InstallDownloadedAsset 'fake.msi') 'MSI reboot-required success reported failure'
 $script:exitCode = 1
 Assert (-not (_InstallDownloadedAsset 'fake.msix')) 'Failed MSIX install reported success'
+$script:exitCode = 0
+
+# MSI installs pin the install context to the one the existing copy uses,
+# and always ask msiexec for a verbose log next to the package.
+$script:installArgs = @()
+function Start-Process {
+    $idx = [array]::IndexOf($args, '-ArgumentList')
+    if ($idx -ge 0) { $script:installArgs = @($args[$idx + 1]) }
+    $proc = [pscustomobject]@{ ExitCode = $script:exitCode }
+    $proc | Add-Member -MemberType ScriptMethod -Name WaitForExit -Value { }
+    $proc
+}
+function _GetMsiInstallContext { 'machine' }
+Assert (_InstallDownloadedAsset 'fake.msi') 'Per-machine MSI install reported failure'
+Assert ($script:installArgs -contains 'ALLUSERS=1') 'MSI did not pin the per-machine context'
+Assert (($script:installArgs -contains '/l*v') -and (@($script:installArgs | Where-Object { $_ -match '^".*\.log"$' }).Count -gt 0)) 'MSI did not request a verbose log'
+function _GetMsiInstallContext { 'user' }
+Assert (_InstallDownloadedAsset 'fake.msi') 'Per-user MSI install reported failure'
+Assert (($script:installArgs -contains 'ALLUSERS=2') -and ($script:installArgs -contains 'MSIINSTALLPERUSER=1')) 'A per-user MSI was not kept per-user'
+Assert (-not ($script:installArgs -contains 'ALLUSERS=1')) 'A per-user MSI was forced per-machine'
+function _GetMsiInstallContext { $null }
+Assert (_InstallDownloadedAsset 'fake.msi') 'New-install MSI reported failure'
+Assert ($script:installArgs -contains 'ALLUSERS=1') 'New MSI install did not use the per-machine default'
+$script:exitCode = 3049
+Assert (-not (_InstallDownloadedAsset 'fake.msi')) 'Failed MSI install reported success'
+
+# The compressed form the Installer registry uses ties the UpgradeCode of a
+# package to the installed copies; both forms below were taken from the hive.
+Assert ((_SquishMsiGuid '{931A2CF0-2404-45EA-82F5-345735AE6A90}') -eq '0FC2A1394042AE54285F437553EAA609') 'Compressed product code form mismatch'
+Assert ((_SquishMsiGuid '{90160000-008C-0000-1000-0000000FF1CE}') -eq '00006109C80000000100000000F01FEC') 'Compressed GUID byte order mismatch'
+Assert (-not (_SquishMsiGuid 'not-a-guid')) 'A malformed GUID produced a compressed code'
+Assert (-not (_SquishMsiGuid $null)) 'A missing GUID produced a compressed code'
+
+# A retry reuses the kept download of a failed install when it is complete,
+# replaces a truncated one, and downloads fresh when nothing is here.
+$reuseDir = Join-Path $env:TEMP 'gitget-tests-reuse'
+New-Item -ItemType Directory -Force -Path $reuseDir | Out-Null
+$reuseName = 'app-1.0-x64.msi'
+$reuseFile = Join-Path $reuseDir $reuseName
+$reuseAsset = [pscustomobject]@{ name = $reuseName; size = 1000; browser_download_url = 'unused' }
+function Invoke-WebRequest { $script:webRequestRan = $true }
+$script:webRequestRan = $false
+Remove-Item $reuseFile -Force -ErrorAction SilentlyContinue
+Assert ((_SaveAsset $reuseAsset $reuseDir $null) -eq $reuseFile) 'Fresh download returned the wrong path'
+Assert $script:webRequestRan 'No download started for a missing file'
+
+$script:webRequestRan = $false
+[IO.File]::WriteAllBytes($reuseFile, [byte[]]::new(1000))
+Assert ((_SaveAsset $reuseAsset $reuseDir $null) -eq $reuseFile) 'Kept download was not reused'
+Assert (-not $script:webRequestRan) 'A complete kept download was fetched again'
+
+$script:webRequestRan = $false
+[IO.File]::WriteAllBytes($reuseFile, [byte[]]::new(500))
+Assert ((_SaveAsset $reuseAsset $reuseDir $null) -eq $reuseFile) 'Interrupted download was not replaced'
+Assert $script:webRequestRan 'A truncated kept download was not replaced'
+Remove-Item $reuseDir -Recurse -Force -ErrorAction SilentlyContinue
 
 # Update must not save the new version after failed installation.
 $script:app = App 'v'

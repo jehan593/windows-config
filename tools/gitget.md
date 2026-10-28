@@ -180,6 +180,15 @@ and configuration never install applications. Portable and archive payloads are
 replaced in place in the bin directory, and the state is recorded only after
 the payload is in place.
 
+A failed install keeps its downloaded package, and the next attempt reuses it
+instead of downloading again when the kept file already has the full released
+size; a truncated download is replaced. MSI installs read the package's
+upgrade code, resolve it to the copies already installed through the
+Installer registry, and pin the upgrade to the install context those copies
+use - per-machine for everyone, per-user for one account - because a context
+switch aborts the install with 1603. Every msiexec run also writes a verbose
+log next to the package, deleted on success and kept next to it on failure.
+
 Portable and archive payloads are updated even when a program is running from
 its dir. Services running a copy from the payload dir (a servy-managed
 wireproxy tunnel, say) are found by evidence - a running program whose binary
