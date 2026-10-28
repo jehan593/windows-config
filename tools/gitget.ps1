@@ -1027,6 +1027,19 @@ function _SelectAsset($Assets, $GlobPattern, [switch]$Interactive, [string]$Inst
 function _SaveAsset($Asset, $DestDir, $ProxyUrl) {
     New-Item -ItemType Directory -Force -Path $DestDir | Out-Null
     $destPath = Join-Path $DestDir $Asset.name
+
+    # A failed install keeps its downloaded package. When a retry comes
+    # around, a kept file that already has the full release asset size is
+    # the same download finished - use it instead of pulling it again. A
+    # truncated (interrupted) file has the wrong size and is replaced.
+    if ([System.IO.File]::Exists($destPath)) {
+        $localSize = (Get-Item -LiteralPath $destPath).Length
+        if ($localSize -eq $Asset.size) {
+            Write-Host "Already downloaded, reusing: $($Asset.name)"
+            return $destPath
+        }
+    }
+
     $sizeMb = [math]::Round($Asset.size / 1MB, 1)
     Write-Host "Downloading $($Asset.name) ($sizeMb MB)"
 
@@ -1112,6 +1125,77 @@ function _GetEffectivePattern($App) {
     return $App.pattern
 }
 
+function _SquishMsiGuid([string]$Guid) {
+    # Windows Installer's compressed GUID form, as used in the Installer
+    # registry keys: the first three fields are stored little-endian (their
+    # bytes reversed), Data4 keeps its byte order, and every byte has its
+    # nibbles swapped. Verified against live Installer\Products keys.
+    if (-not $Guid) { return $null }
+    $hex = ([string]$Guid).Trim().Trim('{}').Replace('-', '')
+    if ($hex -notmatch '^[0-9A-Fa-f]{32}$') { return $null }
+    $bytes = @()
+    for ($i = 0; $i -lt 16; $i++) { $bytes += $hex.Substring($i * 2, 2) }
+    # Byte order: Data1-Data3 reversed, Data4 (the last 8 bytes) in order.
+    $order = @(3, 2, 1, 0, 5, 4, 7, 6) + (8..15)
+    $out = ''
+    foreach ($idx in $order) { $out += "$($bytes[$idx][1])$($bytes[$idx][0])" }
+    return $out
+}
+
+function _ReadMsiProperty($Path, $Name) {
+    # A property read straight out of the MSI database. Nothing is executed.
+    $installer = $null
+    try {
+        $installer = New-Object -ComObject WindowsInstaller.Installer
+        $db = $installer.OpenDatabase([string]$Path, 0)
+        $view = $db.OpenView("SELECT Value FROM Property WHERE Property = '$Name'")
+        # A bare method call writes its return value to the pipeline - pin
+        # Execute down or the function returns the value twice over.
+        $null = $view.Execute()
+        $record = $view.Fetch()
+        if (-not $record) { return $null }
+        return [string]$record.StringData(1)
+    }
+    catch { return $null }
+    finally {
+        if ($installer) { $null = [Runtime.InteropServices.Marshal]::ReleaseComObject($installer) }
+    }
+}
+
+function _GetMsiInstallContext($Path) {
+    # How the product line inside this package is installed right now:
+    # 'machine' when a copy is installed for everyone, 'user' when only for
+    # this account, $null when nothing of it is here. The ProductCode changes
+    # between versions, so the connection runs through the UpgradeCode: 
+    # Installer\UpgradeCodes\<cod> lists the compressed code of every related
+    # installed copy, and its UserData subkey tells the context - S-1-5-18 is
+    # the machine account, a user SID an account-scoped install. Reading this
+    # needs no elevation and runs nothing.
+    $code = _ReadMsiProperty $Path 'UpgradeCode'
+    if (-not $code) { return $null }
+    $squished = _SquishMsiGuid $code
+    if (-not $squished) { return $null }
+    foreach ($root in @(
+        "HKLM:\SOFTWARE\Classes\Installer\UpgradeCodes\$squished"
+        "HKLM:\SOFTWARE\Classes\WOW6432Node\Installer\UpgradeCodes\$squished"
+    )) {
+        $item = Get-Item -LiteralPath $root -ErrorAction SilentlyContinue
+        if (-not $item) { continue }
+        # The related installed copies are the values, named by their
+        # compressed product code.
+        $products = @($item.GetValueNames() | Where-Object { $_ -match '^[0-9A-Fa-f]{32}$' })
+        foreach ($squishedProduct in $products) {
+            if (Test-Path "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Installer\UserData\S-1-5-18\Products\$squishedProduct") {
+                return 'machine'
+            }
+            if (Test-Path "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Installer\UserData\*\Products\$squishedProduct") {
+                return 'user'
+            }
+        }
+    }
+    return $null
+}
+
 function _InstallDownloadedAsset($Path) {
     $leaf = Split-Path -Leaf $Path
     $ext  = [System.IO.Path]::GetExtension($Path).ToLower()
@@ -1120,19 +1204,41 @@ function _InstallDownloadedAsset($Path) {
         ".msi" {
             Write-Host "Installing (msiexec): $leaf"
             try {
-                # ALLUSERS=1 pins a per-machine install. Without it an MSI can
-                # pick another install context than the copy already on the
-                # machine, and Windows Installer aborts the upgrade with 1603
-                # ("already installed for everyone - pass ALLUSERS=1").
-                $proc = Start-Process -FilePath "msiexec.exe" -ArgumentList "/i", "`"$Path`"", "/passive", "/norestart", "ALLUSERS=1" -Verb RunAs -PassThru
+                # An install that changes the install context of the copy
+                # already on the machine aborts with 1603 (event 10005). Pin
+                # the context: products installed for everyone upgrade
+                # per-machine (ALLUSERS=1, the elevated default), products
+                # installed only for this account stay per-user
+                # (ALLUSERS=2 + MSIINSTALLPERUSER=1 survives elevation).
+                $context = _GetMsiInstallContext $Path
+                $contextArgs = if ($context -eq 'user') { @("ALLUSERS=2", "MSIINSTALLPERUSER=1") } else { @("ALLUSERS=1") }
+                # A verbose msiexec log next to the package: the reason a
+                # failed install matters is in it, not only the exit code.
+                $log = "$Path.log"
+                $proc = Start-Process -FilePath "msiexec.exe" -ArgumentList (@("/i", "`"$Path`"", "/passive", "/norestart", "/l*v", "`"$log`"") + $contextArgs) -Verb RunAs -PassThru
                 $proc.WaitForExit()
                 if ($proc.ExitCode -in @(0, 1641, 3010)) {
-                    Remove-Item -LiteralPath $Path -Force -ErrorAction SilentlyContinue
-                    Write-Host "Installed: $leaf" -ForegroundColor Green
+                    # The Installer service can still hold the package for a
+                    # moment after it reports success - retry the delete rather
+                    # than failing it.
+                    $files = @($Path, $log)
+                    $kept = { @($files | Where-Object { Test-Path -LiteralPath $_ }).Count -gt 0 }
+                    Remove-Item -LiteralPath $files -Force -ErrorAction SilentlyContinue
+                    $deadline = [DateTime]::UtcNow.AddSeconds(5)
+                    while ((& $kept) -and ([DateTime]::UtcNow -lt $deadline)) {
+                        Start-Sleep -Milliseconds 250
+                        Remove-Item -LiteralPath $files -Force -ErrorAction SilentlyContinue
+                    }
+                    if (& $kept) {
+                        Write-Host "Installed: $leaf (the package copy could not be deleted yet - a later update reuses or replaces it)" -ForegroundColor Green
+                    }
+                    else {
+                        Write-Host "Installed: $leaf" -ForegroundColor Green
+                    }
                     return $true
                 }
                 else {
-                    Write-Host "msiexec failed (code $($proc.ExitCode)); kept at $Path" -ForegroundColor Yellow
+                    Write-Host "msiexec failed (code $($proc.ExitCode)); kept at $Path - msiexec log: $log" -ForegroundColor Yellow
                 }
             }
             catch {
