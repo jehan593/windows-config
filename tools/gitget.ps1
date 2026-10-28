@@ -1120,7 +1120,11 @@ function _InstallDownloadedAsset($Path) {
         ".msi" {
             Write-Host "Installing (msiexec): $leaf"
             try {
-                $proc = Start-Process -FilePath "msiexec.exe" -ArgumentList "/i", "`"$Path`"", "/passive", "/norestart" -PassThru
+                # ALLUSERS=1 pins a per-machine install. Without it an MSI can
+                # pick another install context than the copy already on the
+                # machine, and Windows Installer aborts the upgrade with 1603
+                # ("already installed for everyone - pass ALLUSERS=1").
+                $proc = Start-Process -FilePath "msiexec.exe" -ArgumentList "/i", "`"$Path`"", "/passive", "/norestart", "ALLUSERS=1" -Verb RunAs -PassThru
                 $proc.WaitForExit()
                 if ($proc.ExitCode -in @(0, 1641, 3010)) {
                     Remove-Item -LiteralPath $Path -Force -ErrorAction SilentlyContinue
