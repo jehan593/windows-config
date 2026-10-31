@@ -4,7 +4,7 @@
 $ConfigPath = $env:WINDOWS_CONFIG_PATH
 . "$ConfigPath\helpers\dep-checker.ps1"
 
-$missingDeps = @(_TestDependencies -Commands "starship", "fzf", "git", "fd", "gsudo", "winget", "topgrade")
+$missingDeps = @(_TestDependencies -Commands "starship", "fzf", "git", "fd", "gsudo", "winget", "topgrade", "exiftool")
 if ($missingDeps.Count -gt 0)
 {
     foreach ($dep in $missingDeps) { Write-Host "$dep not found" -ForegroundColor Red }
@@ -180,6 +180,31 @@ function wage
     }
     catch {
         Write-Host "Failed: $_" -ForegroundColor Red
+    }
+}
+
+function cleanimg
+{
+    if (-not $args) { Write-Host "Usage: cleanimg <image>..." -ForegroundColor Yellow; return }
+
+    foreach ($img in $args)
+    {
+        $filePath = (Get-Item -LiteralPath $img -ErrorAction SilentlyContinue)?.FullName
+        if (-not $filePath) { Write-Host "Not found: $img" -ForegroundColor Red; continue }
+
+        # -q keeps exiftool silent on success; the exit code decides the result
+        # and its error text is shown on failure. A full path is passed rather
+        # than '$img' so leading-dash filenames can't be parsed as options.
+        $output = & exiftool -q -all= -overwrite_original $filePath 2>&1
+        if ($LASTEXITCODE -eq 0)
+        {
+            Write-Host "Cleaned metadata: $img" -ForegroundColor Green
+        }
+        else
+        {
+            Write-Host "Failed to clean: $img" -ForegroundColor Red
+            $output | ForEach-Object { Write-Host "  $_" -ForegroundColor DarkGray }
+        }
     }
 }
 
