@@ -1575,6 +1575,26 @@ function _UnregisterBinDir($BinDir) {
     }
 }
 
+function _Find7Zip {
+    # 7-Zip is only searched when a .7z asset actually needs unpacking. The
+    # installer does not add its directory to PATH, so fall back to the
+    # standard install roots and the registry path it records.
+    $sevenZip = Get-Command 7z.exe -ErrorAction SilentlyContinue
+    if ($sevenZip) { return $sevenZip.Source }
+
+    $candidates = @(
+        "$env:ProgramFiles\7-Zip\7z.exe"
+        "${env:ProgramFiles(x86)}\7-Zip\7z.exe"
+        "$env:LOCALAPPDATA\Programs\7-Zip\7z.exe"
+    )
+    foreach ($regKey in @("HKLM:\SOFTWARE\7-Zip", "HKLM:\SOFTWARE\WOW6432Node\7-Zip")) {
+        $installDir = (Get-ItemProperty $regKey -ErrorAction SilentlyContinue).Path64
+        if (-not $installDir) { $installDir = (Get-ItemProperty $regKey -ErrorAction SilentlyContinue).Path }
+        if ($installDir) { $candidates += (Join-Path $installDir "7z.exe") }
+    }
+    return @($candidates | Where-Object { $_ -and (Test-Path -LiteralPath $_) } | Select-Object -First 1)
+}
+
 function _ExpandPayloadArchive($Path, $DestDir) {
     $name = (Split-Path -Leaf $Path).ToLower()
     New-Item -ItemType Directory -Force -Path $DestDir | Out-Null
@@ -1588,9 +1608,9 @@ function _ExpandPayloadArchive($Path, $DestDir) {
         return
     }
     if ($name -match '\.7z$') {
-        $sevenZip = Get-Command 7z.exe -ErrorAction SilentlyContinue
+        $sevenZip = _Find7Zip
         if (-not $sevenZip) { throw "7-Zip is required to unpack .7z assets (winget install 7zip)" }
-        & $sevenZip.Source x -y "-o$DestDir" $Path | Out-Null
+        & $sevenZip x -y "-o$DestDir" $Path | Out-Null
         if ($LASTEXITCODE -ne 0) { throw "7-Zip extraction failed (exit code $LASTEXITCODE)" }
         return
     }
