@@ -60,8 +60,8 @@ cannot drift. Archives are unpacked into a per-app staging dir
 program placed into the shared bin dir is the one matching the app name, the
 only program in the archive, or the largest program in it. `.dll` files sitting
 next to the staged program go along so programs that load them still run.
-`.7z` needs 7-Zip (`winget install 7zip`); every other archive uses built-in
-tooling.
+`.7z` needs 7-Zip (`winget install 7zip`), found on PATH or at its standard
+install location; every other archive uses built-in tooling.
 
 A release that ships one build per platform (topgrade ships ten) only offers
 the Windows one: assets naming another platform (`linux`, `darwin`, `freebsd`,
