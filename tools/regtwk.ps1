@@ -43,22 +43,12 @@ function _Tweak_RemoveGitContextMenu
     } -args (,$paths)
 }
 
-function _Tweak_WindowsUpdateRecommended
+function _Tweak_WindowsUpdateReboots
 {
-    Write-Host "`n02. Set Windows Update to Recommended Settings" -ForegroundColor Blue
+    Write-Host "`n02. Disable Windows Update Auto Reboots" -ForegroundColor Blue
 
     gsudo {
         try{
-        # New-Item -Force on an existing key wipes its values/subkeys - only use on new keys.
-        if (-not (Test-Path "HKLM:\SOFTWARE\Microsoft\WindowsUpdate\UX\Settings")) {
-            New-Item -Path "HKLM:\SOFTWARE\Microsoft\WindowsUpdate\UX\Settings" -Force | Out-Null
-        }
-        Set-ItemProperty -Path "HKLM:\SOFTWARE\Microsoft\WindowsUpdate\UX\Settings" -Name "BranchReadinessLevel"            -Value 20  -Type DWord -Force -ErrorAction Stop
-        Set-ItemProperty -Path "HKLM:\SOFTWARE\Microsoft\WindowsUpdate\UX\Settings" -Name "DeferFeatureUpdatesPeriodInDays" -Value 365 -Type DWord -Force -ErrorAction Stop
-        Write-Host "Feature updates delayed by 365 days." -ForegroundColor Green
-        Set-ItemProperty -Path "HKLM:\SOFTWARE\Microsoft\WindowsUpdate\UX\Settings" -Name "DeferQualityUpdatesPeriodInDays" -Value 4   -Type DWord -Force -ErrorAction Stop
-        Write-Host "Quality updates delayed by 4 days." -ForegroundColor Green
-
         if (-not (Test-Path "HKLM:\SOFTWARE\Policies\Microsoft\Windows\WindowsUpdate\AU")) {
             New-Item -Path "HKLM:\SOFTWARE\Policies\Microsoft\Windows\WindowsUpdate\AU" -Force | Out-Null
         }
@@ -148,7 +138,7 @@ function _Tweak_OpenWithOpenCode
 # ==============================================================================
 $tweaks = @(
     "01  Remove Git GUI & Bash Here from Context Menu"
-    "02  Set Windows Update to Recommended Settings"
+    "02  Disable Windows Update Auto Reboots"
     "03  Add 'Edit with Neovim' to File Context Menu"
     "04  Add 'Open with Opencode' to Folder Context Menu"
 )
@@ -163,7 +153,7 @@ foreach ($item in $selected)
     switch -Regex ($item)
     {
         "^01" { _Tweak_RemoveGitContextMenu }
-        "^02" { _Tweak_WindowsUpdateRecommended }
+        "^02" { _Tweak_WindowsUpdateReboots }
         "^03" { _Tweak_EditWithNeovim }
         "^04" { _Tweak_OpenWithOpenCode }
     }
