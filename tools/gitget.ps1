@@ -2392,6 +2392,13 @@ function _Update {
         $picked
     }
 
+    Write-Host ""
+    Write-Host "Selected to update:" -ForegroundColor Yellow
+    $toUpdate | ForEach-Object {
+        $cur = if ($_.app.current_version) { $_.app.current_version } else { "?" }
+        Write-Host "-> $($_.appName) ($cur -> $($_.latest))"
+    }
+
     foreach ($item in $toUpdate) {
         Write-Host ""
         $appName = $item.appName
@@ -2471,6 +2478,10 @@ function _Install {
         }
         $picked
     }
+
+    Write-Host ""
+    Write-Host "Selected to install:" -ForegroundColor Yellow
+    $toInstall | ForEach-Object { Write-Host "-> $($_.appName)" }
 
     foreach ($item in $toInstall) {
         Write-Host ""
