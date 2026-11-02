@@ -46,9 +46,35 @@ Write-Host "`n>PowerShell Modules" -ForegroundColor Blue
 
 foreach ($module in (Get-PsModules))
 {
+    Write-Host "`n--- $module ---" -ForegroundColor DarkGray
+
+    $installed = Get-Module -ListAvailable -Name $module | Sort-Object Version -Descending | Select-Object -First 1
+
+    if ($installed)
+    {
+        try
+        {
+            $latest = Find-Module -Name $module -ErrorAction Stop
+            if ($latest.Version -gt $installed.Version)
+            {
+                Write-Host "Updating: $module (v$($installed.Version) -> v$($latest.Version))" -ForegroundColor Yellow
+                Update-Module -Name $module -Force -ErrorAction Stop
+                Write-Host "Updated: $module to v$($latest.Version)" -ForegroundColor Green
+            }
+            else
+            {
+                Write-Host "Already installed and up to date: $module (v$($installed.Version))" -ForegroundColor Green
+            }
+        }
+        catch
+        {
+            Write-Host "Could not check for updates ($($_.Exception.Message)). Keeping installed v$($installed.Version)." -ForegroundColor Yellow
+        }
+        continue
+    }
+
     try
     {
-        Write-Host "`n--- $module ---" -ForegroundColor DarkGray
         Install-Module -Name $module -Force -Scope CurrentUser -AllowClobber -AcceptLicense -SkipPublisherCheck -ErrorAction Stop
         Write-Host "Installed: $module" -ForegroundColor Green
     }
