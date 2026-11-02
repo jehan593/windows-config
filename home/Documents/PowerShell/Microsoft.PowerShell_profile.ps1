@@ -87,6 +87,11 @@ function _WingetUpgradeIds
     }
 }
 
+function _WingetUpgradePackages
+{
+    @(Get-WinGetPackage -Source winget | Where-Object { $_.IsUpdateAvailable })
+}
+
 # ==============================================================================
 # 4. PROFILE MANAGEMENT
 # ==============================================================================
@@ -431,7 +436,13 @@ function upp
 
     Write-Host ""
     Write-Host "Selected to update:" -ForegroundColor Yellow
-    $ids | ForEach-Object { Write-Host "-> $_" }
+    foreach ($id in $ids)
+    {
+        $pkg = $updates | Where-Object { $_.Id -eq $id } | Select-Object -First 1
+        $cur = if ($pkg -and $pkg.InstalledVersion) { $pkg.InstalledVersion } else { "?" }
+        $new = if ($pkg -and $pkg.AvailableVersions -and $pkg.AvailableVersions.Count -gt 0) { $pkg.AvailableVersions[0] } else { "?" }
+        Write-Host "-> $id ($cur -> $new)"
+    }
 
     _WingetAction -Verb "upgrade" -Ids $ids
 }
@@ -526,11 +537,14 @@ function cup
     gitget check
 
     Write-Host "`n>Winget" -ForegroundColor Blue
-    $ids = @(_WingetUpgradeIds)
-    if ($ids.Count -gt 0) {
-        $ids | ForEach-Object { Write-Host "$_" -ForegroundColor Yellow }
+    $packages = @(_WingetUpgradePackages)
+    if ($packages.Count -gt 0) {
+        foreach ($p in $packages) {
+            $new = if ($p.AvailableVersions -and $p.AvailableVersions.Count -gt 0) { $p.AvailableVersions[0] } else { "?" }
+            Write-Host "-> $($p.Id) ($($p.InstalledVersion) -> $new)" -ForegroundColor Yellow
+        }
         Write-Host ""
-        Write-Host "$($ids.Count) update(s) available" -ForegroundColor Yellow
+        Write-Host "$($packages.Count) update(s) available" -ForegroundColor Yellow
     } else {
         Write-Host "Up to date" -ForegroundColor Green
     }
