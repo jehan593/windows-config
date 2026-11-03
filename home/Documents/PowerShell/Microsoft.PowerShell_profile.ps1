@@ -388,28 +388,11 @@ function inst
     if (-not (Test-Path $cacheFile) -or (Get-Item $cacheFile).LastWriteTime -lt (Get-Date).AddDays(-7))
     {
         Write-Host "Fetching package list..." -ForegroundColor Gray
-        # Second column: latest version in the catalog, shown as id [version].
-        Find-WinGetPackage -Source winget | ForEach-Object {
-            $ver = if ($_.AvailableVersions -and $_.AvailableVersions.Count -gt 0) { $_.AvailableVersions[0] } else { "?" }
-            "$($_.Id)`t$ver"
-        } | Set-Content $cacheFile
+        Find-WinGetPackage -Source winget | ForEach-Object { $_.Id } | Set-Content $cacheFile
     }
 
-    # Versioned cache ("id<tab>version"). A tab-less line belongs to a cache
-    # written before versions were stored - run 'inst -Refresh' for those.
-    $cacheLines = @(Get-Content $cacheFile)
-    $verCache   = $cacheLines.Count -gt 0 -and $cacheLines[0].Contains("`t")
-    $cacheIds   = $cacheLines | ForEach-Object { $_.Split("`t")[0] }
-
-    if ($verCache)
-    {
-        $cacheVers = @($cacheLines | ForEach-Object { $_.Split("`t")[1] })
-        $ids = _FzfWingetPicker -Ids $cacheIds -Versions $cacheVers -Header "[Ctrl-P]: Preview Info | [Tab]: Multi-select"
-    }
-    else
-    {
-        $ids = _FzfWingetPicker -Ids $cacheIds -Header "[Ctrl-P]: Preview Info | [Tab]: Multi-select"
-    }
+    $cacheIds = Get-Content $cacheFile
+    $ids = _FzfWingetPicker -Ids $cacheIds -Header "[Ctrl-P]: Preview Info | [Tab]: Multi-select"
     if (-not $ids.Count) { return }
 
     Write-Host ""
