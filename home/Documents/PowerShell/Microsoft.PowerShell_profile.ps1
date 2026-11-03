@@ -365,17 +365,18 @@ function _FzfWingetPicker
         "--bind", "ctrl-p:toggle-preview"
     )
 
-    # With versions, each line is "id<tab>version". The tab drives both the
-    # column alignment and the preview, which then reads the id as field {1}.
+    # With versions, each line is "id [version]" - ids padded so the brackets
+    # line up as one column. fzf's default whitespace splitting keeps the id
+    # as field {1} for the preview.
     if ($Versions)
     {
         $pad = ($Ids | ForEach-Object { $_.Length } | Measure-Object -Maximum).Maximum
         $lines = for ($i = 0; $i -lt $Ids.Count; $i++)
         {
-            $ver = if ($Versions -and $i -lt $Versions.Count -and $Versions[$i]) { $Versions[$i] } else { "-" }
-            "{0}`t{1}" -f $Ids[$i].PadRight($pad), $ver
+            $ver = if ($i -lt $Versions.Count -and $Versions[$i]) { "[$($Versions[$i])]" } else { "[?]" }
+            "{0} {1}" -f $Ids[$i].PadRight($pad + 1), $ver
         }
-        $fzfArgs += @("--delimiter", "`t", "--preview", "winget show --id {1}")
+        $fzfArgs += @("--preview", "winget show --id {1}")
     }
     else
     {
@@ -387,7 +388,12 @@ function _FzfWingetPicker
 
     $selected = $lines | fzf @fzfArgs
     return @($selected | ForEach-Object {
-        if ($Versions) { ($_ -split "`t")[0].Trim() } else { $_.Trim() }
+        if ($Versions)
+        {
+            $pos = $_.IndexOf(" [")
+            if ($pos -ge 0) { $_.Substring(0, $pos).Trim() } else { $_.Trim() }
+        }
+        else { $_.Trim() }
     } | Where-Object { $_ })
 }
 
@@ -409,11 +415,28 @@ function inst
     if (-not (Test-Path $cacheFile) -or (Get-Item $cacheFile).LastWriteTime -lt (Get-Date).AddDays(-7))
     {
         Write-Host "Fetching package list..." -ForegroundColor Gray
-        Find-WinGetPackage -Source winget | ForEach-Object { $_.Id } | Set-Content $cacheFile
+        # Second column: latest version in the catalog, shown as id [version].
+        Find-WinGetPackage -Source winget | ForEach-Object {
+            $ver = if ($_.AvailableVersions -and $_.AvailableVersions.Count -gt 0) { $_.AvailableVersions[0] } else { "?" }
+            "$($_.Id)`t$ver"
+        } | Set-Content $cacheFile
     }
 
-    $cacheIds = Get-Content $cacheFile
-    $ids = _FzfWingetPicker -Ids $cacheIds -Header "[Ctrl-P]: Preview Info | [Tab]: Multi-select"
+    # Versioned cache ("id<tab>version"). A tab-less line belongs to a cache
+    # written before versions were stored - run 'inst -Refresh' for those.
+    $cacheLines = @(Get-Content $cacheFile)
+    $verCache   = $cacheLines.Count -gt 0 -and $cacheLines[0].Contains("`t")
+    $cacheIds   = $cacheLines | ForEach-Object { $_.Split("`t")[0] }
+
+    if ($verCache)
+    {
+        $cacheVers = @($cacheLines | ForEach-Object { $_.Split("`t")[1] })
+        $ids = _FzfWingetPicker -Ids $cacheIds -Versions $cacheVers -Header "[Ctrl-P]: Preview Info | [Tab]: Multi-select"
+    }
+    else
+    {
+        $ids = _FzfWingetPicker -Ids $cacheIds -Header "[Ctrl-P]: Preview Info | [Tab]: Multi-select"
+    }
     if (-not $ids.Count) { return }
 
     Write-Host ""
