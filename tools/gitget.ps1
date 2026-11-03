@@ -2215,7 +2215,7 @@ function _WriteCheckErrors {
     }
 }
 
-function _CheckOne($appName, $app, $ProxyUrl, [switch]$Force) {
+function _CheckOne($appName, $app, $ProxyUrl, [switch]$Force, [switch]$Quiet) {
     try {
         $release = _GetTrackedRelease $appName $app $ProxyUrl -Force:$Force
         $latestVersion = _ExtractConfiguredVersion $release.tag_name $app.release_version_regex
@@ -2251,7 +2251,9 @@ function _CheckOne($appName, $app, $ProxyUrl, [switch]$Force) {
             }
         }
         $asset = _SelectAsset $release.assets (_GetEffectivePattern $app) -InstallType (_GetInstallType $app) -PreviousName $app.current_asset
-        if ($hasUpdate) {
+        # The update flow prints its own full summary after the scan - the
+        # inline discovery lines would only repeat it.
+        if ($hasUpdate -and -not $Quiet) {
             Write-Host "-> $appName " -ForegroundColor Yellow -NoNewline
             Write-Host "[$current -> $latestVersion]" -ForegroundColor White
         }
@@ -2333,7 +2335,7 @@ function _Update {
         $appName = $prop.Name
         $app = $prop.Value
 
-        $result = _CheckOne $appName $app $proxyUrl -Force:$Force
+        $result = _CheckOne $appName $app $proxyUrl -Force:$Force -Quiet
         if ($null -eq $result) {
             $errorCount++
             continue
