@@ -2251,7 +2251,10 @@ function _CheckOne($appName, $app, $ProxyUrl, [switch]$Force) {
             }
         }
         $asset = _SelectAsset $release.assets (_GetEffectivePattern $app) -InstallType (_GetInstallType $app) -PreviousName $app.current_asset
-        if ($hasUpdate) { Write-Host "-> $appName ($current -> $latestVersion)" -ForegroundColor Yellow }
+        if ($hasUpdate) {
+            Write-Host "-> $appName " -ForegroundColor Yellow -NoNewline
+            Write-Host "[$current -> $latestVersion]" -ForegroundColor White
+        }
         return [PSCustomObject]@{
             release = $release; asset = $asset; hasUpdate = $hasUpdate
             configChanged = [bool]$configChanged; verified = $verified
@@ -2396,7 +2399,8 @@ function _Update {
     Write-Host "Selected to update:" -ForegroundColor Yellow
     $toUpdate | ForEach-Object {
         $cur = if ($_.app.current_version) { $_.app.current_version } else { "?" }
-        Write-Host "-> $($_.appName) ($cur -> $($_.latest))"
+        Write-Host "-> $($_.appName) " -ForegroundColor Yellow -NoNewline
+        Write-Host "[$cur -> $($_.latest)]" -ForegroundColor White
     }
 
     foreach ($item in $toUpdate) {
