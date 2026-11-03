@@ -359,10 +359,23 @@ function _FzfWingetPicker
     $fzfArgs = @(
         "--multi", "--reverse",
         "--header", $Header,
-        "--preview", "winget show --id {}",
         "--preview-window", "right:60%:hidden",
         "--bind", "ctrl-p:toggle-preview"
     )
+
+    # Preview through the cached resolver when it is available - the ids are
+    # winget-only, so lookups stay fast and never touch the dead msstore
+    # endpoint. Fall back to a bare source-pinned lookup otherwise.
+    $previewScript = "$env:WINDOWS_CONFIG_PATH\tools\fzf-winget-preview.ps1"
+    if ($env:WINDOWS_CONFIG_PATH -and (Test-Path $previewScript))
+    {
+        $fzfArgs += @("--preview", "powershell -NoProfile -ExecutionPolicy Bypass -File $previewScript {}")
+    }
+    else
+    {
+        $fzfArgs += @("--preview", "winget show --id {} -s winget --exact --accept-source-agreements --disable-interactivity")
+    }
+
     if ($Height) { $fzfArgs += @("--height", $Height) }
     if ($Prompt) { $fzfArgs += @("--prompt", $Prompt) }
 
@@ -404,7 +417,9 @@ function inst
 
 function uinst
 {
-    $allIds = Get-WinGetPackage | Select-Object -ExpandProperty Id
+    # Winget apps only - msstore previews hang ~43 s because the store
+    # endpoint does not answer on this network.
+    $allIds = Get-WinGetPackage -Source winget | Select-Object -ExpandProperty Id
     $ids = _FzfWingetPicker -Ids $allIds -Header "[Ctrl-P]: Preview Info | [Tab]: Multi-select | [Ctrl-A]: Toggle All"
     if (-not $ids.Count) { return }
 
