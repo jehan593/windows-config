@@ -353,8 +353,7 @@ function _FzfWingetPicker
         [Parameter(Mandatory)][string[]]$Ids,
         [Parameter(Mandatory)][string]$Header,
         [string]$Height,
-        [string]$Prompt,
-        [string[]]$Versions
+        [string]$Prompt
     )
 
     $fzfArgs = @(
@@ -364,37 +363,11 @@ function _FzfWingetPicker
         "--preview-window", "right:60%:hidden",
         "--bind", "ctrl-p:toggle-preview"
     )
-
-    # With versions, each line is "id [version]" - ids padded so the brackets
-    # line up as one column. fzf's default whitespace splitting keeps the id
-    # as field {1} for the preview.
-    if ($Versions)
-    {
-        $pad = ($Ids | ForEach-Object { $_.Length } | Measure-Object -Maximum).Maximum
-        $lines = for ($i = 0; $i -lt $Ids.Count; $i++)
-        {
-            $ver = if ($i -lt $Versions.Count -and $Versions[$i]) { "[$($Versions[$i])]" } else { "[?]" }
-            "{0} {1}" -f $Ids[$i].PadRight($pad + 1), $ver
-        }
-        $fzfArgs += @("--preview", "winget show --id {1}")
-    }
-    else
-    {
-        $lines = $Ids
-    }
-
     if ($Height) { $fzfArgs += @("--height", $Height) }
     if ($Prompt) { $fzfArgs += @("--prompt", $Prompt) }
 
-    $selected = $lines | fzf @fzfArgs
-    return @($selected | ForEach-Object {
-        if ($Versions)
-        {
-            $pos = $_.IndexOf(" [")
-            if ($pos -ge 0) { $_.Substring(0, $pos).Trim() } else { $_.Trim() }
-        }
-        else { $_.Trim() }
-    } | Where-Object { $_ })
+    $selected = $Ids | fzf @fzfArgs
+    return @($selected | ForEach-Object { $_.Trim() } | Where-Object { $_ })
 }
 
 function inst
@@ -448,10 +421,8 @@ function inst
 
 function uinst
 {
-    $packages = @(Get-WinGetPackage)
-    $allIds  = $packages | ForEach-Object { $_.Id }
-    $allVers = $packages | ForEach-Object { $_.InstalledVersion }
-    $ids = _FzfWingetPicker -Ids $allIds -Versions $allVers -Header "[Ctrl-P]: Preview Info | [Tab]: Multi-select | [Ctrl-A]: Toggle All"
+    $allIds = Get-WinGetPackage | Select-Object -ExpandProperty Id
+    $ids = _FzfWingetPicker -Ids $allIds -Header "[Ctrl-P]: Preview Info | [Tab]: Multi-select | [Ctrl-A]: Toggle All"
     if (-not $ids.Count) { return }
 
     Write-Host ""
