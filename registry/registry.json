@@ -17,7 +17,6 @@
         { "name": "BravePlaylistEnabled", "type": "DWord", "value": 0 },
         { "name": "ShoppingListEnabled", "type": "DWord", "value": 0 },
         { "name": "MetricsReportingEnabled", "type": "DWord", "value": 0 },
-        { "name": "SafeBrowsingExtendedReportingEnabled", "type": "DWord", "value": 0 },
         { "name": "UrlKeyedAnonymizedDataCollectionEnabled", "type": "DWord", "value": 0 },
         { "name": "FeedbackSurveysEnabled", "type": "DWord", "value": 0 },
         { "name": "UserFeedbackAllowed", "type": "DWord", "value": 0 },
@@ -61,7 +60,6 @@
       "values": [
         { "name": "FeedbackSurveysEnabled", "type": "DWord", "value": 0 },
         { "name": "UserFeedbackAllowed", "type": "DWord", "value": 0 },
-        { "name": "SafeBrowsingExtendedReportingEnabled", "type": "DWord", "value": 0 },
         { "name": "SafeBrowsingSurveysEnabled", "type": "DWord", "value": 0 },
         { "name": "ShoppingListEnabled", "type": "DWord", "value": 0 },
         { "name": "PromotionsEnabled", "type": "DWord", "value": 0 }
