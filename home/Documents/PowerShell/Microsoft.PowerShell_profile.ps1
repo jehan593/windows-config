@@ -353,7 +353,8 @@ function _FzfWingetPicker
         [Parameter(Mandatory)][string[]]$Ids,
         [Parameter(Mandatory)][string]$Header,
         [string]$Height,
-        [string]$Prompt
+        [string]$Prompt,
+        [string[]]$Versions
     )
 
     $fzfArgs = @(
@@ -363,11 +364,31 @@ function _FzfWingetPicker
         "--preview-window", "right:60%:hidden",
         "--bind", "ctrl-p:toggle-preview"
     )
+
+    # With versions, each line is "id<tab>version". The tab drives both the
+    # column alignment and the preview, which then reads the id as field {1}.
+    if ($Versions)
+    {
+        $pad = ($Ids | ForEach-Object { $_.Length } | Measure-Object -Maximum).Maximum
+        $lines = for ($i = 0; $i -lt $Ids.Count; $i++)
+        {
+            $ver = if ($Versions -and $i -lt $Versions.Count -and $Versions[$i]) { $Versions[$i] } else { "-" }
+            "{0}`t{1}" -f $Ids[$i].PadRight($pad), $ver
+        }
+        $fzfArgs += @("--delimiter", "`t", "--preview", "winget show --id {1}")
+    }
+    else
+    {
+        $lines = $Ids
+    }
+
     if ($Height) { $fzfArgs += @("--height", $Height) }
     if ($Prompt) { $fzfArgs += @("--prompt", $Prompt) }
 
-    $selected = $Ids | fzf @fzfArgs
-    return @($selected | ForEach-Object { $_.Trim() } | Where-Object { $_ })
+    $selected = $lines | fzf @fzfArgs
+    return @($selected | ForEach-Object {
+        if ($Versions) { ($_ -split "`t")[0].Trim() } else { $_.Trim() }
+    } | Where-Object { $_ })
 }
 
 function inst
@@ -404,8 +425,10 @@ function inst
 
 function uinst
 {
-    $allIds = Get-WinGetPackage | Select-Object -ExpandProperty Id
-    $ids = _FzfWingetPicker -Ids $allIds -Header "[Ctrl-P]: Preview Info | [Tab]: Multi-select | [Ctrl-A]: Toggle All"
+    $packages = @(Get-WinGetPackage)
+    $allIds  = $packages | ForEach-Object { $_.Id }
+    $allVers = $packages | ForEach-Object { $_.InstalledVersion }
+    $ids = _FzfWingetPicker -Ids $allIds -Versions $allVers -Header "[Ctrl-P]: Preview Info | [Tab]: Multi-select | [Ctrl-A]: Toggle All"
     if (-not $ids.Count) { return }
 
     Write-Host ""
