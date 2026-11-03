@@ -441,7 +441,8 @@ function upp
         $pkg = $updates | Where-Object { $_.Id -eq $id } | Select-Object -First 1
         $cur = if ($pkg -and $pkg.InstalledVersion) { $pkg.InstalledVersion } else { "?" }
         $new = if ($pkg -and $pkg.AvailableVersions -and $pkg.AvailableVersions.Count -gt 0) { $pkg.AvailableVersions[0] } else { "?" }
-        Write-Host "-> $id ($cur -> $new)"
+        Write-Host "-> $id " -ForegroundColor Yellow -NoNewline
+        Write-Host "[$cur -> $new]" -ForegroundColor White
     }
 
     _WingetAction -Verb "upgrade" -Ids $ids
@@ -541,7 +542,8 @@ function cup
     if ($packages.Count -gt 0) {
         foreach ($p in $packages) {
             $new = if ($p.AvailableVersions -and $p.AvailableVersions.Count -gt 0) { $p.AvailableVersions[0] } else { "?" }
-            Write-Host "-> $($p.Id) ($($p.InstalledVersion) -> $new)" -ForegroundColor Yellow
+            Write-Host "-> $($p.Id) " -ForegroundColor Yellow -NoNewline
+            Write-Host "[$($p.InstalledVersion) -> $new]" -ForegroundColor White
         }
         Write-Host ""
         Write-Host "$($packages.Count) update(s) available" -ForegroundColor Yellow
