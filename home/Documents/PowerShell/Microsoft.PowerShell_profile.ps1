@@ -417,13 +417,7 @@ function inst
 
 function uinst
 {
-    # Winget apps only - msstore previews hang ~43 s because the store
-    # endpoint does not answer on this network. ARP entries (Add/Remove
-    # Programs rows for locally registered installs, e.g. "{...}_is1") are
-    # not catalog packages, so their previews resolve to nothing.
-    $allIds = Get-WinGetPackage -Source winget |
-        Where-Object { $_.Id -notlike 'ARP\*' } |
-        Select-Object -ExpandProperty Id
+    $allIds = Get-WinGetPackage | Select-Object -ExpandProperty Id
     $ids = _FzfWingetPicker -Ids $allIds -Header "[Ctrl-P]: Preview Info | [Tab]: Multi-select | [Ctrl-A]: Toggle All"
     if (-not $ids.Count) { return }
 
