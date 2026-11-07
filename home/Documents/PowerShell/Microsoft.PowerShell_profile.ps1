@@ -201,14 +201,28 @@ function cleanimg
         # and its error text is shown on failure. A full path is passed rather
         # than '$img' so leading-dash filenames can't be parsed as options.
         $output = & exiftool -q -all= -overwrite_original $filePath 2>&1
-        if ($LASTEXITCODE -eq 0)
-        {
-            Write-Host "Cleaned metadata: $img" -ForegroundColor Green
-        }
-        else
+        if ($LASTEXITCODE -ne 0)
         {
             Write-Host "Failed to clean: $img" -ForegroundColor Red
             $output | ForEach-Object { Write-Host "  $_" -ForegroundColor DarkGray }
+            continue
+        }
+
+        Write-Host "Cleaned metadata: $img" -ForegroundColor Green
+
+        # Rename to a random 12-char alphanumeric name, keeping the extension.
+        $chars = ([char[]](48..57)) + ([char[]](65..90)) + ([char[]](97..122))
+        $newName = -join ($chars | Get-Random -Count 12)
+        try
+        {
+            $newPath = Join-Path (Split-Path $filePath -Parent) "$newName$([System.IO.Path]::GetExtension($filePath))"
+            if (Test-Path -LiteralPath $newPath) { throw "name collision: $newName" }
+            Rename-Item -LiteralPath $filePath -NewName "$newName$([System.IO.Path]::GetExtension($filePath))" -ErrorAction Stop
+            Write-Host "Renamed to: $newName" -ForegroundColor Green
+        }
+        catch
+        {
+            Write-Host "Rename failed: $($_.Exception.Message.Trim())" -ForegroundColor Red
         }
     }
 }
