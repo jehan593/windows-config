@@ -706,42 +706,45 @@ function upall
     Write-Host ""
     upp -all
 
-    # The remaining independent steps overlap while upp and the store run:
-    # each job dot-sources this profile (runspaces share no state) and
-    # captures its own output - 6>&1 also catches Write-Host, which would
-    # otherwise print through this very console. Text arrives when each
-    # section is reached, in the usual order, without the colors. upfont
-    # stays inline: its gsudo elevation prompt needs the real console. A
-    # job that could not run or failed falls back to the inline call.
+    # The remaining independent steps overlap while upp and the store run.
+    # Each job dot-sources this profile (runspaces share no state) and runs
+    # the step's silent compute half; when its section is reached the caller
+    # prints the result with full colors, in the usual order. upfont stays
+    # inline: its gsudo elevation prompt needs the real console. A job that
+    # could not run or failed falls back to the inline call, which computes
+    # and prints itself.
     $upfJob = $uprepJob = $upcJob = $null
     if (Get-Command Start-ThreadJob -ErrorAction SilentlyContinue)
     {
         $profPath = $PROFILE
-        $upfJob   = try { Start-ThreadJob { . "$using:profPath" -ErrorAction SilentlyContinue; upf 6>&1 | Out-String } } catch { $null }
-        $uprepJob = try { Start-ThreadJob { . "$using:profPath" -ErrorAction SilentlyContinue; uprep 6>&1 | Out-String } } catch { $null }
-        $upcJob   = try { Start-ThreadJob { . "$using:profPath" -ErrorAction SilentlyContinue; upc 6>&1 | Out-String } } catch { $null }
+        $upfJob   = try { Start-ThreadJob { . "$using:profPath" -ErrorAction SilentlyContinue; _UpfCompute } } catch { $null }
+        $uprepJob = try { Start-ThreadJob { . "$using:profPath" -ErrorAction SilentlyContinue; _UrepCompute } } catch { $null }
+        $upcJob   = try { Start-ThreadJob { . "$using:profPath" -ErrorAction SilentlyContinue; _UpcCompute } } catch { $null }
     }
 
-    function _PrintCaptured($Job)
+    function _ReceiveSection($Job)
     {
-        # Returns $true when the job produced its section; otherwise the
-        # caller runs the step inline.
-        if (-not $Job) { return $false }
-        $text = $null
-        if ($Job.State -eq 'Completed') { $text = @(Receive-Job $Job -ErrorAction SilentlyContinue) -join '' }
+        # Waits for the job so a slow step is never double-run; a failed or
+        # missing job yields $null and the caller falls back inline.
+        if (-not $Job) { return $null }
+        $r = $null
+        try { $r = @(Receive-Job $Job -Wait -ErrorAction Stop) | Select-Object -First 1 } catch { $r = $null }
         Remove-Job $Job -Force -ErrorAction SilentlyContinue
-        if ($text) { Write-Host $text -NoNewline; return $true }
-        return $false
+        return $r
     }
 
-    if (-not (_PrintCaptured $upfJob)) { upf }
+    $upfResult = _ReceiveSection $upfJob
+    if ($upfResult) { upf -Precomputed $upfResult } else { upf }
 
     ups
 
     upfont
 
-    if (-not (_PrintCaptured $uprepJob)) { uprep }
-    if (-not (_PrintCaptured $upcJob)) { upc }
+    $uprepResult = _ReceiveSection $uprepJob
+    if ($uprepResult) { uprep -Precomputed $uprepResult } else { uprep }
+
+    $upcResult = _ReceiveSection $upcJob
+    if ($upcResult) { upc -Precomputed $upcResult } else { upc }
 }
 
 function ups
@@ -750,47 +753,64 @@ function ups
     store updates --apply
 }
 
+# Does the betterfox work silently and returns per-profile outcomes - upf
+# prints them standalone, and upall's background job returns them so the
+# caller can print with full colors.
+function _UpfCompute
+{
+    $profilesPath = "$env:APPDATA\Mozilla\Firefox\Profiles"
+    $profiles = @(Get-ChildItem $profilesPath -Directory -ErrorAction SilentlyContinue)
+    if ($profiles.Count -eq 0) { return @{ Status = 'none' } }
+
+    # One fetch serves both the content and its hash - _GetBetterfoxHash
+    # would download and process the same user.js a second time.
+    $content = _GetBetterfoxUserJs
+    $newHash = _GetSha256 $content
+
+    $results = [System.Collections.Generic.List[pscustomobject]]::new()
+    $current = 0
+    foreach ($prof in $profiles)
+    {
+        $jsPath = Join-Path $prof.FullName "user.js"
+        if ((Test-Path $jsPath) -and ((_GetSha256 ((Get-Content $jsPath -Raw) -replace "`r`n", "`n").TrimEnd()) -eq $newHash))
+        { $current++; continue }
+
+        $outcome = 'updated'
+        try
+        {
+            [System.IO.File]::WriteAllText($jsPath, $content, (New-Object System.Text.UTF8Encoding($false)))
+        }
+        catch
+        {
+            $outcome = 'failed'
+        }
+        $results.Add([pscustomobject]@{ Name = $prof.Name; Outcome = $outcome })
+    }
+    return @{ Status = 'ok'; Results = @($results); Current = $current }
+}
+
 function upf
 {
+    param([hashtable]$Precomputed)
+
     Write-Host "`n>Betterfox - Firefox user.js Update" -ForegroundColor Blue
     try
     {
-        $profilesPath = "$env:APPDATA\Mozilla\Firefox\Profiles"
-        $profiles = Get-ChildItem $profilesPath -Directory -ErrorAction SilentlyContinue
-        if ($profiles.Count -eq 0)
+        $r = if ($Precomputed) { $Precomputed } else { _UpfCompute }
+        if ($r.Status -eq 'none')
         { Write-Host "No Firefox profiles found" -ForegroundColor Red; return }
 
-        # One fetch serves both the content and its hash - _GetBetterfoxHash
-        # would download and process the same user.js a second time.
-        $content  = _GetBetterfoxUserJs
-        $newHash  = _GetSha256 $content
-
-        $updated = 0; $current = 0; $failed = 0
-        foreach ($prof in $profiles)
+        $updated = 0; $failed = 0
+        foreach ($res in @($r.Results))
         {
-            $jsPath = Join-Path $prof.FullName "user.js"
-            if ((Test-Path $jsPath) -and ((_GetSha256 ((Get-Content $jsPath -Raw) -replace "`r`n", "`n").TrimEnd()) -eq $newHash))
-            { $current++; continue }
-
-            try
-            {
-                [System.IO.File]::WriteAllText($jsPath, $content, (New-Object System.Text.UTF8Encoding($false)))
-                Write-Host "Updated profile: $($prof.Name)" -ForegroundColor Green
-                $updated++
-            }
-            catch
-            {
-                Write-Host "Failed profile: $($prof.Name)" -ForegroundColor Red
-                $failed++
-            }
+            if ($res.Outcome -eq 'updated')
+            { Write-Host "Updated profile: $($res.Name)" -ForegroundColor Green; $updated++ }
+            else
+            { Write-Host "Failed profile: $($res.Name)" -ForegroundColor Red; $failed++ }
         }
 
-        $total = $updated + $current + $failed
-        if ($total -eq 0)
-        { Write-Host "No Firefox profiles found" -ForegroundColor Red; return }
-
-        if ($current -gt 0)
-        { Write-Host "$current profile(s) already up to date" -ForegroundColor Green }
+        if ($r.Current -gt 0)
+        { Write-Host "$($r.Current) profile(s) already up to date" -ForegroundColor Green }
 
         if ($updated -eq 0 -and $failed -gt 0)
         { Write-Host "Failed to update profile(s)" -ForegroundColor Red }
@@ -823,27 +843,36 @@ function upfont
     } -args $ConfigPath
 }
 
+# Runs the config pull silently - upc prints it standalone, and upall's
+# background job returns it so the caller can print with full colors.
+function _UpcCompute
+{
+    $output = git -C $ConfigPath pull --rebase --autostash 2>&1
+    return @{ Ok = ($LASTEXITCODE -eq 0); Output = @($output | ForEach-Object { "$_" }) }
+}
+
 function upc
 {
+    param([hashtable]$Precomputed)
+
     Write-Host "`n>Windows Config Update" -ForegroundColor Blue
-    git -C $ConfigPath pull --rebase --autostash 2>&1 | ForEach-Object { Write-Host "$_" }
-    if ($LASTEXITCODE -ne 0)
+    $r = if ($Precomputed) { $Precomputed } else { _UpcCompute }
+    @($r.Output) | ForEach-Object { Write-Host "$_" }
+    if (-not $r.Ok)
     { Write-Host "Windows Config update failed" -ForegroundColor Red; return }
     Write-Host "`n'reload' to apply changes" -ForegroundColor Yellow
 }
 
-function uprep
+# Runs the parallel pulls silently and returns the per-repo results in
+# repo-list order - uprep prints them standalone, and upall's background
+# job returns them so the caller can print with full colors.
+function _UrepCompute
 {
-    Write-Host "`n>Repo Updates" -ForegroundColor Blue
-    # Repos are independent, so pulls run in parallel; the output is buffered
-    # per repo and printed in repo-list order, so the report text matches the
-    # old serial loop exactly. ForEach-Object -Parallel cannot take a function
-    # as a $using: variable, so the pull logic is inlined here.
     $repos    = @(Get-RepoList | ForEach-Object { Get-RepoEntry $_ })
     $orderIds = @{}
     for ($i = 0; $i -lt $repos.Count; $i++) { $orderIds[$repos[$i].Name] = $i }
 
-    $repoResults = $repos | ForEach-Object -Parallel {
+    @($repos | ForEach-Object -Parallel {
         $repoPath = $_.Path
         $label    = $_.Name
         $display  = $_.DisplayPath
@@ -862,7 +891,15 @@ function uprep
         }
 
         [pscustomobject]@{ Kind = "updated"; Name = $label; Display = $display; Output = $output }
-    } | Sort-Object { $orderIds[$_.Name] }
+    } | Sort-Object { $orderIds[$_.Name] })
+}
+
+function uprep
+{
+    param([array]$Precomputed)
+
+    Write-Host "`n>Repo Updates" -ForegroundColor Blue
+    $repoResults = if ($Precomputed) { @($Precomputed) } else { _UrepCompute }
 
     $anyUpdated = $false
     $failed = $false
