@@ -75,6 +75,8 @@ param(
 
     [switch]$Reinstall,         # for 'update'/'install'/'add': reinstall even when the installed copy cannot be verified
 
+    [string[]]$AppSpecs,        # for 'add': "name|repo|kind" specs tracked and installed in one pass
+
     [switch]$NoInstall          # for 'add': only track the app, do not install it
 )
 
@@ -1951,22 +1953,16 @@ function _AddTrackedApp($AppName, $App, $ProxyUrl, $Config) {
     $null = _InstallTrackedApp $AppName $App $ProxyUrl $Config
 }
 
-function _Add {
-    if (-not $Target) { Write-Host "Provide a repo, e.g. gitget add sharkdp/bat" -ForegroundColor Red; return }
-    $repo = _ConvertToRepoSlug $Target
-    if (-not $repo) {
-        Write-Host "Use 'owner/repo' or a github.com URL." -ForegroundColor Red
-        return
+function _AddOne($Repo, $NameOpt, $KindOpt, $ProxyUrl, $Config) {
+    # Tracks one repo and installs it unless the program is already on the
+    # machine. Single 'add owner/repo' calls and every -AppSpecs entry come
+    # through here; the config object is passed through so all entries of one
+    # invocation accumulate under its shared API session.
+    $defaultName = ($Repo -split '/')[1]
+    if ($NameOpt) {
+        $appName = $NameOpt
     }
-
-    $proxyUrl = _ResolveProxy
-    $config = _GetConfig
-
-    $defaultName = ($repo -split '/')[1]
-    if ($Name) {
-        $appName = $Name
-    }
-    elseif (_GetAppEntry $config $defaultName) {
+    elseif (_GetAppEntry $Config $defaultName) {
         # The repo's own name is already tracked - no need to ask.
         $appName = $defaultName
     }
@@ -1975,22 +1971,27 @@ function _Add {
         $appName = if ($null -eq $resp -or $resp.Trim() -eq "") { $defaultName } else { $resp.Trim() }
     }
 
-    $existing = _GetAppEntry $config $appName
+    $existing = _GetAppEntry $Config $appName
     if ($existing) {
         # Already tracked - install it when it is not on the machine.
-        if ($existing.Value.repo -and $existing.Value.repo -ne $repo) {
+        if ($existing.Value.repo -and $existing.Value.repo -ne $Repo) {
             Write-Host "'$appName' tracks $($existing.Value.repo) - installing that one" -ForegroundColor Yellow
         }
-        _AddTrackedApp $appName $existing.Value $proxyUrl $config
+        _AddTrackedApp $appName $existing.Value $ProxyUrl $Config
         return
     }
 
-    $releases = _GetReleases $repo $ReleaseLimit $proxyUrl
+    $releases = _GetReleases $Repo $ReleaseLimit $ProxyUrl
     $candidates = @(@($releases | Where-Object { -not $_.prerelease -or $IncludePrerelease }))
     if ($TagPattern) { $candidates = @($candidates | Where-Object { $_.tag_name -like $TagPattern }) }
     if ($ReleaseNamePattern) { $candidates = @($candidates | Where-Object { $_.name -like $ReleaseNamePattern }) }
 
-    $kind = $InstallType
+    if ($KindOpt -and $KindOpt -notin @('installer', 'portable', 'archive')) {
+        # $InstallType has a ValidateSet, but a manifest-provided kind can be wrong.
+        Write-Host "Unknown payload kind '$KindOpt' for '$appName'." -ForegroundColor Red
+        return
+    }
+    $kind = $KindOpt
     if (-not $kind) {
         $kinds = _GetInstallKindCandidates $candidates
         if ($kinds.Count -eq 0) {
@@ -2028,7 +2029,7 @@ function _Add {
     $binDir = if ($BinDir) { $BinDir } elseif ($kind -ne 'installer') { $SharedBinDir } else { $null }
 
     $entry = [PSCustomObject]@{
-        repo             = $repo
+        repo             = $Repo
         tag_family       = _GetReleaseKey $release
         pattern          = if ($Pattern) { $Pattern } else { _NewAssetPattern $asset.name }
         install_dir      = $installDir
@@ -2051,8 +2052,8 @@ function _Add {
         bin_dir        = $binDir
         installed      = $null
     }
-    $config.apps | Add-Member -NotePropertyName $appName -NotePropertyValue $entry -Force
-    _SaveConfig $config
+    $Config.apps | Add-Member -NotePropertyName $appName -NotePropertyValue $entry -Force
+    _SaveConfig $Config
 
     Write-Host "$appName $($release.tag_name) ($($asset.name)) - $kind" -ForegroundColor Green
 
@@ -2075,9 +2076,41 @@ function _Add {
     }
 
     $latest = _ExtractConfiguredVersion $release.tag_name $entry.release_version_regex
-    if (_InstallAppPayload $appName $entry $asset $latest $proxyUrl) {
-        _SaveConfig $config
+    if (_InstallAppPayload $appName $entry $asset $latest $ProxyUrl) {
+        _SaveConfig $Config
     }
+}
+
+function _Add {
+    # -AppSpecs runs the same add flow for each "name|repo|kind" entry inside
+    # this single invocation - one script parse and one API session for the list.
+    if ($AppSpecs) {
+        $proxyUrl = _ResolveProxy
+        $config = _GetConfig
+        foreach ($spec in @($AppSpecs)) {
+            $spec = "$spec".Trim()
+            if (-not $spec -or $spec.StartsWith('#')) { continue }
+            $parts = $spec -split '\|'
+            if ($parts.Count -lt 2) {
+                Write-Host "Skipping malformed app spec: $spec" -ForegroundColor Red
+                continue
+            }
+            $kind = if ($parts.Count -gt 2 -and $parts[2]) { $parts[2] } else { $null }
+            _AddOne $parts[1] $parts[0] $kind $proxyUrl $config
+        }
+        return
+    }
+
+    if (-not $Target) { Write-Host "Provide a repo, e.g. gitget add sharkdp/bat" -ForegroundColor Red; return }
+    $repo = _ConvertToRepoSlug $Target
+    if (-not $repo) {
+        Write-Host "Use 'owner/repo' or a github.com URL." -ForegroundColor Red
+        return
+    }
+
+    $proxyUrl = _ResolveProxy
+    $config = _GetConfig
+    _AddOne $repo $Name $InstallType $proxyUrl $config
 }
 
 function _Remove {
@@ -2269,6 +2302,53 @@ function _CheckOne($appName, $app, $ProxyUrl, [switch]$Force, [switch]$Quiet) {
     }
 }
 
+function _PrimeReleaseCaches($Targets, $ProxyUrl, [switch]$Force) {
+    # Warms the release caches of every tracked repo in parallel before a full
+    # scan, so each _CheckOne below reads its cache instead of paying a serial
+    # API round-trip. Strictly best effort: thread jobs are not available or a
+    # fetch fails -> the scan fetches as it always did. Runs only when the
+    # script was executed directly (the offline test suite loads function
+    # definitions and must never reach the network).
+    if (-not $script:directRun) { return }
+    if (-not (Get-Command Start-ThreadJob -ErrorAction SilentlyContinue)) { return }
+
+    $repos = @($Targets | ForEach-Object { $_.Value.repo } | Where-Object { $_ } | Select-Object -Unique)
+    if ($repos.Count -lt 2) { return }
+
+    try {
+        $jobs = foreach ($repo in $repos) {
+            Start-ThreadJob {
+                param($repoName, $releaseLimit, $proxy, $force, $scriptPath)
+                try {
+                    $ErrorActionPreference = 'Stop'
+                    # The constants the script body sets on a real run.
+                    $AppDir        = Join-Path $env:LOCALAPPDATA "windows-config-files\gitget"
+                    $ConfFilePath  = Join-Path $AppDir "config.json"
+                    $DownloadsDir  = Join-Path $AppDir "downloads"
+                    $AppsDir       = Join-Path $AppDir "apps"
+                    $SharedBinDir  = Join-Path $AppDir "bin"
+                    $CacheDir      = Join-Path $AppDir "cache"
+                    $CacheTtlMinutes = if ($env:GITGET_CACHE_TTL_MINUTES) { [int]$env:GITGET_CACHE_TTL_MINUTES } else { 10 }
+                    # Function definitions only - extracting them never executes
+                    # the script body, so no config/network side effects happen here.
+                    $source = Get-Content -Raw -LiteralPath $scriptPath
+                    $ast = [System.Management.Automation.Language.Parser]::ParseInput($source, [ref]$null, [ref]$null)
+                    $funcs = $ast.FindAll({ param($n) $n -is [System.Management.Automation.Language.FunctionDefinitionAst] }, $false)
+                    foreach ($fn in $funcs) { Invoke-Expression $fn.Extent.Text }
+                    $null = _GetReleases $repoName $releaseLimit $proxy -Force:$force
+                } catch { }
+            } -ArgumentList $repo, $ReleaseLimit, $ProxyUrl, [bool]$Force, $PSCommandPath
+        }
+        # Give the warm-up a window; whatever is still running is left alone -
+        # a missing cache entry just makes the scan fetch that one serially.
+        $null = Wait-Job $jobs -Timeout 60 -ErrorAction SilentlyContinue
+        foreach ($job in ($jobs | Where-Object { $_.State -in @('Completed', 'Failed', 'Stopped') })) {
+            Remove-Job $job -Force -ErrorAction SilentlyContinue
+        }
+    }
+    catch { }
+}
+
 function _Check {
     $config = _GetConfig
     $entries = $config.apps.PSObject.Properties
@@ -2286,6 +2366,7 @@ function _Check {
     $modifiedCount = 0
     $configChanged = $false
     $script:checkErrors = @()
+    _PrimeReleaseCaches $targets $proxyUrl -Force:$Force
     foreach ($prop in $targets) {
         $result = _CheckOne $prop.Name $prop.Value $proxyUrl -Force:$Force
         if ($null -eq $result) { $errorCount++; continue }
@@ -2331,6 +2412,7 @@ function _Update {
     $unverifiedCount = 0
     $modifiedCount = 0
     $script:checkErrors = @()
+    _PrimeReleaseCaches $targets $proxyUrl -Force:$Force
     foreach ($prop in $targets) {
         $appName = $prop.Name
         $app = $prop.Value
@@ -2545,6 +2627,10 @@ function _Proxy {
 # --------------------------------------------------------------------------
 # Dispatch
 # --------------------------------------------------------------------------
+
+# True only in a real script run; function-definition loaders (the offline
+# test suite) never reach this line, which keeps network warm-up helpers off.
+$script:directRun = $true
 
 switch ($Command) {
     "add"     { _Add }

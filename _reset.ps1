@@ -389,6 +389,8 @@ Write-Host "`n> Clearing Init Caches" -ForegroundColor Blue
 $cacheFiles = @(
     "$env:LOCALAPPDATA\windows-config-files\ps-cache\starship_init.ps1",
     "$env:LOCALAPPDATA\windows-config-files\ps-cache\zoxide_init.ps1",
+    "$env:LOCALAPPDATA\windows-config-files\ps-cache\betterfox_user.js",
+    "$env:LOCALAPPDATA\windows-config-files\ps-cache\betterfox_etag.txt",
     "$env:LOCALAPPDATA\windows-config-files\winget_search_cache.txt"
 )
 
@@ -404,6 +406,19 @@ foreach ($cache in $cacheFiles) {
     }else{
         Write-Host "Not found: $(Split-Path $cache -Leaf)" -ForegroundColor Gray
     }
+}
+
+# ==============================================================================
+# 7b. WINGET SOURCES RESTORE
+# ==============================================================================
+Write-Host "`n> Winget Sources" -ForegroundColor Blue
+
+# Setup removed the msstore source; restoring winget's defaults puts it back.
+winget source reset --force --disable-interactivity 2>&1 | Out-Null
+if ($LASTEXITCODE -eq 0) {
+    Write-Host "Winget sources restored to defaults" -ForegroundColor Green
+} else {
+    Write-Host "Could not restore winget sources (exit $LASTEXITCODE)" -ForegroundColor Yellow
 }
 
 # ==============================================================================

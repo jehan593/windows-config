@@ -10,6 +10,13 @@ checks or config.
 portable and archive. It only tracks the app when the program is already
 installed, and `gitget add owner/repo -NoInstall` never installs anything.
 
+`gitget add -AppSpecs <list>` runs the same add flow for several apps in one
+invocation. Each spec is `"name|repo|kind"`, with the kind optional and the
+same options applying to every entry as a whole. This is how setup installs
+the manifest in `helpers/gitget-apps.ps1` - one script parse and one API
+session instead of one process per app. A malformed or unknown-kind entry is
+reported and skipped; the rest continue.
+
 Adding an app that is already tracked installs it when it is missing from the
 machine, so `gitget add owner/repo` is enough to get a program back after it
 was deleted or never installed. The tracked release line, kind and asset
@@ -26,7 +33,9 @@ the installer picker remains the final choice when filenames change.
 Release lists are cached for a short time. When the API cannot be reached -
 the anonymous rate limit is the usual reason - the cached lists are used and
 the run says so once. A problem that hits many apps is reported once, not once
-per app. Set `$env:GITHUB_TOKEN` to raise the rate limit.
+per app. Set `$env:GITHUB_TOKEN` to raise the rate limit. A full check or
+update first warms every repo's cache in parallel, so the scan itself reads
+instead of fetching; a failed warm-up just makes the scan fetch as before.
 
 ## Payload kinds
 
