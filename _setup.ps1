@@ -26,10 +26,36 @@ Write-Host ""
 
 Write-Host "`n>Winget Packages" -ForegroundColor Blue
 
+# One 'winget export' instead of a 'winget list' spawn per app: the JSON is
+# structured, so the already-installed decision for all 14 packages costs a
+# single process instead of one per package. If the export can't be produced
+# (offline, bad exit), the old one-package-at-a-time check keeps setup working.
+$exportFile = Join-Path $env:TEMP "winget_setup_export.json"
+$installedIds = $null
+try
+{
+    winget export -o $exportFile -s winget --accept-source-agreements --disable-interactivity --nowarn 2>&1 | Out-Null
+    if ($LASTEXITCODE -eq 0 -and (Test-Path $exportFile)) {
+        $packages = @((Get-Content $exportFile -Raw | ConvertFrom-Json).Sources.Packages)
+        if ($packages.Count -gt 0) { $installedIds = @($packages | ForEach-Object { $_.PackageIdentifier }) }
+    }
+}
+catch
+{
+    $installedIds = $null
+}
+Remove-Item $exportFile -Force -ErrorAction SilentlyContinue
+
 foreach ($app in (Get-WingetApps))
 {
     Write-Host "`n--- $app ---" -ForegroundColor DarkGray
-    $installed = winget list --id $app --source winget --exact 2>$null | Select-String -Pattern $app
+
+    if ($installedIds) {
+        $installed = $app -in $installedIds
+    } else {
+        $installed = winget list --id $app --source winget --exact 2>$null | Select-String -Pattern $app
+    }
+
     if ($installed) {
         Write-Host "Already installed: $app" -ForegroundColor Green
     } else {
@@ -42,24 +68,73 @@ foreach ($app in (Get-WingetApps))
     }
 }
 
+Write-Host "`n>Winget Sources" -ForegroundColor Blue
+
+# The msstore endpoint is dead on this network and taxes every winget call
+# that touches it - drop the source for good.
+if (winget source list 2>$null | Select-String -Pattern 'msstore') {
+    winget source remove --name msstore --disable-interactivity 2>&1 | Out-Null
+    if ($LASTEXITCODE -eq 0) {
+        Write-Host "Removed: msstore" -ForegroundColor Green
+    } else {
+        Write-Host "Failed to remove msstore (exit $LASTEXITCODE)" -ForegroundColor Red
+    }
+} else {
+    Write-Host "msstore already removed" -ForegroundColor Green
+}
+
 Write-Host "`n>PowerShell Modules" -ForegroundColor Blue
+
+# Latest versions come from one batched Find-Module call for all installed
+# modules instead of one gallery negotiation per module. Updates go through
+# Install-Module directly - Update-Module would re-query the gallery a second
+# time per module before touching anything.
+$installedModules = @{}
+foreach ($module in (Get-PsModules))
+{
+    $installedModules[$module] = Get-Module -ListAvailable -Name $module | Sort-Object Version -Descending | Select-Object -First 1
+}
+
+$checkedNames   = @($installedModules.Keys | Where-Object { $installedModules[$_] })
+$latestModules  = @{}
+$updateCheckFailed = $false
+$updateCheckError  = $null
+if ($checkedNames.Count -gt 0)
+{
+    try
+    {
+        $found = Find-Module -Name $checkedNames -ErrorAction Stop
+        foreach ($entry in @($found)) { $latestModules[$entry.Name] = $entry.Version }
+    }
+    catch
+    {
+        $updateCheckFailed = $true
+        $updateCheckError  = $_.Exception.Message
+    }
+}
 
 foreach ($module in (Get-PsModules))
 {
     Write-Host "`n--- $module ---" -ForegroundColor DarkGray
 
-    $installed = Get-Module -ListAvailable -Name $module | Sort-Object Version -Descending | Select-Object -First 1
+    $installed = $installedModules[$module]
 
     if ($installed)
     {
+        if ($updateCheckFailed)
+        {
+            Write-Host "Could not check for updates ($updateCheckError). Keeping installed v$($installed.Version)." -ForegroundColor Yellow
+            continue
+        }
+
         try
         {
-            $latest = Find-Module -Name $module -ErrorAction Stop
-            if ($latest.Version -gt $installed.Version)
+            $latest = $latestModules[$module]
+            if ($latest -and $latest -gt $installed.Version)
             {
-                Write-Host "Updating: $module (v$($installed.Version) -> v$($latest.Version))" -ForegroundColor Yellow
-                Update-Module -Name $module -Force -ErrorAction Stop
-                Write-Host "Updated: $module to v$($latest.Version)" -ForegroundColor Green
+                Write-Host "Updating: $module (v$($installed.Version) -> v$($latest))" -ForegroundColor Yellow
+                Install-Module -Name $module -Force -Scope CurrentUser -AllowClobber -AcceptLicense -SkipPublisherCheck -ErrorAction Stop
+                Write-Host "Updated: $module to v$($latest)" -ForegroundColor Green
             }
             else
             {
@@ -247,11 +322,11 @@ foreach ($entry in (Get-RepoList)) {
 
 Write-Host "`n>Managed CLI Tools (gitget)" -ForegroundColor Blue
 
-foreach ($entry in (Get-GitgetApps))
-{
-    $app = Get-GitgetAppEntry $entry
-    Write-Host "`n--- $($app.Name) ---" -ForegroundColor DarkGray
-    & "$ConfigPath\tools\gitget.ps1" add $app.Repo -Name $app.Name -InstallType $app.Kind
+# One invocation tracks and installs the whole manifest: the tool is parsed
+# once and shares its GitHub session, instead of a 'gitget add' per app.
+$gitgetAppSpecs = @(Get-GitgetApps)
+if ($gitgetAppSpecs.Count -gt 0) {
+    & "$ConfigPath\tools\gitget.ps1" add -AppSpecs $gitgetAppSpecs
 }
 
 

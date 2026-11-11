@@ -15,6 +15,7 @@ if ($missingDeps.Count -gt 0)
 . "$ConfigPath\helpers\keep-awake.ps1"
 . "$ConfigPath\helpers\repo-list.ps1"
 . "$ConfigPath\helpers\font-install.ps1"
+. "$ConfigPath\helpers\betterfox.ps1"
 
 $env:FZF_DEFAULT_OPTS = '--exact --cycle --border=rounded --color=bg+:#3b4252,bg:#2e3440,spinner:#81a1c1,hl:#c2a166,fg:#d8dee9,header:#5e81ac,info:#b48ead,pointer:#88c0d0,marker:#ebcb8b,fg+:#e5e9f0,prompt:#81a1c1,hl+:#ebcb8b,border:#4c566a --bind "ctrl-a:toggle-all"'
 
@@ -65,7 +66,22 @@ function prompt
 # ==============================================================================
 function _WingetAction
 {
-    param([string]$Verb, [string[]]$Ids, [string[]]$ExtraArgs = @())
+    param([string]$Verb, [string[]]$Ids, [string[]]$ExtraArgs = @(), [switch]$Batch)
+
+    # Multi-select picks become one winget process: positional exact queries
+    # are processed one by one inside it, so a failing package does not stop
+    # the rest. Only used where the caller opts in (inst/uinst) - upp keeps
+    # its per-package loop.
+    if ($Batch -and $Ids.Count -gt 1)
+    {
+        $argsStr = if ($ExtraArgs) { " " + ($ExtraArgs -join " ") } else { "" }
+        $cmdEntry = "winget $Verb -e $($Ids -join ' ') --interactive$argsStr"
+
+        Write-Host ""
+        winget $Verb -e @Ids --interactive @ExtraArgs
+        [Microsoft.PowerShell.PSConsoleReadLine]::AddToHistory($cmdEntry)
+        return
+    }
 
     foreach ($id in $Ids)
     {
@@ -76,14 +92,6 @@ function _WingetAction
         $cmdEntry = "winget $Verb --id $id --exact --interactive$argsStr"
 
         [Microsoft.PowerShell.PSConsoleReadLine]::AddToHistory($cmdEntry)
-    }
-}
-
-function _WingetUpgradeIds
-{
-    $packages = Get-WinGetPackage -Source winget | Where-Object { $_.IsUpdateAvailable }
-    if ($packages) {
-        $packages | ForEach-Object { $_.Id }
     }
 }
 
@@ -426,7 +434,7 @@ function inst
     Write-Host "Selected to install:" -ForegroundColor Green
     $ids | ForEach-Object { Write-Host "+ $_" }
 
-    _WingetAction -Verb "install" -Ids $ids -ExtraArgs @('--source', 'winget')
+    _WingetAction -Verb "install" -Ids $ids -ExtraArgs @('--source', 'winget') -Batch
 }
 
 function uinst
@@ -439,7 +447,7 @@ function uinst
     Write-Host "Selected to remove:" -ForegroundColor Red
     $ids | ForEach-Object { Write-Host "- $_"}
 
-    _WingetAction -Verb "uninstall" -Ids $ids
+    _WingetAction -Verb "uninstall" -Ids $ids -Batch
 }
 
 function upp
@@ -472,49 +480,25 @@ function upp
         Write-Host "[$cur -> $new]" -ForegroundColor White
     }
 
-    _WingetAction -Verb "upgrade" -Ids $ids
+    if ($all)
+    {
+        # One winget process walks the whole list: no per-package process
+        # spawn (its own pacing), same installer behaviour as the per-id loop
+        # (--interactive), and --include-unknown matches what IsUpdateAvailable
+        # surfaced above. Failures on one package do not stop the others.
+        Write-Host ""
+        winget upgrade --all --include-unknown --interactive --accept-package-agreements --accept-source-agreements
+        [Microsoft.PowerShell.PSConsoleReadLine]::AddToHistory("winget upgrade --all --include-unknown --interactive --accept-package-agreements --accept-source-agreements")
+    }
+    else
+    {
+        _WingetAction -Verb "upgrade" -Ids $ids
+    }
 }
 
 # ==============================================================================
 # 8. UPDATES & MAINTENANCE
 # ==============================================================================
-function _GetSha256([string]$Text)
-{
-    $sha = [System.Security.Cryptography.SHA256]::Create()
-    [System.Convert]::ToHexString($sha.ComputeHash([System.Text.Encoding]::UTF8.GetBytes($Text)))
-}
-
-# Shared by 'cup' (check) and 'upf' (apply) so both hash the same content.
-function _GetBetterfoxUserJs
-{
-    $url           = "https://raw.githubusercontent.com/yokoffing/Betterfox/main/user.js"
-    $removalsPath  = "$ConfigPath\data\firefox\user-removals.txt"
-    $overridesPath = "$ConfigPath\data\firefox\overrides.txt"
-
-    $lines = (Invoke-WebRequest -Uri $url -UseBasicParsing -ErrorAction Stop).Content -split "`n"
-
-    $removals = Get-Content $removalsPath | Where-Object { $_.Trim() -ne "" }
-    foreach ($key in $removals)
-    {
-        $escaped = [regex]::Escape($key.Trim())
-        $lines   = $lines | Where-Object { $_ -notmatch "user_pref\(`"$escaped`"" }
-    }
-
-    $content = $lines -join "`n"
-
-    $overrides = (Get-Content $overridesPath -Raw).Trim()
-    if ($overrides)
-    { $content = $content.TrimEnd() + "`n`n// overrides.txt`n" + $overrides + "`n" }
-
-    return ($content -replace "`r`n", "`n").TrimEnd()
-}
-
-# Hash of the content that belongs in every profile. A profile is up to date
-# when its own user.js hashes to this - no separate marker file needed.
-function _GetBetterfoxHash
-{
-    return _GetSha256 (_GetBetterfoxUserJs)
-}
 
 function _ShowGitUpdateStatus
 {
@@ -561,11 +545,43 @@ function _ShowGitUpdateStatus
 
 function cup
 {
+    # The slow independent checks below fan out first: Start-ThreadJob adds
+    # extra runspaces in-process, which also means a job calling Write-Host
+    # would print through this very console - so every job is compute-only
+    # and silent, and colors are applied when its result is received. The
+    # sections keep printing in the usual order; each waits only on its own
+    # job. Without ThreadJob (or on a job failure) the check runs inline.
+    $wingetJob = $foxJob = $fontJob = $null
+    if (Get-Command Start-ThreadJob -ErrorAction SilentlyContinue)
+    {
+        # Jobs dot-source the helpers themselves - no session state crosses a
+        # runspace, so the functions they need must come from files.
+        $wingetJob = try { Start-ThreadJob {
+            Import-Module Microsoft.WinGet.Client -ErrorAction Stop
+            @(Get-WinGetPackage -Source winget | Where-Object { $_.IsUpdateAvailable })
+        } } catch { $null }
+        $foxJob = try { Start-ThreadJob {
+            $ConfigPath = $using:ConfigPath
+            . "$ConfigPath\helpers\betterfox.ps1"
+            _GetSha256 (_GetBetterfoxUserJs)
+        } } catch { $null }
+        $fontJob = try { Start-ThreadJob {
+            . "$using:ConfigPath\helpers\font-install.ps1"
+            Install-MartianMonoFont -CheckOnly
+        } } catch { $null }
+    }
+
     Write-Host "`n>GitGet" -ForegroundColor Blue
     gitget check
 
     Write-Host "`n>Winget" -ForegroundColor Blue
-    $packages = @(_WingetUpgradePackages)
+    $packages = $null
+    if ($wingetJob)
+    {
+        try { $packages = @(Receive-Job $wingetJob -Wait -ErrorAction Stop) } catch { $packages = $null }
+        Remove-Job $wingetJob -Force -ErrorAction SilentlyContinue
+    }
+    if ($null -eq $packages) { $packages = @(_WingetUpgradePackages) }
     if ($packages.Count -gt 0) {
         foreach ($p in $packages) {
             $new = if ($p.AvailableVersions -and $p.AvailableVersions.Count -gt 0) { $p.AvailableVersions[0] } else { "?" }
@@ -590,7 +606,13 @@ function cup
         { Write-Host "No Firefox profiles found" -ForegroundColor Red }
         else
         {
-            $newHash = _GetBetterfoxHash
+            $newHash = $null
+            if ($foxJob)
+            {
+                try { $newHash = @(Receive-Job $foxJob -Wait -ErrorAction Stop) | Select-Object -First 1 } catch { $newHash = $null }
+                Remove-Job $foxJob -Force -ErrorAction SilentlyContinue
+            }
+            if (-not $newHash) { $newHash = _GetBetterfoxHash }
             $behind = @()
             foreach ($prof in $profiles)
             {
@@ -613,7 +635,13 @@ function cup
     Write-Host "`n>Martian Mono Nerd Font" -ForegroundColor Blue
     try
     {
-        $r = Install-MartianMonoFont -CheckOnly
+        $r = $null
+        if ($fontJob)
+        {
+            try { $r = @(Receive-Job $fontJob -Wait -ErrorAction Stop) | Select-Object -First 1 } catch { $r = $null }
+            Remove-Job $fontJob -Force -ErrorAction SilentlyContinue
+        }
+        if (-not ($r -and $r.PSObject.Properties['Success'])) { $r = Install-MartianMonoFont -CheckOnly }
         if     ($r.UpToDate) { Write-Host "Up to date" -ForegroundColor Green }
         elseif ($r.Success)  { Write-Host "Update available, run 'upfont'" -ForegroundColor Yellow }
         else                 { Write-Host "Check failed: $($r.Error)" -ForegroundColor Red }
@@ -621,11 +649,34 @@ function cup
     catch { Write-Host "Check failed: $($_.Exception.Message)" -ForegroundColor Red }
 
     Write-Host "`n>Cloned Repos" -ForegroundColor Blue
-    $repoResults = foreach ($entry in (Get-RepoList))
-    {
-        $repo = Get-RepoEntry $entry
-        _ShowGitUpdateStatus -RepoPath $repo.Path -Label $repo.Name -Hint "uprep" -AsObject
-    }
+    # Repos are independent, so the fetches run in parallel, then results are
+    # re-sorted into repo-list order so the report prints exactly as the serial
+    # loop did. ForEach-Object -Parallel cannot take a function as a $using:
+    # variable, so this inlines _ShowGitUpdateStatus's -AsObject branch - keep
+    # the two in sync.
+    $repos    = @(Get-RepoList | ForEach-Object { Get-RepoEntry $_ })
+    $orderIds = @{}
+    for ($i = 0; $i -lt $repos.Count; $i++) { $orderIds[$repos[$i].Name] = $i }
+    $repoResults = $repos | ForEach-Object -Parallel {
+        $repoPath = $_.Path
+        $label    = $_.Name
+
+        if (-not (Test-Path (Join-Path $repoPath ".git")))
+        { [pscustomobject]@{ Status = "missing"; Label = $label; Message = "$label not found" }; return }
+
+        git -C $repoPath fetch --quiet 2>$null
+        if ($LASTEXITCODE -ne 0)
+        { [pscustomobject]@{ Status = "error"; Label = $label; Message = "$label fetch failed" }; return }
+
+        $behind = git -C $repoPath rev-list --count 'HEAD..@{u}' 2>$null
+        if ($LASTEXITCODE -ne 0)
+        { [pscustomobject]@{ Status = "error"; Label = $label; Message = "$label has no upstream branch" }; return }
+
+        if ([int]$behind -gt 0)
+        { [pscustomobject]@{ Status = "update"; Label = $label; Message = "$label $behind commit(s) behind, run 'uprep'" } }
+        else
+        { [pscustomobject]@{ Status = "ok"; Label = $label; Message = "$label up to date" } }
+    } | Sort-Object { $orderIds[$_.Label] }
     $repoUpdates = @($repoResults | Where-Object { $_.Status -eq "update" })
     $repoErrors  = @($repoResults | Where-Object { $_.Status -ne "update" -and $_.Status -ne "ok" })
     if ($repoUpdates.Count -gt 0 -or $repoErrors.Count -gt 0) {
@@ -645,8 +696,8 @@ function cup
 
 function upall
 {
-    # A running wireproxy holds its binary open, so gitget stops the tunnels
-    # it hosts during the update itself and starts them back up after.
+    # gitget update pauses any tunnel it hosts and restarts them after - it
+    # must run alone, before anything else.
     Write-Host "`n>GitGet Update" -ForegroundColor Blue
     gitget update -All
 
@@ -654,11 +705,43 @@ function upall
     winget source update
     Write-Host ""
     upp -all
-    upf
+
+    # The remaining independent steps overlap while upp and the store run:
+    # each job dot-sources this profile (runspaces share no state) and
+    # captures its own output - 6>&1 also catches Write-Host, which would
+    # otherwise print through this very console. Text arrives when each
+    # section is reached, in the usual order, without the colors. upfont
+    # stays inline: its gsudo elevation prompt needs the real console. A
+    # job that could not run or failed falls back to the inline call.
+    $upfJob = $uprepJob = $upcJob = $null
+    if (Get-Command Start-ThreadJob -ErrorAction SilentlyContinue)
+    {
+        $profPath = $PROFILE
+        $upfJob   = try { Start-ThreadJob { . "$using:profPath" -ErrorAction SilentlyContinue; upf 6>&1 | Out-String } } catch { $null }
+        $uprepJob = try { Start-ThreadJob { . "$using:profPath" -ErrorAction SilentlyContinue; uprep 6>&1 | Out-String } } catch { $null }
+        $upcJob   = try { Start-ThreadJob { . "$using:profPath" -ErrorAction SilentlyContinue; upc 6>&1 | Out-String } } catch { $null }
+    }
+
+    function _PrintCaptured($Job)
+    {
+        # Returns $true when the job produced its section; otherwise the
+        # caller runs the step inline.
+        if (-not $Job) { return $false }
+        $text = $null
+        if ($Job.State -eq 'Completed') { $text = @(Receive-Job $Job -ErrorAction SilentlyContinue) -join '' }
+        Remove-Job $Job -Force -ErrorAction SilentlyContinue
+        if ($text) { Write-Host $text -NoNewline; return $true }
+        return $false
+    }
+
+    if (-not (_PrintCaptured $upfJob)) { upf }
+
     ups
+
     upfont
-    uprep
-    upc
+
+    if (-not (_PrintCaptured $uprepJob)) { uprep }
+    if (-not (_PrintCaptured $upcJob)) { upc }
 }
 
 function ups
@@ -677,8 +760,10 @@ function upf
         if ($profiles.Count -eq 0)
         { Write-Host "No Firefox profiles found" -ForegroundColor Red; return }
 
+        # One fetch serves both the content and its hash - _GetBetterfoxHash
+        # would download and process the same user.js a second time.
         $content  = _GetBetterfoxUserJs
-        $newHash  = _GetBetterfoxHash
+        $newHash  = _GetSha256 $content
 
         $updated = 0; $current = 0; $failed = 0
         foreach ($prof in $profiles)
@@ -750,29 +835,55 @@ function upc
 function uprep
 {
     Write-Host "`n>Repo Updates" -ForegroundColor Blue
-    $anyUpdated = $false
-    $failed = $false
-    foreach ($entry in (Get-RepoList)) {
-        $repo = Get-RepoEntry $entry
-        $repoPath    = $repo.Path
-        $displayPath = $repo.DisplayPath
+    # Repos are independent, so pulls run in parallel; the output is buffered
+    # per repo and printed in repo-list order, so the report text matches the
+    # old serial loop exactly. ForEach-Object -Parallel cannot take a function
+    # as a $using: variable, so the pull logic is inlined here.
+    $repos    = @(Get-RepoList | ForEach-Object { Get-RepoEntry $_ })
+    $orderIds = @{}
+    for ($i = 0; $i -lt $repos.Count; $i++) { $orderIds[$repos[$i].Name] = $i }
+
+    $repoResults = $repos | ForEach-Object -Parallel {
+        $repoPath = $_.Path
+        $label    = $_.Name
+        $display  = $_.DisplayPath
 
         if (-not (Test-Path $repoPath)) {
-            Write-Host "$($repo.Name) not found, skipping." -ForegroundColor Yellow
-            continue
+            [pscustomobject]@{ Kind = "missing"; Name = $label; Display = $display; Output = @() }; return
         }
 
-        $output = git -C $repoPath pull --rebase --autostash 2>&1
+        $output = @(git -C $repoPath pull --rebase --autostash 2>&1)
         if ($LASTEXITCODE -ne 0) {
-            Write-Host "$($repo.Name) pull failed:" -ForegroundColor Red
-            $output | ForEach-Object { Write-Host "  $_" -ForegroundColor Red }
-            $failed = $true
-            continue
+            [pscustomobject]@{ Kind = "failed"; Name = $label; Display = $display; Output = $output }; return
         }
-        if ($output -match "Already up to date") { continue }
-        Write-Host "$($repo.Name) ($displayPath)" -ForegroundColor Yellow
-        $output | ForEach-Object { Write-Host "  $_" -ForegroundColor Gray }
-        $anyUpdated = $true
+
+        if ($output -match "Already up to date") {
+            [pscustomobject]@{ Kind = "current"; Name = $label; Display = $display; Output = @() }; return
+        }
+
+        [pscustomobject]@{ Kind = "updated"; Name = $label; Display = $display; Output = $output }
+    } | Sort-Object { $orderIds[$_.Name] }
+
+    $anyUpdated = $false
+    $failed = $false
+    foreach ($result in $repoResults)
+    {
+        switch ($result.Kind)
+        {
+            "missing" {
+                Write-Host "$($result.Name) not found, skipping." -ForegroundColor Yellow
+            }
+            "failed" {
+                Write-Host "$($result.Name) pull failed:" -ForegroundColor Red
+                @($result.Output) | ForEach-Object { Write-Host "  $_" -ForegroundColor Red }
+                $failed = $true
+            }
+            "updated" {
+                Write-Host "$($result.Name) ($($result.Display))" -ForegroundColor Yellow
+                @($result.Output) | ForEach-Object { Write-Host "  $_" -ForegroundColor Gray }
+                $anyUpdated = $true
+            }
+        }
     }
     if (-not $anyUpdated -and -not $failed) { Write-Host "Up to date" -ForegroundColor Green }
 }
