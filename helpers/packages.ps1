@@ -8,8 +8,7 @@ function Get-WingetApps
         "sharkdp.fd",
         "WireGuard.WireGuard", "ViRb3.wgcf", "gerardog.gsudo",
         "jurplel.qView", "mpv.net", "Neovim.Neovim", "OliverBetz.ExifTool",
-        "Microsoft.WindowsTerminal", "BurntSushi.ripgrep.MSVC",
-        "7zip.7zip"
+        "Microsoft.WindowsTerminal", "BurntSushi.ripgrep.MSVC"
     )
 }
 
