@@ -610,7 +610,7 @@ function _CompareVersions($a, $b) {
     $syntax = '^(\d+(?:\.\d+)*)(?:-([0-9A-Za-z.-]+))?$'
     $ma = [regex]::Match($na, $syntax)
     $mb = [regex]::Match($nb, $syntax)
-    if (-not $ma.Success -or -not $mb.Success) { return $null }
+    if (-not $ma.Success -or -not $mb.Success) { return _CompareLooseVersions $na $nb }
     $numsA = @($ma.Groups[1].Value -split '\.')
     $numsB = @($mb.Groups[1].Value -split '\.')
     $n = [Math]::Max($numsA.Count, $numsB.Count)
@@ -637,6 +637,30 @@ function _CompareVersions($a, $b) {
         if ($cmp -ne 0) { return [Math]::Sign($cmp) }
     }
     return [Math]::Sign($partsA.Count - $partsB.Count)
+}
+
+function _CompareLooseVersions($a, $b) {
+    # Fallback for strings the strict syntax rejects, such as an installed
+    # "26.05 ZS v1.5.7 R1" against the tag "v26.05-v1.5.7-R1". The numbers are
+    # compared in order. The words must be compatible: one side's words are a
+    # subset of the other's, so an extra fork marker is accepted but different
+    # release names ("preview" vs "custom") are not.
+    $numsA = @([regex]::Matches($a, '\d+') | ForEach-Object { [System.Numerics.BigInteger]::Parse($_.Value) })
+    $numsB = @([regex]::Matches($b, '\d+') | ForEach-Object { [System.Numerics.BigInteger]::Parse($_.Value) })
+    if (-not $numsA.Count -or -not $numsB.Count) { return $null }
+    $wordsA = @([regex]::Matches($a.ToLowerInvariant(), '[a-z]+') | ForEach-Object { $_.Value } | Select-Object -Unique)
+    $wordsB = @([regex]::Matches($b.ToLowerInvariant(), '[a-z]+') | ForEach-Object { $_.Value } | Select-Object -Unique)
+    $onlyA = @($wordsA | Where-Object { $_ -notin $wordsB })
+    $onlyB = @($wordsB | Where-Object { $_ -notin $wordsA })
+    if ($onlyA.Count -and $onlyB.Count) { return $null }
+    $n = [Math]::Max($numsA.Count, $numsB.Count)
+    for ($i = 0; $i -lt $n; $i++) {
+        $va = if ($i -lt $numsA.Count) { $numsA[$i] } else { 0 }
+        $vb = if ($i -lt $numsB.Count) { $numsB[$i] } else { 0 }
+        if ($va -gt $vb) { return 1 }
+        if ($va -lt $vb) { return -1 }
+    }
+    return 0
 }
 
 function _TestIsNewer($Candidate, $Current) {
