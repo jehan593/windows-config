@@ -16,20 +16,3 @@ function Get-GitgetApps
         "7-Zip-zstd|mcmilk/7-Zip-zstd|installer"
     )
 }
-
-# Parses a "name|repo|kind" entry into Name, Repo and Kind.
-function Get-GitgetAppEntry
-{
-    param([string]$Entry)
-
-    $parts   = $Entry -split '\|'
-    $appName = $parts[0]
-    $appRepo = $parts[1]
-    $appKind = if ($parts.Count -gt 2 -and $parts[2]) { $parts[2] } else { 'archive' }
-
-    return [pscustomobject]@{
-        Name = $appName
-        Repo = $appRepo
-        Kind = $appKind
-    }
-}
