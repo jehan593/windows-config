@@ -112,6 +112,27 @@ $app = App
 $app.repo = 'example/UniqueProduct'
 Assert ($null -eq (_GetVersionFromRegistry $app 'UniqueProduct')) 'Unrelated registry entry matched'
 
+# An install's new uninstall entry teaches gitget the program's display name.
+function UninstallEntry($key, $name, $version) { [pscustomobject]@{ key=$key; display_name=$name; display_version=$version } }
+$app = App
+_LearnDisplayName $app @() @((UninstallEntry 'k1' '7-Zip ZS 26.05 ZS v1.5.7 R1 (x64)' '26.05 ZS v1.5.7 R1'))
+Assert ($app.display_name_pattern -eq '7-Zip ZS * (x64)') 'Versioned display name was not stored as a pattern'
+$script:registry = @([pscustomobject]@{DisplayName='7-Zip ZS 26.06 ZS v1.5.8 R1 (x64)';DisplayVersion='26.06 ZS v1.5.8 R1'})
+Assert ((_GetVersionFromRegistry $app 'test') -eq '26.06 ZS v1.5.8 R1') 'Learned pattern did not match the next release'
+$app = App
+_LearnDisplayName $app @((UninstallEntry 'k2' 'Example Tool' '1.0')) @((UninstallEntry 'k2' 'Example Tool' '1.0'), (UninstallEntry 'k3' 'Example Tool' '2.0'))
+Assert ($app.display_name -eq 'Example Tool' -and -not $app.display_name_pattern) 'Plain display name was not stored exactly'
+$app = App
+_LearnDisplayName $app @() @((UninstallEntry 'k4' 'Vendor Runtime' '3.0'), (UninstallEntry 'k5' 'Vendor App' '4.0'))
+Assert (-not $app.display_name -and -not $app.display_name_pattern) 'Ambiguous install recorded a display name'
+$app = App
+_LearnDisplayName $app @((UninstallEntry 'k6' 'Example Tool' '1.0')) @((UninstallEntry 'k6' 'Example Tool' '1.0'))
+Assert (-not $app.display_name) 'Unchanged entry was recorded as the install'
+$app = App
+$app | Add-Member display_name 'Configured Name'
+_LearnDisplayName $app @() @((UninstallEntry 'k7' 'Other Name 2.0' '2.0'))
+Assert ($app.display_name -eq 'Configured Name') 'Configured display name was overwritten'
+
 # Fixed-width winget output must exclude Id and Source columns from values.
 function Get-Command { $true }
 function _InvokeWithTimeout { @('Name                 Id                   Version    Source', '---------------------------------------------------------------', 'Example App          Example.App          1.2.3      winget') -join "`n" }

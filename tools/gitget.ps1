@@ -777,6 +777,41 @@ function _GetVersionFromRegistry($App, $AppName) {
     return $null
 }
 
+function _GetUninstallEntries {
+    $roots = @(
+        "HKLM:\Software\Microsoft\Windows\CurrentVersion\Uninstall\*"
+        "HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\*"
+        "HKLM:\Software\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall\*"
+    )
+    return @(Get-ItemProperty -Path $roots -ErrorAction SilentlyContinue | Where-Object { $_.DisplayName } | ForEach-Object {
+        [pscustomobject]@{ key = "$($_.PSPath)"; display_name = $_.DisplayName; display_version = $_.DisplayVersion }
+    })
+}
+
+function _LearnDisplayName($App, $Before, $After) {
+    # An installer creates or rewrites exactly one uninstall entry. Remember its
+    # name so the version lookup finds the program later. A name that contains
+    # the version is stored as a pattern, so the next release still matches.
+    if ($App.display_name -or $App.display_name_pattern) { return }
+    $known = @{}
+    foreach ($e in @($Before)) { $known[$e.key] = "$($e.display_name)|$($e.display_version)" }
+    $changed = @(@($After) | Where-Object {
+        $_.display_version -and $known[$_.key] -ne "$($_.display_name)|$($_.display_version)"
+    })
+    if ($changed.Count -ne 1) { return }
+    $name    = [string]$changed[0].display_name
+    $version = [string]$changed[0].display_version
+    $at = $name.IndexOf($version)
+    if ($at -ge 0) {
+        $pattern = [System.Management.Automation.WildcardPattern]::Escape($name.Substring(0, $at)) + '*' +
+            [System.Management.Automation.WildcardPattern]::Escape($name.Substring($at + $version.Length))
+        $App | Add-Member -NotePropertyName display_name_pattern -NotePropertyValue $pattern -Force
+    }
+    else {
+        $App | Add-Member -NotePropertyName display_name -NotePropertyValue $name -Force
+    }
+}
+
 function _GetVersionFromWinget($App, $AppName) {
     $wingetExe = Get-Command winget -ErrorAction SilentlyContinue
     if (-not $wingetExe) { return $null }
@@ -1696,7 +1731,10 @@ function _InstallAppPayload($AppName, $App, $Asset, $LatestVersion, $ProxyUrl) {
     catch { Write-Host "$AppName download failed: $($_.Exception.Message)" -ForegroundColor Red; return $false }
 
     if ($type -eq 'installer') {
+        $learnName = -not ($App.display_name -or $App.display_name_pattern)
+        $before = if ($learnName) { _GetUninstallEntries } else { @() }
         if (-not (_InstallDownloadedAsset $path)) { return $false }
+        if ($learnName) { _LearnDisplayName $App $before (_GetUninstallEntries) }
     }
     else {
         # Archives are unpacked into a per-app staging dir and the program
