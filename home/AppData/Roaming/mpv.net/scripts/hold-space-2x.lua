@@ -45,7 +45,7 @@ local ICON_PAUSE = glyph(0xF03E4)
 local ICON_FF    = glyph(0xF0211)
 
 local function show_osd(content, secs)
-    mp.set_osd_ass(0, 0, "{\\an7\\fnMartianMono NF\\fs34}" .. content)
+    mp.set_osd_ass(0, 0, "{\\an9\\fnMartianMono NF\\fs34}" .. content)
     if osd_clear then osd_clear:kill() end
     osd_clear = mp.add_timeout(secs, function()
         mp.set_osd_ass(0, 0, "")
