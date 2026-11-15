@@ -32,6 +32,26 @@ local timer = nil
 local was_paused = false -- video was paused when the hold started
 
 local osd_timer = nil
+local osd_clear = nil
+
+-- Nerd Font (Material Design) glyphs. Built from code points so the file
+-- stays plain ASCII and needs no utf8 library.
+local function glyph(cp)
+    return string.char(0xF0 + math.floor(cp / 0x40000), 0x80 + math.floor(cp / 0x1000) % 64,
+        0x80 + math.floor(cp / 64) % 64, 0x80 + cp % 64)
+end
+local ICON_PLAY  = glyph(0xF040A)
+local ICON_PAUSE = glyph(0xF03E4)
+local ICON_FF    = glyph(0xF0211)
+
+local function show_osd(content, secs)
+    mp.set_osd_ass(0, 0, "{\\an7\\fnMartianMono NF\\fs34}" .. content)
+    if osd_clear then osd_clear:kill() end
+    osd_clear = mp.add_timeout(secs, function()
+        mp.set_osd_ass(0, 0, "")
+        osd_clear = nil
+    end)
+end
 
 local function engage()
     engaged = true
@@ -39,10 +59,10 @@ local function engage()
     if was_paused then
         mp.set_property_bool("pause", false)
     end
-    local text = ">> " .. opts.speed .. "x"
-    mp.osd_message(text, 1)
+    local text = ICON_FF .. opts.speed .. "x"
+    show_osd(text, 1)
     osd_timer = mp.add_periodic_timer(0.5, function()
-        mp.osd_message(text, 1)
+        show_osd(text, 1)
     end)
 end
 
@@ -56,9 +76,9 @@ local function restore_speed()
     mp.set_property_number("speed", s)
     if was_paused then
         mp.set_property_bool("pause", true)
-        mp.osd_message("|| " .. string.format("%.2g", s) .. "x")
+        show_osd(ICON_PAUSE .. string.format("%.2g", s) .. "x", 1)
     else
-        mp.osd_message("> " .. string.format("%.2g", s) .. "x")
+        show_osd(ICON_PLAY .. string.format("%.2g", s) .. "x", 1)
     end
 end
 
@@ -71,12 +91,12 @@ mp.observe_property("pause", "bool", function(_, paused)
     end
     if engaged then return end
     if paused then
-        mp.osd_message("||", 1)
+        show_osd(ICON_PAUSE, 1)
         pause_timer = mp.add_periodic_timer(0.5, function()
-            mp.osd_message("||", 1)
+            show_osd(ICON_PAUSE, 1)
         end)
     else
-        mp.osd_message("> " .. string.format("%.2g", mp.get_property_number("speed") or 1.0) .. "x")
+        show_osd(ICON_PLAY .. string.format("%.2g", mp.get_property_number("speed") or 1.0) .. "x", 1)
     end
 end)
 
