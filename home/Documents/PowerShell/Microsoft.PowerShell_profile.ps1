@@ -361,6 +361,102 @@ function fixgpu
     }
 }
 
+function _SyscheckRow($level, $label, $value)
+{
+    switch ($level) {
+        'ok'   { $color = 'Green';  $icon = '✓' }
+        'warn' { $color = 'Yellow'; $icon = '!' }
+        'bad'  { $color = 'Red';    $icon = '✗' }
+    }
+    $script:syscheckLevels += $level
+    Write-Host ("  {0}  {1,-16} {2}" -f $icon, $label, $value) -ForegroundColor $color
+}
+
+function syscheck
+{
+    $script:syscheckLevels = @()
+    $os = Get-CimInstance Win32_OperatingSystem
+
+    $battery = Get-CimInstance Win32_Battery | Select-Object -First 1
+    $batteryScript = {
+        $report = Join-Path $env:TEMP "syscheck-battery-$PID.html"
+        powercfg /batteryreport /output $report | Out-Null
+        $html = Get-Content -Raw -LiteralPath $report -ErrorAction SilentlyContinue
+        Remove-Item -LiteralPath $report -Force -ErrorAction SilentlyContinue
+        if ($html -match 'DESIGN CAPACITY</span></td><td>([\d,]+) mWh') { [pscustomobject]@{ Design = [int64]($Matches[1] -replace ',', ''); Full = $(if ($html -match 'FULL CHARGE CAPACITY</span></td><td>([\d,]+) mWh') { [int64]($Matches[1] -replace ',', '') }) } }
+    }
+    $batteryJob = $null
+    $batteryNow = $null
+    if ($battery) {
+        if (Get-Command Start-ThreadJob -ErrorAction SilentlyContinue) { $batteryJob = Start-ThreadJob $batteryScript }
+        else { $batteryNow = & $batteryScript }
+    }
+
+    Write-Host "`n>Services" -ForegroundColor Blue
+    $failed = @(Get-CimInstance Win32_Service -Filter "StartMode='Auto' AND State='Stopped'" |
+        Where-Object { $_.ExitCode -ne 0 } | ForEach-Object Name)
+    if ($failed.Count -eq 0) { _SyscheckRow ok "Failed services" "none" }
+    else { _SyscheckRow bad "Failed services" ($failed -join ', ') }
+
+    Write-Host "`n>Disk usage" -ForegroundColor Blue
+    foreach ($v in @(Get-CimInstance Win32_LogicalDisk -Filter 'DriveType=3' | Where-Object Size -gt 0)) {
+        $used = [math]::Floor(100 - $v.FreeSpace * 100 / $v.Size)
+        $free = [math]::Round($v.FreeSpace / 1GB, 1)
+        $level = if ($used -ge 95) { 'bad' } elseif ($used -ge 85) { 'warn' } else { 'ok' }
+        _SyscheckRow $level $v.DeviceID "$used% used · $free GB free"
+    }
+
+    Write-Host "`n>Disk health" -ForegroundColor Blue
+    $disks = @(Get-PhysicalDisk -ErrorAction SilentlyContinue)
+    if ($disks.Count -eq 0) { _SyscheckRow warn "Disks" "could not be read" }
+    foreach ($d in $disks) {
+        $level = switch ($d.HealthStatus) { 'Healthy' { 'ok' } 'Unhealthy' { 'bad' } default { 'warn' } }
+        _SyscheckRow $level $d.FriendlyName "$($d.HealthStatus)"
+    }
+
+    Write-Host "`n>Memory" -ForegroundColor Blue
+    $totalMb = [int]($os.TotalVisibleMemorySize / 1KB)
+    $freeMb = [int]($os.FreePhysicalMemory / 1KB)
+    $mpct = [int](100 - $freeMb * 100 / $totalMb)
+    $level = if ($mpct -ge 90) { 'warn' } else { 'ok' }
+    _SyscheckRow $level "RAM" "$mpct% used · $freeMb MB available"
+
+    if ($battery) {
+        Write-Host "`n>Battery" -ForegroundColor Blue
+        $onAc = $battery.BatteryStatus -in 2, 3, 6, 7, 8, 9
+        _SyscheckRow ok "Charge" "$($battery.EstimatedChargeRemaining)% · $(if ($onAc) { 'on AC power' } else { 'on battery' })"
+        $capacity = if ($batteryJob) { Receive-Job $batteryJob -Wait -AutoRemoveJob } else { $batteryNow }
+        if ($capacity -and $capacity.Design -gt 0 -and $capacity.Full) {
+            $health = [math]::Floor($capacity.Full * 100 / $capacity.Design)
+            $level = if ($health -lt 80) { 'warn' } else { 'ok' }
+            _SyscheckRow $level "Health" "$health% of design capacity"
+        }
+    }
+
+    Write-Host "`n>System" -ForegroundColor Blue
+    if (Test-Path 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\WindowsUpdate\Auto Update\RebootRequired') {
+        _SyscheckRow warn "Restart" "Windows Update needs a restart"
+    } else {
+        _SyscheckRow ok "Restart" "not needed"
+    }
+
+    $timeStatus = (w32tm /query /status 2>$null) -join "`n"
+    if ($LASTEXITCODE -eq 0 -and $timeStatus -notmatch 'not synchronized') { _SyscheckRow ok "Clock" "synced" }
+    else { _SyscheckRow warn "Clock" "not synced" }
+
+    $boot = $os.LastBootUpTime
+    $errCount = @(Get-WinEvent -FilterHashtable @{ LogName = 'System', 'Application'; Level = 1, 2; StartTime = $boot } -ErrorAction SilentlyContinue).Count
+    if ($errCount -gt 0) { _SyscheckRow warn "Events" "$errCount error(s) this boot (Event Viewer)" }
+    else { _SyscheckRow ok "Events" "no errors this boot" }
+
+    $bad = @($script:syscheckLevels | Where-Object { $_ -eq 'bad' }).Count
+    $warn = @($script:syscheckLevels | Where-Object { $_ -eq 'warn' }).Count
+    Write-Host ("`n" + ("-" * 46)) -ForegroundColor DarkGray
+    if ($bad -eq 0 -and $warn -eq 0) { Write-Host "  ✓  All checks passed" -ForegroundColor Green }
+    elseif ($bad -eq 0) { Write-Host "  !  $warn warning(s)" -ForegroundColor Yellow }
+    else { Write-Host "  ✗  $bad problem(s), $warn warning(s)" -ForegroundColor Red }
+}
+
 function regtwk
 {
     & "$ConfigPath\tools\regtwk.ps1"
