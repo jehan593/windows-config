@@ -31,17 +31,27 @@ local engaged = false
 local timer = nil
 local was_paused = false -- video was paused when the hold started
 
+local osd_timer = nil
+
 local function engage()
     engaged = true
     mp.set_property_number("speed", opts.speed)
     if was_paused then
         mp.set_property_bool("pause", false)
     end
-    mp.osd_message(">> " .. opts.speed .. "x")
+    local text = ">> " .. opts.speed .. "x"
+    mp.osd_message(text, 1)
+    osd_timer = mp.add_periodic_timer(0.5, function()
+        mp.osd_message(text, 1)
+    end)
 end
 
 local function restore_speed()
     engaged = false
+    if osd_timer then
+        osd_timer:kill()
+        osd_timer = nil
+    end
     local s = orig_speed or 1.0
     mp.set_property_number("speed", s)
     if was_paused then
@@ -51,6 +61,24 @@ local function restore_speed()
         mp.osd_message("> " .. string.format("%.2g", s) .. "x")
     end
 end
+
+local pause_timer = nil
+
+mp.observe_property("pause", "bool", function(_, paused)
+    if pause_timer then
+        pause_timer:kill()
+        pause_timer = nil
+    end
+    if engaged then return end
+    if paused then
+        mp.osd_message("||", 1)
+        pause_timer = mp.add_periodic_timer(0.5, function()
+            mp.osd_message("||", 1)
+        end)
+    else
+        mp.osd_message("> " .. string.format("%.2g", mp.get_property_number("speed") or 1.0) .. "x")
+    end
+end)
 
 local function on_up(canceled)
     if timer then
