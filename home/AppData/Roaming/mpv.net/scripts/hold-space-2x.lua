@@ -59,10 +59,9 @@ local function engage()
     if was_paused then
         mp.set_property_bool("pause", false)
     end
-    local text = ICON_FF .. opts.speed .. "x"
-    show_osd(text, 1)
+    show_osd(ICON_FF, 1)
     osd_timer = mp.add_periodic_timer(0.5, function()
-        show_osd(text, 1)
+        show_osd(ICON_FF, 1)
     end)
 end
 
@@ -76,9 +75,9 @@ local function restore_speed()
     mp.set_property_number("speed", s)
     if was_paused then
         mp.set_property_bool("pause", true)
-        show_osd(ICON_PAUSE .. string.format("%.2g", s) .. "x", 1)
+        show_osd(ICON_PAUSE, 1)
     else
-        show_osd(ICON_PLAY .. string.format("%.2g", s) .. "x", 1)
+        show_osd(ICON_PLAY, 1)
     end
 end
 
@@ -96,7 +95,7 @@ mp.observe_property("pause", "bool", function(_, paused)
             show_osd(ICON_PAUSE, 1)
         end)
     else
-        show_osd(ICON_PLAY .. string.format("%.2g", mp.get_property_number("speed") or 1.0) .. "x", 1)
+        show_osd(ICON_PLAY, 1)
     end
 end)
 
