@@ -270,7 +270,7 @@ function gsudop
 function cleanup
 {
     gsudo {
-        param($userTemp, $sysTemp)
+        param($userTemp)
         Write-Host "`n>DISM Cleanup" -ForegroundColor Blue
         try {
             dism.exe /online /Cleanup-Image /StartComponentCleanup
@@ -287,7 +287,7 @@ function cleanup
         }
 
         Write-Host "`n>Temp Folder Cleanup" -ForegroundColor Blue
-        foreach ($path in @($userTemp, $sysTemp))
+        foreach ($path in @($userTemp))
         {
             try {
                 Remove-Item -Path "$path\*" -Recurse -Force -ErrorAction Stop
@@ -307,7 +307,7 @@ function cleanup
             Write-Host "Recycle Bin Cleanup Failed: $($_.Exception.Message)" -ForegroundColor Red
         }
 
-    } -args $env:TEMP, "$env:SystemRoot\Temp"
+    } -args $env:TEMP
 }
 
 function fixgpu
