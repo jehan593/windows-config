@@ -818,13 +818,17 @@ function upall
         $upcJob   = try { Start-ThreadJob { . "$using:profPath" -ErrorAction SilentlyContinue; _UpcCompute } } catch { $null }
     }
 
-    function _ReceiveSection($Job)
+    function _ReceiveSection($Job, [switch]$All)
     {
         # Waits for the job so a slow step is never double-run; a failed or
-        # missing job yields $null and the caller falls back inline.
+        # missing job yields $null and the caller falls back inline. -All keeps
+        # every object a list-returning step emits, not just the first.
         if (-not $Job) { return $null }
         $r = $null
-        try { $r = @(Receive-Job $Job -Wait -ErrorAction Stop) | Select-Object -First 1 } catch { $r = $null }
+        try {
+            $items = @(Receive-Job $Job -Wait -ErrorAction Stop)
+            $r = if ($All) { ,$items } else { $items | Select-Object -First 1 }
+        } catch { $r = $null }
         Remove-Job $Job -Force -ErrorAction SilentlyContinue
         return $r
     }
@@ -836,7 +840,7 @@ function upall
 
     upfont
 
-    $uprepResult = _ReceiveSection $uprepJob
+    $uprepResult = _ReceiveSection $uprepJob -All
     if ($uprepResult) { uprep -Precomputed $uprepResult } else { uprep }
 
     $upcResult = _ReceiveSection $upcJob
