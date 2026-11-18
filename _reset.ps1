@@ -409,19 +409,6 @@ foreach ($cache in $cacheFiles) {
 }
 
 # ==============================================================================
-# 7b. WINGET SOURCES RESTORE
-# ==============================================================================
-Write-Host "`n> Winget Sources" -ForegroundColor Blue
-
-# Setup removed the msstore source; restoring winget's defaults puts it back.
-winget source reset --force --disable-interactivity 2>&1 | Out-Null
-if ($LASTEXITCODE -eq 0) {
-    Write-Host "Winget sources restored to defaults" -ForegroundColor Green
-} else {
-    Write-Host "Could not restore winget sources (exit $LASTEXITCODE)" -ForegroundColor Yellow
-}
-
-# ==============================================================================
 # 8. GLOBAL ENVIRONMENT VARIABLES CLEANUP
 # ==============================================================================
 Write-Host "`n>Global Environment Variables" -ForegroundColor Blue

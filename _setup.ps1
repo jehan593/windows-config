@@ -68,21 +68,6 @@ foreach ($app in (Get-WingetApps))
     }
 }
 
-Write-Host "`n>Winget Sources" -ForegroundColor Blue
-
-# The msstore endpoint is dead on this network and taxes every winget call
-# that touches it - drop the source for good.
-if (winget source list 2>$null | Select-String -Pattern 'msstore') {
-    winget source remove --name msstore --disable-interactivity 2>&1 | Out-Null
-    if ($LASTEXITCODE -eq 0) {
-        Write-Host "Removed: msstore" -ForegroundColor Green
-    } else {
-        Write-Host "Failed to remove msstore (exit $LASTEXITCODE)" -ForegroundColor Red
-    }
-} else {
-    Write-Host "msstore already removed" -ForegroundColor Green
-}
-
 Write-Host "`n>PowerShell Modules" -ForegroundColor Blue
 
 # Latest versions come from one batched Find-Module call for all installed
