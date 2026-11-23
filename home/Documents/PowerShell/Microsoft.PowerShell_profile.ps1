@@ -1112,6 +1112,71 @@ function keepawake
     }
 }
 
+function _SetConservationMode([bool]$On)
+{
+    if (-not ([System.Management.Automation.PSTypeName]'LenovoEnergyDrv').Type)
+    {
+        Add-Type -TypeDefinition @"
+using System;
+using System.Runtime.InteropServices;
+using Microsoft.Win32.SafeHandles;
+
+public static class LenovoEnergyDrv
+{
+    [DllImport("kernel32.dll", SetLastError = true, CharSet = CharSet.Unicode)]
+    static extern SafeFileHandle CreateFileW(string name, uint access, uint share, IntPtr security, uint disposition, uint flags, IntPtr template);
+
+    [DllImport("kernel32.dll", SetLastError = true)]
+    static extern bool DeviceIoControl(SafeFileHandle device, uint code, ref uint inBuffer, uint inSize, out uint outBuffer, uint outSize, out uint returned, IntPtr overlapped);
+
+    public static SafeFileHandle Open()
+    {
+        var h = CreateFileW(@"\\.\EnergyDrv", 0x3, 0x3, IntPtr.Zero, 3, 0x80, IntPtr.Zero);
+        if (h.IsInvalid) throw new InvalidOperationException("EnergyDrv not available");
+        return h;
+    }
+
+    public static uint Call(SafeFileHandle h, uint code, uint input)
+    {
+        uint output;
+        uint returned;
+        if (!DeviceIoControl(h, code, ref input, 4, out output, 4, out returned, IntPtr.Zero))
+            throw new InvalidOperationException("EnergyDrv call failed");
+        return output;
+    }
+}
+"@
+    }
+
+    $ioctl = [Convert]::ToUInt32('831020F8', 16)
+    $codes = if ($On) { 0x08, 0x03 } else { 0x05, 0x08 }
+    $regValue = if ($On) { 'Storage' } else { 'Normal' }
+
+    $handle = [LenovoEnergyDrv]::Open()
+    try
+    {
+        foreach ($code in $codes) { [void][LenovoEnergyDrv]::Call($handle, $ioctl, [uint32]$code) }
+        $raw = [LenovoEnergyDrv]::Call($handle, $ioctl, [uint32]0xFF)
+    }
+    finally { $handle.Dispose() }
+
+    $key = 'HKCU:\Software\Lenovo\VantageService\AddinData\IdeaNotebookAddin'
+    if (-not (Test-Path $key)) { New-Item -Path $key -Force | Out-Null }
+    Set-ItemProperty -Path $key -Name BatteryChargeMode -Value $regValue
+
+    $isOn = ($raw -band 0x20) -ne 0
+    if ($isOn -eq $On) { Write-Host "Conservation mode $(if ($On) { 'on' } else { 'off' })" -ForegroundColor Green }
+    else { Write-Host "Conservation mode did not change" -ForegroundColor Red }
+}
+
+function cons-mode
+{
+    param([string]$State = 'on')
+
+    if ($State -notin 'on', 'off') { Write-Host "Usage: cons-mode on|off" -ForegroundColor Yellow; return }
+    _SetConservationMode ($State -eq 'on')
+}
+
 # ==============================================================================
 # 11. THIRD PARTY TOOLS
 # ==============================================================================
