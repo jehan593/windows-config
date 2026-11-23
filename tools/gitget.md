@@ -67,8 +67,9 @@ the user `PATH` - installs, updates and removals never rewrite it, so the PATH
 cannot drift. Archives are unpacked into a per-app staging dir
 (`...gitget\apps\<app name>`), a single top-level folder is lifted, and the
 program placed into the shared bin dir is the one matching the app name, the
-only program in the archive, or the largest program in it. `.dll` files sitting
-next to the staged program go along so programs that load them still run.
+only program in the archive, or the largest program in it. Support files sitting
+next to the staged program (DLLs, data files such as ViVe's
+`FeatureDictionary.pfs`, ...) go along so programs that load them still run.
 Every archive, `.7z` included, is unpacked with the built-in `tar.exe`.
 
 A release that ships one build per platform (topgrade ships ten) only offers

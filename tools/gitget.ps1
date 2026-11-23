@@ -671,7 +671,7 @@ function _TestIsNewer($Candidate, $Current) {
     return ($cmp -gt 0)
 }
 
-function _FindInstalledExe($App) {
+function _FindInstalledExe($App, $AppName) {
     if ($App.version_exe -and [System.IO.Path]::IsPathRooted($App.version_exe)) {
         if (Test-Path -LiteralPath $App.version_exe) { return $App.version_exe }
     }
@@ -684,16 +684,23 @@ function _FindInstalledExe($App) {
         if (Test-Path $candidate) { return $candidate }
     }
     if ($App.version_exe) { return $null }
-    # Portable payloads live in their own bin directory, installers in the
-    # download staging directory.
+    # Portable payloads live in a shared bin directory beside other apps, so
+    # an unnamed first .exe there belongs to somebody else. Require the app
+    # name in the file name before claiming it as this app's program.
+    $needle = if ($AppName) { (($AppName -replace '[^a-zA-Z0-9]', '')).ToLower() } else { '' }
     foreach ($dir in @($App.bin_dir, $App.install_dir)) {
         if (-not $dir -or -not (Test-Path $dir)) { continue }
         # Never probe the app's own downloaded installer (or any installer-like
         # exe) for a version - launching one would pop up its setup UI.
-        $found = (Get-ChildItem -Path $dir -Filter *.exe -Recurse -ErrorAction SilentlyContinue |
-                  Where-Object { $_.Name -ne $App.current_asset -and -not (_TestLooksLikeInstaller $_.Name) } |
-                  Select-Object -First 1).FullName
-        if ($found) { return $found }
+        $found = @(Get-ChildItem -Path $dir -Filter *.exe -Recurse -ErrorAction SilentlyContinue |
+                  Where-Object { $_.Name -ne $App.current_asset -and -not (_TestLooksLikeInstaller $_.Name) })
+        if ($dir.TrimEnd('\') -ieq $SharedBinDir.TrimEnd('\') -and $needle) {
+            $found = @($found | Where-Object {
+                (($_.BaseName -replace '[^a-zA-Z0-9]', '')).ToLower() -like "*$needle*"
+            })
+        }
+        $exe = ($found | Select-Object -First 1).FullName
+        if ($exe) { return $exe }
     }
     return $null
 }
@@ -893,7 +900,7 @@ function _GetInstalledVersionPortable($AppName, $App) {
     $statePath = if ($state -and $state.path) { $state.path } else { $null }
 
     $exePath = $statePath
-    if (-not $exePath) { $exePath = _FindInstalledExe $App }
+    if (-not $exePath) { $exePath = _FindInstalledExe $App $AppName }
 
     if ($state -and $state.version) {
         if (-not $statePath -or -not [System.IO.File]::Exists($statePath)) {
@@ -929,7 +936,7 @@ function _GetInstalledVersionPortable($AppName, $App) {
 function _GetInstalledVersion($AppName, $App) {
     if ((_GetInstallType $App) -ne 'installer') { return _GetInstalledVersionPortable $AppName $App }
     # Try progressively less-direct sources; "recorded" only trusts the config.
-    $exePath = _FindInstalledExe $App
+    $exePath = _FindInstalledExe $App $AppName
     if ($App.version_exe -and -not $exePath) { throw "Configured version executable not found: $($App.version_exe)" }
 
     if ($App.version_command) {
@@ -1377,14 +1384,16 @@ function _RegisterBinDir($BinDir) {
 }
 
 function _PromotePayloadExe($Exe) {
-    # Copy the staged payload program (and its adjacent .dll files) into the
-    # shared bin dir and return the placed exe. An exe staged inside the shared
-    # bin dir already is returned as-is.
+    # Copy the staged payload program and the files it loads from beside it
+    # into the shared bin dir. DLLs are the common case, but archives also ship
+    # data files (ViVe's FeatureDictionary.pfs, for example) that must follow
+    # the exe. An exe staged inside the shared bin dir is returned as-is.
     $stageDir = Split-Path -Parent $Exe
     if ($stageDir.TrimEnd('\') -ieq $SharedBinDir.TrimEnd('\')) { return $Exe }
 
     New-Item -ItemType Directory -Force -Path $SharedBinDir | Out-Null
-    Get-ChildItem -LiteralPath $stageDir -Filter *.dll -File -ErrorAction SilentlyContinue |
+    Get-ChildItem -LiteralPath $stageDir -File -ErrorAction SilentlyContinue |
+        Where-Object { $_.Extension -ine '.exe' -and $_.Name -notlike '*.ggold' } |
         ForEach-Object { [void](_ReplaceLockedCopy $_.FullName (Join-Path $SharedBinDir $_.Name)) }
     $dest = Join-Path $SharedBinDir (Split-Path -Leaf $Exe)
     [void](_ReplaceLockedCopy $Exe $dest)
