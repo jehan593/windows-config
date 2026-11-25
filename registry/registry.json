@@ -73,6 +73,24 @@
     }
   ],
   "HKCU": [
-    
+    {
+      "path": "Control Panel\\Desktop",
+      "values": [
+        { "name": "MenuShowDelay", "type": "String", "value": "100", "default": "400" }
+      ]
+    },
+    {
+      "path": "Control Panel\\Mouse",
+      "values": [
+        { "name": "MouseHoverTime", "type": "String", "value": "250", "default": "400" }
+      ]
+    },
+    {
+      "path": "SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Explorer\\Serialize",
+      "values": [
+        { "name": "StartupDelayInMSec", "type": "DWord", "value": 1 },
+        { "name": "WaitForIdleState", "type": "DWord", "value": 0 }
+      ]
+    }
   ]
 }
