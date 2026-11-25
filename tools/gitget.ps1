@@ -83,7 +83,7 @@ $ErrorActionPreference = "Stop"
 
 $requiredCommands = @()
 # fzf is only needed where a picker is actually shown.
-$usesPicker = ($Command -in @('add', 'update')) -or ($Command -eq 'rm' -and -not $All -and -not $Target)
+$usesPicker = ($Command -eq 'add') -or ($Command -in @('update', 'install', 'rm') -and -not $All -and -not $Target)
 if ($usesPicker) { $requiredCommands += 'fzf' }
 $missingDeps = @($requiredCommands | Where-Object { -not (Get-Command $_ -ErrorAction SilentlyContinue) })
 if ($Proxy -or $Command -eq "proxy") {
@@ -1383,21 +1383,48 @@ function _RegisterBinDir($BinDir) {
     $env:Path = ((@($BinDir) + $keptSession) -join ';')
 }
 
-function _PromotePayloadExe($Exe) {
-    # Copy the staged payload program and the files it loads from beside it
-    # into the shared bin dir. DLLs are the common case, but archives also ship
-    # data files (ViVe's FeatureDictionary.pfs, for example) that must follow
-    # the exe. An exe staged inside the shared bin dir is returned as-is.
+function _PromotePayloadExe($Exe, $App) {
+    # Copy the staged program and the runtime files it loads from beside it
+    # into the shared bin dir. Documentation, licenses and shell scripts that
+    # archives often ship are left behind. A file already in bin from a different
+    # app is never silently overwritten. Returns the placed exe and the names
+    # of the support files that now belong to this app.
     $stageDir = Split-Path -Parent $Exe
-    if ($stageDir.TrimEnd('\') -ieq $SharedBinDir.TrimEnd('\')) { return $Exe }
+    if ($stageDir.TrimEnd('\') -ieq $SharedBinDir.TrimEnd('\')) {
+        return [PSCustomObject]@{ exe = $Exe; support = @() }
+    }
 
     New-Item -ItemType Directory -Force -Path $SharedBinDir | Out-Null
-    Get-ChildItem -LiteralPath $stageDir -File -ErrorAction SilentlyContinue |
-        Where-Object { $_.Extension -ine '.exe' -and $_.Name -notlike '*.ggold' } |
-        ForEach-Object { [void](_ReplaceLockedCopy $_.FullName (Join-Path $SharedBinDir $_.Name)) }
+
+    $installed = if ($App -and $App.PSObject.Properties['installed']) { $App.installed } else { $null }
+    $owned = if ($installed -and $installed.PSObject.Properties['support_files'] -and $installed.support_files) {
+        @($installed.support_files)
+    } else { @() }
+    # Installs made before support files were tracked own everything they find;
+    # otherwise a legitimate update would be blocked by its own old files.
+    $legacy = $installed -and -not $installed.PSObject.Properties['support_files']
+
+    $runtimeExt = @('.dll', '.pfs', '.config', '.json', '.dat', '.db', '.sqlite', '.bundle', '.pak', '.lic', '.key', '.crt', '.pem', '.pfx')
+    $kept = [System.Collections.Generic.List[string]]::new()
+    $files = @(Get-ChildItem -LiteralPath $stageDir -File -ErrorAction SilentlyContinue |
+               Where-Object { $_.Extension -in $runtimeExt -and $_.Name -notlike '*.ggold' })
+    foreach ($file in $files) {
+        $dest = Join-Path $SharedBinDir $file.Name
+        if ([System.IO.File]::Exists($dest) -and -not $legacy -and $owned -notcontains $file.Name) {
+            $srcHash = _GetFileSha256 $file.FullName
+            $dstHash = _GetFileSha256 $dest
+            if ($srcHash -and $dstHash -and $srcHash -ne $dstHash) {
+                Write-Host "$($file.Name): different copy already in bin - kept existing file" -ForegroundColor Yellow
+                continue
+            }
+        }
+        [void](_ReplaceLockedCopy $file.FullName $dest)
+        $kept.Add($file.Name)
+    }
+
     $dest = Join-Path $SharedBinDir (Split-Path -Leaf $Exe)
     [void](_ReplaceLockedCopy $Exe $dest)
-    return $dest
+    return [PSCustomObject]@{ exe = $dest; support = @($kept) }
 }
 
 function _TestElevated {
@@ -1704,14 +1731,16 @@ function _InstallPortablePayload($Path, $BinDir, $AppName) {
     return $exe
 }
 
-function _SetInstallState($App, $Version, $AssetName, $ExePath) {
-    # Record what we installed so later checks can verify it.
+function _SetInstallState($App, $Version, $AssetName, $ExePath, $SupportFiles = @()) {
+    # Record what we installed so later checks can verify it, and which support
+    # files in the shared bin dir belong to it.
     $state = [PSCustomObject]@{
-        version = $Version
-        asset   = $AssetName
-        path    = $ExePath
-        sha256  = _GetFileSha256 $ExePath
-        at      = (Get-Date).ToUniversalTime().ToString("o")
+        version       = $Version
+        asset         = $AssetName
+        path          = $ExePath
+        sha256        = _GetFileSha256 $ExePath
+        at            = (Get-Date).ToUniversalTime().ToString("o")
+        support_files = @($SupportFiles)
     }
     if ($App.PSObject.Properties['installed']) { $App.installed = $state }
     else { $App | Add-Member -NotePropertyName installed -NotePropertyValue $state }
@@ -1748,6 +1777,7 @@ function _InstallAppPayload($AppName, $App, $Asset, $LatestVersion, $ProxyUrl) {
         $override = $App.bin_dir -and $App.bin_dir.TrimEnd('\') -ine $SharedBinDir.TrimEnd('\')
         $stageDir = if ($override) { $App.bin_dir } else { Join-Path $AppsDir $AppName }
         $oldPath = if ($App.PSObject.Properties['installed'] -and $App.installed) { $App.installed.path } else { $null }
+        $supportFiles = @()
         $exe = $null
         # A service that runs the current payload keeps its copy open; copies
         # inside the payload dirs must land while such a service stays out of
@@ -1761,7 +1791,11 @@ function _InstallAppPayload($AppName, $App, $Asset, $LatestVersion, $ProxyUrl) {
                 return $false
             }
             Remove-Item -LiteralPath $path -Force -ErrorAction SilentlyContinue
-            if (-not $override) { $exe = _PromotePayloadExe $exe }
+            if (-not $override) {
+                $promoted = _PromotePayloadExe $exe $App
+                $exe = $promoted.exe
+                $supportFiles = $promoted.support
+            }
             if ($oldPath -and $oldPath -ne $exe -and [System.IO.File]::Exists($oldPath)) {
                 Remove-Item -LiteralPath $oldPath -Force -ErrorAction SilentlyContinue
             }
@@ -1769,7 +1803,7 @@ function _InstallAppPayload($AppName, $App, $Asset, $LatestVersion, $ProxyUrl) {
                 Remove-Item -LiteralPath $stageDir -Recurse -Force -ErrorAction SilentlyContinue
             }
             _RegisterBinDir (Split-Path -Parent $exe)
-            _SetInstallState $App $LatestVersion $Asset.name $exe
+            _SetInstallState $App $LatestVersion $Asset.name $exe $supportFiles
             Write-Host "Installed $AppName to $exe" -ForegroundColor Green
         }
         finally { _ResumePausedPayload $paused }
@@ -2190,7 +2224,7 @@ function _Remove {
             # -Purge asks for its leftovers to go too.
             $managed = (_GetInstallType $prop.Value) -ne 'installer'
             if ($managed -or $Purge) {
-                _PurgeAppFiles $name $prop.Value
+                _PurgeAppFiles $name $prop.Value $config
                 $purged = $true
             }
             else {
@@ -2214,10 +2248,10 @@ function _Remove {
     _SaveConfig $config
 }
 
-function _PurgeAppFiles($AppName, $App) {
+function _PurgeAppFiles($AppName, $App, $Config) {
     # Delete the program of a portable/archive app and, for a per-app payload
     # dir, the whole dir. The shared bin dir holds every program's exe, so only
-    # this app's exe goes; the dir itself stays for the remaining apps.
+    # this app's exe and support files go; the dir itself stays for the rest.
     $binDir = $App.bin_dir
     if ($binDir -and (Test-Path $binDir) -and $binDir.TrimEnd('\') -ieq $SharedBinDir.TrimEnd('\')) {
         $exePath = if ($App.installed -and $App.installed.path) { $App.installed.path } else { $null }
@@ -2228,6 +2262,28 @@ function _PurgeAppFiles($AppName, $App) {
                 Write-Host "Deleted: $(Split-Path -Leaf $exePath)" -ForegroundColor Gray
             }
             catch { Write-Host "Failed to delete '$exePath': $($_.Exception.Message)" -ForegroundColor Red }
+        }
+        $support = if ($App.installed -and $App.installed.PSObject.Properties['support_files'] -and $App.installed.support_files) {
+            @($App.installed.support_files)
+        } else { @() }
+        foreach ($name in $support) {
+            $usedElsewhere = $false
+            if ($Config -and $Config.apps) {
+                $usedElsewhere = @($Config.apps.PSObject.Properties | Where-Object {
+                    $_.Name -ne $AppName -and $_.Value.installed -and
+                    $_.Value.installed.PSObject.Properties['support_files'] -and
+                    $_.Value.installed.support_files -contains $name
+                }).Count -gt 0
+            }
+            if ($usedElsewhere) { continue }
+            $file = Join-Path $SharedBinDir $name
+            if ([System.IO.File]::Exists($file)) {
+                try {
+                    Remove-Item -LiteralPath $file -Force -ErrorAction Stop
+                    Write-Host "Deleted: $name" -ForegroundColor Gray
+                }
+                catch { Write-Host "Failed to delete '$file': $($_.Exception.Message)" -ForegroundColor Red }
+            }
         }
         $binDir = $null   # the shared dir itself is not unregistered here
     }
@@ -2504,7 +2560,7 @@ function _Update {
         return
     }
 
-    $toUpdate = if ($All) {
+    $toUpdate = if ($All -or $Target) {
         $updatable
     }
     else {
@@ -2596,7 +2652,7 @@ function _Install {
         return
     }
 
-    $toInstall = if ($All) {
+    $toInstall = if ($All -or $Target) {
         $notInstalled
     } else {
         $lines = @($notInstalled | ForEach-Object { $_.appName })

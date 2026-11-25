@@ -263,7 +263,9 @@ function _ResolveProxy { $null }
 function _SaveAsset { 'fake.exe' }
 function Test-Path { $false }
 function _SelectAsset { [pscustomobject]@{name='new.exe'} }
-$Target = 'test'; $All = $true; $Force = $false
+# A named target is unambiguous - it must never fall through to fzf.
+function fzf { throw 'fzf must not run when a target is named' }
+$Target = 'test'; $All = $false; $Force = $false
 _Update
 Assert ($script:app.current_version -eq '1.0' -and $script:saves -eq 0) 'Failed install advanced saved version'
 $script:exitCode = 0
@@ -792,5 +794,30 @@ $script:releases = @((Release 'v2.0' 'app-v2.0.zip'))
 _Update
 Assert ($switchUpdate.install_type -eq 'archive') 'The update did not switch to the kind the release ships'
 Assert ($script:selectedPattern -eq '*') 'The update kept the file name of the old kind'
+
+# --- promotion: runtime files only, collisions never silently overwrite -----
+$stage = Join-Path $env:TEMP ("gitget-promote-" + [guid]::NewGuid().ToString('N'))
+New-Item -ItemType Directory -Force -Path (Join-Path $stage 'pkg') | Out-Null
+foreach ($n in 'prog.exe', 'prog.dll', 'data.pfs', 'README.md', 'LICENSE') {
+    Set-Content -LiteralPath (Join-Path $stage "pkg\$n") -Value $n
+}
+$bin = Join-Path $stage 'bin'
+$SharedBinDir = $bin
+$promoted = _PromotePayloadExe (Join-Path $stage 'pkg\prog.exe') ([pscustomobject]@{})
+Assert ((Split-Path -Leaf $promoted.exe) -eq 'prog.exe') 'Promotion did not place the program'
+Assert (@($promoted.support) -contains 'prog.dll') 'A DLL was not promoted'
+Assert (@($promoted.support) -contains 'data.pfs') 'A runtime data file was not promoted'
+Assert (-not (Test-Path -LiteralPath (Join-Path $bin 'README.md'))) 'A README was copied into bin'
+Assert (-not (Test-Path -LiteralPath (Join-Path $bin 'LICENSE'))) 'A LICENSE was copied into bin'
+
+Set-Content -LiteralPath (Join-Path $bin 'prog.dll') -Value 'other app'
+$promoted = _PromotePayloadExe (Join-Path $stage 'pkg\prog.exe') ([pscustomobject]@{})
+Assert ((Get-Content -LiteralPath (Join-Path $bin 'prog.dll') -Raw).Trim() -eq 'other app') 'A collision silently overwrote another app''s file'
+Assert (@($promoted.support) -notcontains 'prog.dll') 'A kept colliding file was claimed as owned'
+
+$ownedApp = [pscustomobject]@{ installed = [pscustomobject]@{ support_files = @('prog.dll') } }
+$promoted = _PromotePayloadExe (Join-Path $stage 'pkg\prog.exe') $ownedApp
+Assert (@($promoted.support) -contains 'prog.dll') 'An owned support file was not updated'
+[System.IO.Directory]::Delete($stage, $true)
 
 Write-Host "Passed $script:passed offline regression assertions." -ForegroundColor Green

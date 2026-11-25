@@ -4,7 +4,9 @@ Run `gitget add owner/repo`, `gitget check`, or `gitget update` as before.
 GitGet tracks GitHub release lines and installs their Windows payloads.
 Existing JSON config entries remain supported. The script also runs directly
 with PowerShell 7; `fzf` is required for installer and app pickers, but not for
-checks or config.
+checks or config. Naming an app - `gitget update <name>`, `gitget install <name>`
+or `gitget rm <name>` - targets only that app and skips the picker; `-All` does
+the same for every app.
 
 `gitget add` installs the payload right away, for every kind - installer,
 portable and archive. It only tracks the app when the program is already
@@ -67,9 +69,12 @@ the user `PATH` - installs, updates and removals never rewrite it, so the PATH
 cannot drift. Archives are unpacked into a per-app staging dir
 (`...gitget\apps\<app name>`), a single top-level folder is lifted, and the
 program placed into the shared bin dir is the one matching the app name, the
-only program in the archive, or the largest program in it. Support files sitting
-next to the staged program (DLLs, data files such as ViVe's
-`FeatureDictionary.pfs`, ...) go along so programs that load them still run.
+only program in the archive, or the largest program in it. Only runtime files
+beside it go along - DLLs and data files such as ViVe's `FeatureDictionary.pfs`.
+Documentation, licenses and shell scripts that archives often ship are left
+behind, and a runtime file already in `bin` from another app with different
+contents is kept rather than silently overwritten. Support files are recorded
+with the install and deleted with it unless another app uses the same name.
 Every archive, `.7z` included, is unpacked with the built-in `tar.exe`.
 
 A release that ships one build per platform (topgrade ships ten) only offers
